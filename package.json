@@ -1,0 +1,59 @@
+{
+  "name": "smart-home-maintenance-service",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Smart Home Maintenance Services — backend foundation (npm workspaces + NestJS 11 / Express)",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "npm@11.12.1",
+  "workspaces": [
+    "packages/contracts",
+    "packages/domain",
+    "packages/db",
+    "apps/api",
+    "apps/worker"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspace @smart-home/api",
+    "dev:worker": "npm run dev --workspace @smart-home/worker",
+    "start:worker": "npm run start --workspace @smart-home/worker",
+    "lint": "npm run build --workspaces --if-present && npm run lint --workspaces --if-present && eslint eslint.config.js prettier.config.js vitest.config.ts test",
+    "typecheck": "npm run build --workspaces --if-present && npm run typecheck --workspaces --if-present && tsc -p tsconfig.json",
+    "test": "vitest run && npm run build --workspaces --if-present && npm run test --workspaces --if-present",
+    "test:integration": "npm run test:integration --workspace @smart-home/api",
+    "format": "prettier --write \"**/*.{ts,json,md,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,json,md,yml}\"",
+    "db:migrate": "npm run db:migrate --workspace @smart-home/db",
+    "db:new": "npm run db:new --workspace @smart-home/db",
+    "db:status": "npm run db:status --workspace @smart-home/db",
+    "db:pull": "npm run db:pull --workspace @smart-home/db",
+    "db:reset": "npm run db:reset --workspace @smart-home/db",
+    "db:seed": "npm run db:seed --workspace @smart-home/db",
+    "db:studio": "npm run db:studio --workspace @smart-home/db",
+    "infra:up": "docker compose --env-file .env -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose --env-file .env -f infra/docker-compose.yml down -v",
+    "infra:objects": "docker compose --env-file .env -f infra/docker-compose.yml --profile objects up -d",
+    "infra:ps": "docker compose --env-file .env -f infra/docker-compose.yml ps"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.31.0",
+    "@types/node": "^22.16.4",
+    "eslint": "^9.31.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0",
+    "vitest": "^3.2.4"
+  },
+  "allowScripts": {
+    "@prisma/client@6.12.0": true,
+    "@prisma/engines@6.12.0": true,
+    "argon2@0.43.1": true,
+    "esbuild@0.28.2": true,
+    "msgpackr-extract@3.0.4": true,
+    "prisma@6.12.0": true,
+    "@scarf/scarf@1.4.0": true
+  }
+}

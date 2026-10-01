@@ -1,0 +1,70 @@
+{
+  "name": "@smart-home/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "exports": {
+    "./app.module": {
+      "types": "./dist/app.module.d.ts",
+      "import": "./dist/app.module.js"
+    },
+    "./config/environment.service": {
+      "types": "./dist/config/environment.service.d.ts",
+      "import": "./dist/config/environment.service.js"
+    },
+    "./platform/outbox.dispatcher": {
+      "types": "./dist/platform/outbox.dispatcher.d.ts",
+      "import": "./dist/platform/outbox.dispatcher.js"
+    },
+    "./platform/settings.service": {
+      "types": "./dist/platform/settings.service.d.ts",
+      "import": "./dist/platform/settings.service.js"
+    },
+    "./queues/queue.registry": {
+      "types": "./dist/queues/queue.registry.d.ts",
+      "import": "./dist/queues/queue.registry.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "dotenv -e ../../.env -- tsx watch src/main.ts",
+    "start": "dotenv -e ../../.env -- node dist/main.js",
+    "lint": "eslint src test",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:integration": "dotenv -e ../../.env -- vitest run --config vitest.integration.config.ts",
+    "api:surface": "dotenv -e ../../.env -- tsx scripts/api-surface.ts",
+    "dev:at": "dotenv -e ../../.env -- tsx scripts/dev-at.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.5",
+    "@nestjs/core": "^11.1.5",
+    "@nestjs/platform-express": "^11.1.5",
+    "@nestjs/swagger": "^11.2.0",
+    "@prisma/client": "6.12.0",
+    "@smart-home/contracts": "*",
+    "@smart-home/db": "*",
+    "@smart-home/domain": "*",
+    "argon2": "^0.43.1",
+    "bullmq": "^5.56.4",
+    "dotenv-cli": "^8.0.0",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "ioredis": "^5.6.1",
+    "jose": "^6.2.12",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/argon2": "^0.14.1",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.16.4",
+    "light-my-request": "^6.6.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

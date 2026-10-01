@@ -1,0 +1,27 @@
+{
+  "name": "@smart-home/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/worker.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "dotenv -e ../../.env -- tsx watch src/worker.ts",
+    "start": "dotenv -e ../../.env -- node dist/worker.js",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@nestjs/core": "^11.1.5",
+    "@smart-home/api": "*",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.4",
+    "dotenv-cli": "^8.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

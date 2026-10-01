@@ -1,0 +1,38 @@
+{
+  "name": "@smart-home/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./prisma": "./prisma"
+  },
+  "scripts": {
+    "db:migrate": "node scripts/dbmate.mjs",
+    "db:new": "cross-env DBMATE_COMMAND=new node scripts/dbmate.mjs",
+    "db:status": "cross-env DBMATE_COMMAND=status node scripts/dbmate.mjs",
+    "db:drop": "cross-env DBMATE_COMMAND=drop node scripts/dbmate.mjs",
+    "db:pull": "dotenv -e ../../.env -- prisma db pull --schema prisma/schema.prisma && npm run db:generate",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:studio": "dotenv -e ../../.env -- prisma studio --schema prisma/schema.prisma",
+    "db:seed": "dotenv -e ../../.env -- tsx seed/seed.ts",
+    "db:reset": "npm run db:drop && npm run db:migrate && npm run db:pull && npm run db:seed",
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint seed",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@prisma/client": "6.12.0",
+    "argon2": "^0.43.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.4",
+    "cross-env": "^7.0.3",
+    "dbmate": "^2.36.0",
+    "dotenv-cli": "^8.0.0",
+    "prisma": "6.12.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,1554 @@
+{
+  "globalPrefix": "api/v1",
+  "docsPath": "api/docs",
+  "info": {
+    "title": "Smart Home Maintenance Services API",
+    "version": "1.0.0",
+    "description": "The backend API for the Smart Home Maintenance Service platform: account sign-up and login, admin settings, payment webhooks, and health checks.\n\n**Getting started:** most endpoints need you to be logged in. Call `POST /auth/login` (password) or the OTP endpoints to get an `accessToken`, then click \"Authorize\" above and enter it as `Bearer <token>` to unlock the endpoints marked with a lock icon.\n\nEndpoints under **development** only work when the API is running with `DEV_INBOX_ENABLED=true` (local/dev setups) — they let you see the text messages, emails and files the mock providers would otherwise send to real services, which is how you retrieve OTP codes while testing."
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Check whether the API and the services it depends on (database, cache, background queues, file storage) are up and responding."
+    },
+    {
+      "name": "catalogue",
+      "description": "Browse service categories and bookable services, and (admin) manage them, commission rates, and which providers are approved to offer which service."
+    },
+    {
+      "name": "places",
+      "description": "Look up the cities and areas the platform operates in — use an area id when creating a customer address."
+    },
+    {
+      "name": "customer",
+      "description": "Actions for a signed-in customer account, such as managing saved addresses."
+    },
+    {
+      "name": "provider",
+      "description": "Actions for a signed-in service-provider account: profile, weekly availability, leave, and which areas they serve."
+    },
+    {
+      "name": "search",
+      "description": "Find approved providers for a service near a point, and view a provider's public profile."
+    },
+    {
+      "name": "booking",
+      "description": "Request a provider for a service and carry the job through to completion: accept/decline, cancel/reschedule, arrival OTP, checklist, quote revisions, and finishing the job."
+    },
+    {
+      "name": "auth",
+      "description": "Sign up, log in, and manage your account: passwords, one-time verification codes (OTP), sessions, and two-factor authentication (TOTP)."
+    },
+    {
+      "name": "settings",
+      "description": "Admin only. View and change platform-wide configuration values. Requires an ADMIN account with two-factor authentication turned on."
+    },
+    {
+      "name": "webhooks",
+      "description": "Called automatically by external providers (e.g. the payment gateway) to report events. Not meant to be called directly by client apps."
+    },
+    {
+      "name": "development",
+      "description": "Local/dev-only helpers for inspecting what the mock SMS, email and file-storage providers received, so flows like OTP login can be tested without real providers. Disabled in production."
+    }
+  ],
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "securitySchemes": {
+    "access-token": {
+      "scheme": "bearer",
+      "bearerFormat": "JWT",
+      "type": "http"
+    }
+  },
+  "operations": [
+    {
+      "method": "GET",
+      "path": "/",
+      "operationId": "HealthController_root",
+      "summary": "Welcome message",
+      "tags": [
+        "health"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/appeals",
+      "operationId": "ConductController_appeals",
+      "summary": "List appeals",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/appeals/{id}/decide",
+      "operationId": "ConductController_decide",
+      "summary": "Decide an appeal",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/catalogue/categories",
+      "operationId": "CatalogueAdminController_createCategory",
+      "summary": "Create a service category",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/catalogue/categories/{id}",
+      "operationId": "CatalogueAdminController_updateCategory",
+      "summary": "Update a service category",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/catalogue/commission-rules",
+      "operationId": "CatalogueAdminController_listCommissionRules",
+      "summary": "List commission rules",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/catalogue/commission-rules",
+      "operationId": "CatalogueAdminController_createCommissionRule",
+      "summary": "Set a commission rate",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/catalogue/commission-rules/{id}/end",
+      "operationId": "CatalogueAdminController_endCommissionRule",
+      "summary": "Close a commission rule",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/catalogue/services",
+      "operationId": "CatalogueAdminController_createService",
+      "summary": "Create a bookable service",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/catalogue/services/{id}",
+      "operationId": "CatalogueAdminController_updateService",
+      "summary": "Update a bookable service",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/catalogue/services/{id}/checklist",
+      "operationId": "CatalogueAdminController_replaceChecklist",
+      "summary": "Replace a service's checklist",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/complaints",
+      "operationId": "ComplaintsController_queue",
+      "summary": "The complaint queue",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/complaints/{id}",
+      "operationId": "ComplaintsController_adminOne",
+      "summary": "Open a complaint",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/complaints/{id}/assign",
+      "operationId": "ComplaintsController_assign",
+      "summary": "Assign a complaint",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/complaints/{id}/open-dispute",
+      "operationId": "ComplaintsController_openDispute",
+      "summary": "Freeze the job’s money as a dispute",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/complaints/{id}/transition",
+      "operationId": "ComplaintsController_transition",
+      "summary": "Move a complaint along, or decide it",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/disputes",
+      "operationId": "DisputesController_list",
+      "summary": "The dispute queue",
+      "tags": [
+        "disputes"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/disputes/{id}",
+      "operationId": "DisputesController_one",
+      "summary": "Open a dispute: the evidence floor",
+      "tags": [
+        "disputes"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/disputes/{id}/resolve",
+      "operationId": "DisputesController_resolve",
+      "summary": "Rule on a dispute",
+      "tags": [
+        "disputes"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/notifications",
+      "operationId": "NotificationController_log",
+      "summary": "The notification delivery log",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/penalties",
+      "operationId": "ConductController_list",
+      "summary": "List penalties",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/penalties",
+      "operationId": "ConductController_propose",
+      "summary": "Propose a penalty",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/penalties/{id}",
+      "operationId": "ConductController_get",
+      "summary": "Read a penalty",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/penalties/{id}/apply",
+      "operationId": "ConductController_apply",
+      "summary": "Apply a penalty",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/penalties/{id}/withdraw",
+      "operationId": "ConductController_withdraw",
+      "summary": "Withdraw a proposed penalty",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/provider-services",
+      "operationId": "ProviderServicesAdminController_list",
+      "summary": "Review provider service offers",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/provider-services/{providerId}/{serviceId}/approve",
+      "operationId": "ProviderServicesAdminController_approve",
+      "summary": "Approve a provider's offer to provide a service",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/provider-services/{providerId}/{serviceId}/reject",
+      "operationId": "ProviderServicesAdminController_reject",
+      "summary": "Reject a provider's offer to provide a service",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/approve",
+      "operationId": "ProviderApprovalAdminController_approve",
+      "summary": "Approve a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/providers/{providerId}/ratings",
+      "operationId": "ReputationController_adminRatings",
+      "summary": "Review a provider’s ratings",
+      "tags": [
+        "reputation"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/reject",
+      "operationId": "ProviderApprovalAdminController_reject",
+      "summary": "Reject a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/remarks/{id}/unpublish",
+      "operationId": "ReputationController_unpublish",
+      "summary": "Unpublish an abusive remark",
+      "tags": [
+        "reputation"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/settings",
+      "operationId": "SettingsController_list",
+      "summary": "List all platform settings",
+      "tags": [
+        "settings"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/settings/{key}",
+      "operationId": "SettingsController_read",
+      "summary": "Read one setting's current value",
+      "tags": [
+        "settings"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/settings/{key}",
+      "operationId": "SettingsController_update",
+      "summary": "Change a setting's value",
+      "tags": [
+        "settings"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/templates",
+      "operationId": "NotificationController_listTemplates",
+      "summary": "List notification templates",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/templates",
+      "operationId": "NotificationController_createTemplate",
+      "summary": "Create a template",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/templates/{id}",
+      "operationId": "NotificationController_getTemplate",
+      "summary": "Read a template",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/templates/{id}",
+      "operationId": "NotificationController_updateTemplate",
+      "summary": "Edit a template",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/templates/preview",
+      "operationId": "NotificationController_preview",
+      "summary": "Preview a template",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent/queue",
+      "operationId": "VerificationController_list",
+      "summary": "See the verification queue",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent/queue/claim",
+      "operationId": "VerificationController_claim",
+      "summary": "Claim the next call",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent/verifications/{id}",
+      "operationId": "VerificationController_open",
+      "summary": "Open the console for a call you hold",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent/verifications/{id}/attempts",
+      "operationId": "VerificationController_attempts",
+      "summary": "List the call attempts so far",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent/verifications/{id}/attempts",
+      "operationId": "VerificationController_logAttempt",
+      "summary": "Log a call attempt",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent/verifications/{id}/call",
+      "operationId": "VerificationController_call",
+      "summary": "Call the customer",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent/verifications/{id}/release-lock",
+      "operationId": "VerificationController_releaseLock",
+      "summary": "Put a claimed call back",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent/verifications/{id}/submit",
+      "operationId": "VerificationController_submit",
+      "summary": "Submit the verification",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "operationId": "AuthController_login",
+      "summary": "Log in with a password",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "operationId": "AuthController_logout",
+      "summary": "Log out",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/me",
+      "operationId": "AuthController_me",
+      "summary": "Get your own profile",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/otp/request",
+      "operationId": "AuthController_requestOtp",
+      "summary": "Send a one-time verification code",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/otp/verify",
+      "operationId": "AuthController_verifyOtp",
+      "summary": "Verify a one-time code",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/password/forgot",
+      "operationId": "AuthController_forgot",
+      "summary": "Request a password reset code",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/password/reset",
+      "operationId": "AuthController_reset",
+      "summary": "Reset your password",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/refresh",
+      "operationId": "AuthController_refresh",
+      "summary": "Get a new access token",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "operationId": "AuthController_register",
+      "summary": "Sign up for a new account",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/totp",
+      "operationId": "AuthController_totpDisable",
+      "summary": "Turn off two-factor authentication",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/totp/setup",
+      "operationId": "AuthController_totpSetup",
+      "summary": "Start setting up two-factor authentication",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/totp/verify",
+      "operationId": "AuthController_totpVerify",
+      "summary": "Confirm and turn on two-factor authentication",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bookings",
+      "operationId": "BookingController_listMine",
+      "summary": "List my bookings",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings",
+      "operationId": "BookingController_create",
+      "summary": "Check out a booking",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}",
+      "operationId": "BookingController_getOne",
+      "summary": "Read one booking",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/accept",
+      "operationId": "BookingController_accept",
+      "summary": "Accept a booking request",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/cancel",
+      "operationId": "BookingController_cancel",
+      "summary": "Cancel a scheduled booking",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/cash-received",
+      "operationId": "BookingController_cashReceived",
+      "summary": "Confirm the customer paid cash",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/checklist/{itemId}",
+      "operationId": "BookingController_markChecklistItem",
+      "summary": "Mark a checklist item done",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/complete",
+      "operationId": "BookingController_complete",
+      "summary": "Mark the job complete",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/decline",
+      "operationId": "BookingController_decline",
+      "summary": "Decline a booking request",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/depart",
+      "operationId": "BookingController_depart",
+      "summary": "Mark yourself en route",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/evidence",
+      "operationId": "BookingController_listEvidence",
+      "summary": "List a booking’s photos",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/evidence",
+      "operationId": "BookingController_addEvidence",
+      "summary": "Upload a photo",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/invoice.pdf",
+      "operationId": "BookingController_invoicePdf",
+      "summary": "Download the invoice",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/messages",
+      "operationId": "MessageController_list",
+      "summary": "Read the booking chat",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/messages",
+      "operationId": "MessageController_send",
+      "summary": "Send a chat message",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/no-show",
+      "operationId": "BookingController_noShow",
+      "summary": "Report a no-show",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/reschedule",
+      "operationId": "BookingController_reschedule",
+      "summary": "Reschedule a booking",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/revisions",
+      "operationId": "BookingController_raiseRevision",
+      "summary": "Raise a revised quote for extra work",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/revisions/approve",
+      "operationId": "BookingController_approveRevision",
+      "summary": "Approve the pending revised quote",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/revisions/reject",
+      "operationId": "BookingController_rejectRevision",
+      "summary": "Reject the pending revised quote",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/start",
+      "operationId": "BookingController_start",
+      "summary": "Start the job with the customer’s code",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{id}/warranty-claim",
+      "operationId": "BookingController_warrantyClaim",
+      "summary": "Claim under warranty",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/checkout",
+      "operationId": "BookingController_checkout",
+      "summary": "Check out a booking (alias of POST /bookings)",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/quote",
+      "operationId": "BookingController_quote",
+      "summary": "Price a booking before committing to it",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/catalogue/categories",
+      "operationId": "CatalogueController_listCategories",
+      "summary": "Browse the service categories",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/catalogue/categories/{slug}/services",
+      "operationId": "CatalogueController_listServicesInCategory",
+      "summary": "Browse the services in a category",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/catalogue/services/{slug}",
+      "operationId": "CatalogueController_serviceDetail",
+      "summary": "Get one service, including its checklist",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/complaints",
+      "operationId": "ComplaintsController_mine",
+      "summary": "List my complaints",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/complaints",
+      "operationId": "ComplaintsController_create",
+      "summary": "Raise a complaint",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/complaints/{id}",
+      "operationId": "ComplaintsController_one",
+      "summary": "Read a complaint and its timeline",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/complaints/{id}/evidence",
+      "operationId": "ComplaintsController_evidence",
+      "summary": "Add a photo to a complaint",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/complaints/{id}/reply",
+      "operationId": "ComplaintsController_reply",
+      "summary": "Reply on a complaint",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/complaints/from-receipt",
+      "operationId": "ComplaintsController_fromReceipt",
+      "summary": "Report a problem from a receipt link",
+      "tags": [
+        "complaints"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/customer/addresses",
+      "operationId": "AddressesController_listMine",
+      "summary": "List my saved addresses",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/customer/addresses",
+      "operationId": "AddressesController_create",
+      "summary": "Save a new address",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/customer/addresses/{id}",
+      "operationId": "AddressesController_archive",
+      "summary": "Remove a saved address",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/customer/addresses/{id}",
+      "operationId": "AddressesController_update",
+      "summary": "Update a saved address",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dev/inbox",
+      "operationId": "DevController_inboxMessages",
+      "summary": "View messages the mock SMS/email/WhatsApp senders \"sent\"",
+      "tags": [
+        "development"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dev/payments/{paymentId}",
+      "operationId": "DevPaymentsController_page",
+      "summary": "Mock payment page (where the mock gateway redirects to)",
+      "tags": [
+        "development"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/dev/payments/{paymentId}/complete",
+      "operationId": "DevPaymentsController_complete",
+      "summary": "Complete a mock payment",
+      "tags": [
+        "development"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dev/storage/{bucket}/{key}",
+      "operationId": "DevController_storageObject",
+      "summary": "Download a file from the mock file storage",
+      "tags": [
+        "development"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/cash-reconciliation",
+      "operationId": "FinanceController_cash",
+      "summary": "Reconcile cash jobs",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/debts",
+      "operationId": "FinanceController_debts",
+      "summary": "List commission debts",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/escrow",
+      "operationId": "FinanceController_escrow",
+      "summary": "See the money held in escrow",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/ledger",
+      "operationId": "FinanceController_ledger",
+      "summary": "Explore the ledger",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/payout-batches",
+      "operationId": "FinanceController_batches",
+      "summary": "List payout batches",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/payout-batches",
+      "operationId": "FinanceController_createBatch",
+      "summary": "Create a payout batch",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/payout-batches/{id}/export.csv",
+      "operationId": "FinanceController_exportCsv",
+      "summary": "Download the bank file",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/payout-batches/{id}/mark-paid",
+      "operationId": "FinanceController_markPaid",
+      "summary": "Record the bank’s result for a batch",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/payout-batches/{id}/statements/{providerId}",
+      "operationId": "FinanceController_statement",
+      "summary": "A provider’s statement for a batch",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/payouts",
+      "operationId": "FinanceController_payoutList",
+      "summary": "List payout requests",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/payouts/{id}/approve",
+      "operationId": "FinanceController_approve",
+      "summary": "Approve a payout",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/reconciliation/run",
+      "operationId": "FinanceController_reconcile",
+      "summary": "Run the ledger reconciliation now",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/recordings/{attemptId}",
+      "operationId": "RecordingController_play",
+      "summary": "Play a call recording",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/refunds",
+      "operationId": "FinanceController_refunds",
+      "summary": "List refunds",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/refunds",
+      "operationId": "FinanceController_refund",
+      "summary": "Refund a disputed booking by hand",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/notifications",
+      "operationId": "NotificationController_own",
+      "summary": "My notification centre",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/{id}/read",
+      "operationId": "NotificationController_read",
+      "summary": "Mark one notification read",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/read-all",
+      "operationId": "NotificationController_readAll",
+      "summary": "Mark all my notifications read",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/places/cities",
+      "operationId": "PlacesController_listCities",
+      "summary": "List the cities the platform operates in",
+      "tags": [
+        "places"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/places/cities/{cityId}/areas",
+      "operationId": "PlacesController_listAreas",
+      "summary": "List the areas within a city",
+      "tags": [
+        "places"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/availability",
+      "operationId": "ProviderController_getAvailability",
+      "summary": "Read my weekly availability calendar",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/provider/availability",
+      "operationId": "ProviderController_replaceAvailability",
+      "summary": "Replace my weekly availability calendar",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/conduct",
+      "operationId": "ConductController_record",
+      "summary": "See my conduct record",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/debt/pay",
+      "operationId": "ProviderMoneyController_payDebt",
+      "summary": "Pay commission debt online",
+      "tags": [
+        "payment"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/disputes",
+      "operationId": "DisputesController_mine",
+      "summary": "See my disputes",
+      "tags": [
+        "disputes"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/disputes/{id}",
+      "operationId": "DisputesController_oneMine",
+      "summary": "Read a dispute on my job",
+      "tags": [
+        "disputes"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/disputes/{id}/reply",
+      "operationId": "DisputesController_reply",
+      "summary": "Reply to a dispute",
+      "tags": [
+        "disputes"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/earnings",
+      "operationId": "ProviderPayoutsController_earnings",
+      "summary": "See my earnings",
+      "tags": [
+        "payment"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/offers",
+      "operationId": "ProviderOffersController_list",
+      "summary": "List the jobs currently offered to me",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/offers/{id}/accept",
+      "operationId": "ProviderOffersController_accept",
+      "summary": "Accept an offered job",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/offers/{id}/decline",
+      "operationId": "ProviderOffersController_decline",
+      "summary": "Decline an offered job",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/payout-accounts",
+      "operationId": "ProviderPayoutsController_accounts",
+      "summary": "List my payout accounts",
+      "tags": [
+        "payment"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/payout-accounts",
+      "operationId": "ProviderPayoutsController_addAccount",
+      "summary": "Add a payout account",
+      "tags": [
+        "payment"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/payouts",
+      "operationId": "ProviderPayoutsController_list",
+      "summary": "List my payouts",
+      "tags": [
+        "payment"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/payouts",
+      "operationId": "ProviderPayoutsController_request",
+      "summary": "Request a payout",
+      "tags": [
+        "payment"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/penalties",
+      "operationId": "ConductController_mine",
+      "summary": "See my penalties",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/penalties/{id}",
+      "operationId": "ConductController_one",
+      "summary": "Read one of my penalties",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/penalties/{id}/appeal",
+      "operationId": "ConductController_appeal",
+      "summary": "Appeal an applied penalty",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/penalties/{id}/reply",
+      "operationId": "ConductController_reply",
+      "summary": "Reply to a proposed penalty",
+      "tags": [
+        "conduct"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/profile",
+      "operationId": "ProviderController_getProfile",
+      "summary": "Read my provider profile",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/provider/profile",
+      "operationId": "ProviderController_updateProfile",
+      "summary": "Update my provider profile",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/ratings",
+      "operationId": "ReputationController_own",
+      "summary": "See the ratings I received",
+      "tags": [
+        "reputation"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/remarks/{id}/reply",
+      "operationId": "ReputationController_reply",
+      "summary": "Reply to a remark",
+      "tags": [
+        "reputation"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/service-areas",
+      "operationId": "ProviderController_getServiceAreas",
+      "summary": "List the areas I serve",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/provider/service-areas",
+      "operationId": "ProviderController_replaceServiceAreas",
+      "summary": "Replace the areas I serve",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/services",
+      "operationId": "ProviderServicesController_listMine",
+      "summary": "List the services I offer",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/provider/services/{serviceId}",
+      "operationId": "ProviderServicesController_removeMine",
+      "summary": "Stop offering a service",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/provider/services/{serviceId}",
+      "operationId": "ProviderServicesController_upsertMine",
+      "summary": "Offer a service at your price",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/time-off",
+      "operationId": "ProviderController_listTimeOff",
+      "summary": "List my recorded leave periods",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/time-off",
+      "operationId": "ProviderController_createTimeOff",
+      "summary": "Record a leave period",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/provider/time-off/{id}",
+      "operationId": "ProviderController_cancelTimeOff",
+      "summary": "Cancel a leave period",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/wallet",
+      "operationId": "ProviderMoneyController_wallet",
+      "summary": "See my wallet and commission debt",
+      "tags": [
+        "payment"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/search/providers",
+      "operationId": "SearchController_searchProviders",
+      "summary": "Find providers who offer a service near a point",
+      "tags": [
+        "search"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/search/providers/{providerId}",
+      "operationId": "SearchController_providerDetail",
+      "summary": "Get a provider’s full public profile",
+      "tags": [
+        "search"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/search/providers/{providerId}/remarks",
+      "operationId": "ReputationController_remarks",
+      "summary": "A provider’s published remarks",
+      "tags": [
+        "reputation"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/search/providers/{providerId}/reputation",
+      "operationId": "ReputationController_publicReputation",
+      "summary": "A provider’s public reputation",
+      "tags": [
+        "reputation"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/search/providers/{providerId}/slots",
+      "operationId": "SearchController_slots",
+      "summary": "List the times a provider can be booked on a day",
+      "tags": [
+        "search"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/v/{token}",
+      "operationId": "VerificationLinkController_describe",
+      "summary": "Open a verification link (customer)",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/v/{token}",
+      "operationId": "VerificationLinkController_respond",
+      "summary": "Answer a verification link (customer)",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/webhooks/payments/{provider}",
+      "operationId": "PaymentWebhookController_receive",
+      "summary": "Payment provider webhook (not for direct use)",
+      "tags": [
+        "webhooks"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/webhooks/sms/{provider}",
+      "operationId": "NotificationController_receipt",
+      "summary": "SMS delivery receipt (not for direct use)",
+      "tags": [
+        "notifications"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/health/live",
+      "operationId": "HealthController_live",
+      "summary": "Is the server process running?",
+      "tags": [
+        "health"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/health/queues",
+      "operationId": "HealthController_queueDepths",
+      "summary": "How many jobs are waiting in each background queue",
+      "tags": [
+        "health"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/health/ready",
+      "operationId": "HealthController_ready",
+      "summary": "Is the API fully ready to handle requests?",
+      "tags": [
+        "health"
+      ]
+    }
+  ]
+}

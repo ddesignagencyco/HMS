@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "types": ["node"],
+    "lib": ["ES2022"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["eslint.config.js", "prettier.config.js", "vitest.config.ts", "test/**/*.ts", "fixtures/**/*.ts"]
+}
