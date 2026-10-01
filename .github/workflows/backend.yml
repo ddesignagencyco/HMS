@@ -74,6 +74,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: generate the database client (it is not committed)
+        run: npm run db:generate --workspace @smart-home/db
+      - name: build the workspace packages (their dist/ is not committed)
+        run: npm run build
       - run: npm run db:reset
       - run: npm run test:integration
 

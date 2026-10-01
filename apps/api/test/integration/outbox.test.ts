@@ -4,7 +4,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { EnvironmentService } from '../../src/config/environment.service.js';
 import { OutboxDispatcher } from '../../src/platform/outbox.dispatcher.js';
 import { PrismaService } from '../../src/database/prisma.service.js';
-import { QueueRegistry } from '../../src/queues/queue.registry.js';
+import { QueueRegistry, QUEUE_NAMES } from '../../src/queues/queue.registry.js';
 import { outboxQueueFor } from '../../src/platform/audit.service.js';
 import { createTestApp } from './harness.js';
 
@@ -29,6 +29,13 @@ beforeAll(async () => {
   // `poll()` explicitly and counts what it enqueued, so an ambient sweep steals
   // rows from the tally and makes the run depend on wall-clock timing.
   app.get(OutboxDispatcher).stop();
+  // The dispatcher names each job `outbox-<id>` from the outbox_events sequence,
+  // BullMQ keeps completed jobs (removeOnComplete: 1000) and deduplicates on that
+  // name, while `db:reset` restarts the sequence at 1. On a Redis that outlived an
+  // earlier run, a row seeded here can therefore collide with a stale job and this
+  // file would assert against the previous run's eventType. Purging first makes the
+  // file independent of whatever Redis happened to hold.
+  await Promise.all(QUEUE_NAMES.map(name => registry.queue(name).obliterate({ force: true })));
 });
 
 afterAll(async () => {
