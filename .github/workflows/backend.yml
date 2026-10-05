@@ -3,7 +3,7 @@ name: backend
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev, backend-dev]
 
 concurrency:
   group: backend-${{ github.ref }}
