@@ -1,4 +1,4 @@
-# Backend handoff — implemented modules
+﻿# Backend handoff — implemented modules
 
 Raised by the frontend team while wiring `apps/web` to the live API.
 Last updated: 2026-10-03 · API commit `08bf442` · Verified against local dev
@@ -18,7 +18,10 @@ Last updated: 2026-10-03 · API commit `08bf442` · Verified against local dev
   - [1.3 S2 — `refreshSchema` / `logoutSchema` unreachable](#13-s2--refreshschema--logoutschema-are-unreachable)
   - [1.4 S3 — Unknown identifiers escape the login throttle](#14-s3--unknown-identifiers-are-not-subject-to-the-login-throttle)
   - [1.5 Questions, not defects](#15-questions-not-defects)
-  - [1.6 Verified working](#16-verified-working--no-action-needed)
+  - [1.6 S3 — Grace period for the previous refresh token](#16-s3--consider-a-grace-period-for-the-previous-refresh-token)
+  - [1.7 S1 — Social authentication is absent](#17-s1--social-authentication-is-absent)
+  - [1.8 Verified working — no action needed](#18-verified-working--no-action-needed)
+  - [1.9 S1 — Confirm the refresh cookie survives the proxy](#19-s1--please-confirm-the-refresh-cookie-survives-the-proxy-a-real-sign-in-that-reads-as-signed-out)
 - [Module 2 — Search, Catalogue & Public](#module-2--search-catalogue--public)
   - [2.1 Verified contracts](#21-verified-contracts)
   - [2.2 S1 — `areas.centroid` not selected](#22-s1--areascentroid-not-selected)
@@ -28,11 +31,21 @@ Last updated: 2026-10-03 · API commit `08bf442` · Verified against local dev
   - [2.6 S2 — Unknown service slug is a 404](#26-s2--unknown-service-slug-is-a-404)
   - [2.7 Correct by design — do not "fix"](#27-correct-by-design--do-not-fix)
   - [2.8 Not a backend gap — the booking hand-off](#28-not-a-backend-gap--the-booking-hand-off)
-- [Module 3 — Notifications](#module-3--notifications)
+- [Module 3 — Booking](#module-3--booking)
+  - [3.1 S2 — `GET /bookings` publishes no readable names](#31-s2--get-bookings-publishes-no-readable-names)
+  - [3.2 S2 — The `status` filter omits most of the enum](#32-s2--the-status-filter-omits-most-of-the-enum)
+  - [3.3 S2 — `POST /bookings/:id/quote` does not exist](#33-s2--post-bookingsidquote-does-not-exist)
+  - [3.4 S2 — FR-BK-06 cancellation fee is not applied](#34-s2--fr-bk-06-cancellation-fee-is-not-applied)
+  - [3.5 S2 — Auto-assign cannot show availability before a taker exists](#35-s2--auto-assign-cannot-show-availability-before-a-taker-exists)
+  - [3.6 S3 — No endpoint returns a booking's invoice line items](#36-s3--no-endpoint-returns-a-bookings-invoice-line-items)
+  - [3.7 S2 — The payment return URL is fixed, locale-less, and names no route](#37-s2--the-payment-return-url-is-fixed-locale-less-and-names-no-route)
+  - [3.8 S3 — `addressCreateSchema` requires a point nobody can supply](#38-s3--addresscreateschema-requires-a-point-nobody-can-supply)
+  - [3.9 Verified working — no action needed](#39-verified-working--no-action-needed)
+- [Module 4 — Notifications](#module-4--notifications)
   - [3.1 SMS gateway routing and failover](#31-sms-gateway-routing-and-failover)
   - [3.2 Localized notification templates](#32-localized-notification-templates)
-- [Module 4 — Verification & onboarding](#module-4--verification--onboarding)
-  - [4.1 Provider document upload trigger](#41-provider-document-upload-trigger)
+- [Module 5 — Verification & onboarding](#module-5--verification--onboarding)
+  - [5.1 Provider document upload trigger](#51-provider-document-upload-trigger)
 - [What breaks in the frontend when each fix lands](#what-breaks-in-the-frontend-when-each-fix-lands)
 - [Priority order](#priority-order-for-the-backend-team)
 
@@ -228,8 +241,80 @@ permanently.** The web app serialises refresh into a single in-flight operation
 with a short reuse window and remembers a *refused* refresh for the life of the
 document; there are tests pinning all three behaviours
 (`apps/web/src/lib/api/client.test.ts`). If that constraint is ever to be
-relaxed, please tell us rather than changing it silently — every browser client
+relaxed, please tell us rather than changing it silently - every browser client
 has it.
+
+## 1.9 S1 - Please confirm the refresh cookie survives the proxy: a real sign-in that reads as signed out
+
+**Reported from the running app, not from reading the code.** Symptom: a staff
+account signs in successfully, lands in the workspace, and the site chrome keeps
+offering **Sign in** - including after a full browser reload, when the only thing
+that can possibly tell the frontend who this is, is the refresh cookie.
+
+**Why this lands on the backend team and not the frontend.** The access token is
+held in a module variable in the browser (`apps/web/src/lib/api/access-token.ts`)
+and is gone on reload by design. `GET /auth/me` is therefore the *only* source of
+truth after a reload, and the app can only reach a session through
+`POST /auth/refresh` carrying the httpOnly `shm_rt` cookie. If any of the
+following is true, the frontend has no way to distinguish "signed in" from
+"signed out" and will render the signed-out chrome no matter how it is written:
+
+1. the signing-in response does not carry `Set-Cookie: shm_rt`, or carries it with
+   a `Path`/`Domain`/`SameSite` the browser will not replay to `/api/v1/auth/*`;
+2. the rewrite in `apps/web/next.config.ts` (`/api/v1/:path*` to the API process)
+   strips or rewrites `Set-Cookie` on the way back;
+3. `POST /auth/refresh` rotates the cookie but does not send the replacement, so
+   the second navigation in a session finds nothing;
+4. `GET /auth/me` answers `401` for a request that carries a valid, unexpired
+   refresh cookie.
+
+**How to settle it in under a minute** (against the web origin, so the rewrite
+and the cookie are both in play):
+
+```bash
+# 1. sign in, keep the cookie jar
+curl -i -c jar.txt -X POST http://localhost:3001/api/v1/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"identifier":"<staff>","password":"<password>","totpCode":"123456"}'
+
+# 2. the header must exist in the jar, with Path=/api/v1/auth
+grep shm_rt jar.txt
+
+# 3. a brand new document: no bearer token, cookie only
+curl -i -b jar.txt http://localhost:3001/api/v1/auth/me      # must be 200
+
+# 4. and it must still work after one rotation
+curl -i -c jar.txt -b jar.txt -X POST http://localhost:3001/api/v1/auth/refresh
+curl -i -b jar.txt http://localhost:3001/api/v1/auth/me      # must still be 200
+```
+
+If step 2 shows a cookie that is not replayed, or steps 3 or 4 answer `401`, the
+fix belongs here. Our own §1.8 table was produced with a signed-in bearer token
+for `/auth/me`, so it would not have caught any of the four cases above - which is
+why this is filed rather than assumed correct.
+
+**What the frontend changed anyway, and what it is not.** Two changes were made so
+the site no longer *asserts* the wrong thing:
+
+- the header renders a neutral placeholder while `/auth/me` is in flight instead
+  of a Sign in link, so the state a signed-in person used to see on every full
+  page load is no longer shown;
+- the session query revalidates when the tab regains focus, so a session that
+  ended or began in another tab is picked up rather than cached for a minute.
+
+Neither of those is a fix. If `GET /auth/me` cannot answer from the cookie alone,
+the correct outcome is that the API is fixed; please say which of the four cases
+above you find.
+
+### Not a backend gap, but worth stating
+
+The two-factor enrolment screen (`/en/auth/totp`) is the tallest card in the
+authentication set and was being clipped with `overflow: hidden` on short desktop
+windows, with the confirm button off the bottom and unreachable. That was purely
+a layout defect and is fixed in `apps/web` - no API change. The only TOTP item
+still open against the API is §1.5 question 2: `POST /auth/totp/setup` is
+`@Authenticated()` with no role restriction, so a `CUSTOMER` can enrol a code that
+is then never asked for.
 
 ---
 
@@ -425,7 +510,312 @@ on screen that the professional and time are chosen inside the booking flow.
 
 ---
 
-# Module 3 — Notifications
+# Module 3 — Booking
+
+Wired by the frontend. `POST /bookings/quote`, `POST /bookings`, `GET /bookings`,
+`GET /bookings/:id`, `/cancel`, `/reschedule`, `/revisions/approve`, `/revisions/reject`,
+`/warranty-claim`, `/no-show`, `/evidence` and `/messages` are all called, plus
+`GET`/`POST /customer/addresses` as a booking dependency.
+
+**The module works.** The items below are gaps in what the API *publishes* or
+contradictions between the docs and the code — not reasons the feature is blocked.
+Two of them (§3.4, §3.5) the frontend has worked around in a way you should know
+about, because in both cases the workaround is visible to a customer.
+
+## 3.1 S2 — `GET /bookings` publishes no readable names
+
+**File:** `apps/api/src/booking/booking.row.ts:40` — `BOOKING_COLUMNS`
+
+```sql
+id, code, customer_id, provider_id, service_id, address_id, status, payment_mode,
+scheduled_start, scheduled_end, problem_text, quoted_amount_paisa,
+approved_total_paisa, final_amount_paisa, discount_paisa, payment_status,
+is_emergency, is_auto_assign, completed_at, verification_tier, reschedule_count,
+no_show_party, cancel_reason, start_otp_verified_at, created_at, updated_at
+```
+
+Ids and money. **No service name, no provider name, no address text.** Every
+identifier the customer would recognise is missing.
+
+**Consequence.** A booking list cannot show "Leak repair" from its own response.
+The frontend joins `serviceId` against `GET /catalogue/categories/:slug/services`
+— a real fan-out across the published categories, because there is no all-services
+endpoint — and shows an honest placeholder for any service the catalogue no longer
+publishes. On the **detail** page there is no way to show the address at all: the
+customer cannot see where they asked someone to go.
+
+**Fix — add to `BOOKING_COLUMNS`:**
+
+```sql
+s.name_en as "serviceName", s.name_ur as "serviceNameUr", s.slug as "serviceSlug",
+p.qualification as "providerQualification",
+a.label as "addressLabel", a.line1 as "addressLine1", a.line2 as "addressLine2",
+ar.name as "areaName"
+  … FROM bookings b
+  LEFT JOIN services s ON s.id = b.service_id
+  LEFT JOIN providers p ON p.user_id = b.provider_id
+  LEFT JOIN addresses a ON a.id = b.address_id
+  LEFT JOIN areas ar ON ar.id = a.area_id
+```
+
+Names rather than ids is the point: the public search contract deliberately omits
+`users.first_name` (§2.2 of the module-2 notes), so `qualification` keeps this
+consistent with what the rest of the product may show.
+
+## 3.2 S2 — The `status` filter omits most of the enum
+
+**File:** `apps/api/src/booking/booking.schemas.ts:84`
+
+```ts
+status: z.enum(['REQUESTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION',
+  'WORK_COMPLETED','UNFULFILLED','CANCELLED_CUSTOMER','CANCELLED_PROVIDER','NO_SHOW']).optional()
+```
+
+Ten values. `booking_status` in the Prisma schema has **twenty-two**. So
+`GET /bookings?status=VERIFIED` — a booking that demonstrably exists, since
+`GET /bookings/:id` returns it — is a **422**.
+
+The frontend works around this by offering only filters drawn from that list, so
+a customer cannot ask for "verified jobs" or "refunded jobs". On a busy account
+those are exactly the ones people want.
+
+**Fix:** derive the enum from the database rather than restating it, e.g.
+`z.enum(BOOKING_STATUS_VALUES)` with a test asserting the two stay equal. The
+same enum also appears in `packages/domain/src/bookingTransitions.ts` as
+`BookingStatus`, which is already complete.
+
+## 3.3 S2 — `POST /bookings/:id/quote` does not exist
+
+`docs/integrated.md` listed `POST /bookings/:id/quote` against the provider job
+page, so the frontend team went looking for it. **`BookingController` has no such
+route.** The nearest things are:
+
+| What you probably meant | Route |
+|---|---|
+| the provider proposing extra work | `POST /bookings/:id/revisions` |
+| the customer answering it | `POST /bookings/:id/revisions/approve` · `/reject` |
+| pricing a booking before committing | `POST /bookings/quote` |
+
+**Action:** correct the module-5 table. No code change needed — the frontend
+builds against the controller, not the document, so nothing is blocked.
+
+## 3.4 S2 — FR-BK-06 cancellation fee is not applied
+
+**File:** `apps/api/src/booking/booking.controller.ts:252`
+
+> "The cancellation-fee rules (FR-BK-06) are not applied here yet — there is no
+> ledger to post a fee to until M8 exists; this only records the cancellation and
+> the optional reason."
+
+That is accurate and the controller says so plainly. It is raised here because
+**the requirement is user-visible and the API gives a customer no way to learn
+it.** `booking.free_cancel_hours` and `booking.late_cancel_fee_paisa` exist as
+settings, and `PricingService.cancellationPolicy()` renders them into a sentence
+— but only on `POST /bookings/quote`. After a booking exists there is no endpoint
+that returns the policy, and `cancelReason` is free text, so a cancellation record
+does not say whether a fee was due.
+
+**What the frontend does, and you should check you agree with it:** the cancel
+card says *"No cancellation fee is charged — the platform does not apply one yet,
+so we will not quote you a figure that is never collected."* No fee is shown
+anywhere. If that is wrong, the fix is server-side and the copy has to change with
+it.
+
+**Confirmed live, and it is worse than "not implemented".** The two halves of the
+feature disagree with each other:
+
+```
+POST /bookings/quote   →  cancellationPolicy:
+   "Free cancellation up to 4 hours before your slot.
+    After that a cancellation fee of PKR 500.00 applies. …"
+
+POST /bookings/:id/cancel  →  200, status CANCELLED_CUSTOMER, no fee
+POST /bookings/quote (again)  →  outstandingReceivablePaisa: 0
+SELECT count(*) FROM ledger_entries  →  0
+```
+
+A customer is **promised** a Rs 500 fee in the quote they confirm against, and is
+then not charged it. `PricingService.cancellationPolicy()` builds that sentence
+from `booking.free_cancel_hours` and `booking.late_cancel_fee_paisa` without
+knowing whether the fee is enforced anywhere.
+
+The frontend's wording is the honest one, but it now **contradicts a sentence the
+customer has already read**. That is a support burden and a trust problem, not
+just a missing feature.
+
+**Fix — the smallest correct change:**
+
+1. Either apply the fee in `apply(id, 'cancel', …)` and post it to the ledger, or
+2. stop promising it: have `cancellationPolicy()` reflect the rules that actually
+   run, so the quote and the cancellation agree.
+
+If (2), `cancellationPolicy` should be built from a single source that the cancel
+path also consults, so the two cannot drift again.
+
+**Then, separately:** return `cancellationPolicy` and any `cancellationFeePaisa`
+from `GET /bookings/:id`, so the detail page can state the rule for *this* booking
+at the moment the customer is deciding — rather than only during checkout.
+
+## 3.5 S2 — Auto-assign cannot show availability before a taker exists
+
+`POST /bookings` treats a missing `providerId` as auto-assign (FR-SR-07), and
+`offer.service.ts` fixes `provider_id` only when somebody accepts. But
+availability is only readable through `/search/providers/:providerId/slots`, which
+needs a provider.
+
+**So for an auto-assigned booking there is no honest way to show a free slot**, and
+`POST /bookings` still requires `scheduledStart` and `scheduledEnd`. The customer
+picks a preferred window and the platform offers the job to ranked professionals
+in turn; `assertWindowIsBookable` is skipped for `providerId === undefined`, so the
+requested time is not validated against anybody's calendar until a provider accepts
+— and if that provider is busy then, the acceptance fails.
+
+**What the frontend does:** on the auto-assign path it shows **requested** windows
+labelled as requested, with the sentence *"These are the times we can offer. None
+is held until a professional accepts your request."* It never renders a slot as
+confirmed. On the chosen-professional path it uses `/slots` as normal.
+
+**Ask:** should an auto-assign booking show times at all, or should the flow ask
+for a date and a window and confirm the exact start on acceptance? The copy above
+assumes the latter is acceptable.
+
+**Fix, if you want the former:** an availability endpoint that does not name a
+provider — e.g. `GET /bookings/availability?serviceId=&date=` returning the union
+of free windows across eligible providers.
+
+## 3.6 S3 — No endpoint returns a booking's invoice line items
+
+`create()` writes `booking_items` from the quote's `lines` (§3.1 of the pricing
+code) and `complete()` generates an itemised invoice, but **no route reads them
+back**. The only way to see what a booking was priced for is
+`GET /bookings/:id/invoice.pdf`, which 404s until the job is completed.
+
+**Consequence.** The booking detail page shows `quotedAmountPaisa`,
+`approvedTotalPaisa`, `discountPaisa` and `finalAmountPaisa` — four numbers — and
+cannot show what they are *for*. The line-item breakdown exists in the customer's
+own confirmation screen only because the frontend kept the `POST /bookings/quote`
+response in component state for that one render.
+
+**Fix:** return the items on `GET /bookings/:id`, e.g.
+`{ …booking, items: [{ kind, description, quantity, unitPricePaisa, amountPaisa }] }`.
+The rows already exist.
+
+## 3.7 S2 — The payment return URL is fixed, locale-less, and names no route
+
+**File:** `apps/api/src/booking/booking.service.ts:134`
+
+```ts
+const payment = await this.payments.startCheckout(
+  created.paymentId, { userId: customerId }, `/checkout/return?bookingId=${booking.id}`);
+```
+
+Three problems, all confirmed live:
+
+```
+POST /bookings (ONLINE) → 201
+  payment.redirectUrl = /api/v1/dev/payments/<id>?returnUrl=%2Fcheckout%2Freturn%3FbookingId%3D<uuid>
+```
+
+1. **The `returnUrl` is hardcoded, so it cannot match the frontend's routing.**
+   Every other path in this app is locale-prefixed (`/[locale]/…`) and
+   `src/proxy.ts` rewrites a locale-less path to `/en`. Before the frontend added
+   `app/[locale]/checkout/return`, this URL was a **404** — an online customer who
+   paid landed on nothing at all. The route now exists, so the ONLINE flow
+   completes.
+2. **A locale-less URL means a locale-less return.** A customer who paid in Urdu
+   comes back in English, because `/checkout/return` carries no `locale` and the
+   proxy defaults it to `/en`. The locale is not recoverable from the URL as the
+   API builds it. The frontend remembers the locale across the redirect, so this
+   is cosmetic — but only because the frontend works around it.
+3. **`GET /bookings/:id` is the only way to know the payment worked.** The return
+   page cannot observe the gateway's webhook, so it must not announce success; it
+   forwards to the booking, which re-reads the real status.
+
+**Ask:** make the return URL absolute and configurable, and locale-aware, e.g.
+`checkouUrl: { returnUrl, cancelUrl }` returned in the create response rather than
+hardcoded server-side. That also lets a deployment point at the right origin
+instead of assuming a relative path.
+
+**Also worth knowing (not a defect):** an online booking is `PENDING_PAYMENT` with
+`paymentStatus: "PENDING"` until the webhook lands. A `201` from `POST /bookings`
+means *held*, not *booked*, and the frontend says exactly that on the confirmation
+screen. Verified: `status=PENDING_PAYMENT`, `paymentStatus=PENDING`, `redirectUrl`
+present.
+
+## 3.8 S3 — `addressCreateSchema` requires a point nobody can supply
+
+**File:** `apps/api/src/customer/customer.schemas.ts:8`
+
+`lat` and `lng` are **required** on create, and there is no geocoding endpoint.
+Meanwhile `areas.centroid` exists in the database and is not selected by the
+places API (§2.2), so an area cannot become a point either.
+
+**What the frontend does:** the inline address form offers exactly two sources,
+both labelled on screen — the browser's own geolocation, or the city-centre
+approximation already used by provider search. The copy says plainly: *"There is
+no address lookup on the platform yet… we will not claim either one is your exact
+address."* A customer in a new area therefore cannot enter a precise address at
+all, and the professional list is searched around an approximate point.
+
+**This is the same root cause as §2.2.** Selecting `areas.centroid` fixes both.
+
+## 3.9 Verified working — no action needed
+
+Confirmed against the running API through the web app's own origin.
+
+**All of the following was executed, not inferred**, against the seeded database
+with `customer@smart-home.local`. The seeded fixtures are: 6 active categories,
+16 services, 24 areas, 1 city (Lahore), 1 approved professional
+(`00000000-0000-4000-8000-000000000098`), and 1 saved address ("Home", Gulberg,
+`31.5204, 74.3587`).
+
+| Behaviour | Result |
+|---|---|
+| login as the seeded customer | 200, roles `[CUSTOMER]`, `totpRequired: false` |
+| quote, no provider (auto-assign) | 200, `totalPaisa: 250000` — the **service base price** |
+| quote, chosen provider | 200, `quotedAmountPaisa: 100000` — **that professional's rate**, not the catalogue's `250000` |
+| `GET /customer/addresses` | 200, 1 item, and it carries a real `lat`/`lng` |
+| `GET /places/cities/:id/areas` | 200, 24 items, **no `lat`/`lng`** — §2.2 confirmed again |
+| `GET /search/providers` | 200, 1 result, `ratingScore: 3.5` with `ratingCount: 0` — §2.3 confirmed again |
+| `GET …/slots?serviceId=1&date=2026-10-06` | 200, 45 slots, `durationMin: 90`; the first start is `2026-10-05T19:00Z` for local date **the 6th** — the Asia/Karachi day boundary |
+| create, CASH, chosen provider | 201, `code: SHM-0000001`, `status: REQUESTED`, **no `payment`** |
+| create, ONLINE, chosen provider | 201, `status: PENDING_PAYMENT`, `paymentStatus: PENDING`, `redirectUrl` present |
+| create, auto-assign | 201, `isAutoAssign: true`, `providerId: null`, `quotedAmountPaisa: 250000` (base) |
+| create, **the same slot again** | **409 `SLOT_TAKEN`** — "That provider is no longer free at this time" |
+| create, unknown `addressId` | 404 `Address was not found` |
+| create, `scheduledStart` in the past | 400 "The booking must start in the future" |
+| create, one unrecognised body key | 422 `VALIDATION_FAILED` — `.strict()` confirmed |
+| reschedule from `REQUESTED` | 409 `ILLEGAL_TRANSITION` "Cannot reschedule a booking in status REQUESTED" |
+| cancel with body `{}` | 200, `CANCELLED_CUSTOMER` — the empty-body case is accepted |
+| quote, emergency on an ineligible service | 400 "This service is not available as an emergency booking" |
+| quote, unknown coupon | 400 "That coupon code is not valid" — reported, never a silent zero |
+| `GET /bookings` | 200, `{items:[…]}`, everything in one response, no paging |
+| `GET /bookings?status=SCHEDULED` | 200 |
+| **`GET /bookings?status=VERIFIED`** | **422 `VALIDATION_FAILED`** — §3.2 confirmed |
+| `GET /bookings/:id` not yours | 404 "Booking was not found" — identical to a booking that does not exist |
+| `GET /bookings/:id` malformed uuid | 400 "uuid is expected" |
+| `GET /bookings/:id/messages` at `REQUESTED` | 200, **`open: false`** — the chat is shut before a professional accepts, exactly as `canMessage` assumes |
+| `GET /bookings/:id` row keys | the 27 columns of `BOOKING_COLUMNS`, matching the frontend type field for field; `finalAmountPaisa` is `null`, not `0` |
+| cancel, then re-quote | `outstandingReceivablePaisa: 0`, `ledger_entries: 0` — **no fee charged**, see §3.4 |
+
+### Client obligations these depend on
+
+- **No local pricing.** The review step renders `POST /bookings/quote` verbatim.
+  If quote and create ever diverge, the cause is server-side.
+- **`providerId` is omitted, never sent as null or `""`.** Its absence is the only
+  signal for auto-assign; anything else is a 422 or a job assigned to a
+  professional who never agreed to it.
+- **The quote is a mutation, not a cached query.** It is priced against the
+  signed-in customer's outstanding balance, so a remembered quote is a quote for a
+  basket that no longer exists.
+- **The chat is never served from cache.** Reading it marks the other side's
+  messages as read.
+- **`getOwned` 404 is rendered as "not found".** The page never says a booking
+  exists but belongs to somebody else.
+
+---
+
+# Module 5 — Notifications
 
 The frontend has no visibility into delivery, so these are requirements carried
 forward from the authentication phase rather than defects found against live
@@ -443,7 +833,7 @@ Registration and OTP login both use Pakistani numbers (`+92 3XX XXXXXXX`).
   turns an email OTP into a 500 (§1.1).
 - Fall back to **WhatsApp Business** when SMS has not delivered within ~30 s.
 
-## 3.2 Localized notification templates
+## 5.2 Localized notification templates
 
 - Transactional messages must honour the user's `locale` (`en` / `ur`).
 - Localised strings are required at minimum for: OTP verification, password-reset
@@ -451,9 +841,9 @@ Registration and OTP login both use Pakistani numbers (`+92 3XX XXXXXXX`).
 
 ---
 
-# Module 4 — Verification & onboarding
+# Module 6 — Verification & onboarding
 
-## 4.1 Provider document upload trigger
+## 6.1 Provider document upload trigger
 
 - Registering with `role: "PROVIDER"` provisions the account with
   `requiresOtp: true`.
@@ -482,6 +872,13 @@ frontend has already prepared for, or must be told about.
 | **§1.1** fixes email OTP | No frontend change. The inline error it produces today simply stops appearing. |
 | **§1.6** adds a refresh grace period | None required, but `api-client.test.ts`'s "collapses simultaneous 401s onto a single refresh" becomes belt-and-braces rather than essential. Relaxing single-flight client-side before the server does would sign users out. |
 | **§2.5** adds `GET /auth/session` | `session.tsx` can skip `/auth/me` on public pages; the `me` query moves behind a check. |
+| **§3.1** adds names to `BOOKING_COLUMNS` | `Booking` in `features/booking/api.ts` gains the fields; **`service-names.ts` and its catalogue fan-out can be deleted entirely**, which also removes `1 + N` requests from the bookings list and the detail page. Then re-run `booking-contract.test.ts` — its "carries exactly the fields `BOOKING_COLUMNS` selects" assertion is written to fail loudly on purpose. |
+| **§3.1** adds an address to the booking row | `booking-detail.tsx` gains a real "where" line. Until then the page shows no address at all, which is a gap a customer will notice. |
+| **§3.2** widens the `status` filter | `BookingListStatus` in `features/booking/api.ts` widens to match, and `booking-list.tsx`'s `FILTERS` can offer "verified", "refunded" and so on. The hand-written enum must be deleted, not extended by hand. |
+| **§3.4** returns a cancellation policy or fee on `GET /bookings/:id` | The cancel card's copy changes: `dict.booking.cancelNote` currently says no fee is charged, which becomes false. **This is a copy change, not just a code change** — the sentence must be rewritten to state the rule as the API now applies it. |
+| **§3.5** adds a provider-agnostic availability endpoint | The auto-assign path could show real availability instead of requested windows; `requestedWindows()` in `provider-choice.tsx` would go, and the screen would become one path rather than two. |
+| **§3.6** returns `items` on `GET /bookings/:id` | The detail page can show the price breakdown after the fact rather than only during checkout. |
+| **§3.8** geocodes addresses, or `areaId` implies a point | The inline address form loses its two-source point picker; `features/search/location.ts` stops being needed there. Same root cause as §2.2. |
 | **A real `GET /catalogue/services` list endpoint is added** | `catalogueApi.listAllServices` stops fanning out and becomes one call. `useAllServices` loses its `N+1` shape. Text search and paging would then be server-side, so the client's `searchQuery` / `sortBy` / `pricingFilter` state moves into query params and the filtering moves out of `catalogue-explorer.tsx`. **Biggest single improvement available to this module.** |
 | Anything adds a **new field** to a response row | Add it to the type in `features/{catalogue,places,search}/api.ts`. `src/tests/providers/search-contract.test.ts` asserts the exact field set on the search row and will fail loudly, which is the intent. |
 
@@ -507,6 +904,23 @@ Recorded because each was invisible to every gate:
    API does not publish>` produced "Showing 0 verified services" with no
    explanation, which reads as an empty catalogue. The catalogue explorer now
    discards an unrecognised slug and falls back to the whole catalogue.
+5. **A mock `serviceId` in the booking flow.** `/book/[slug]` read the service
+   from `src/lib/data.ts`, whose `id` fields are not database ids. The flow looked
+   complete and would have sent `serviceId: 1` to `POST /bookings` — either
+   booking the wrong service or failing a `.strict()` validation. Caught while
+   writing the contract tests for module 3, before it could reach a customer.
+6. **`void promise` is not a rejection handler.** Every booking action used
+   `void mutation.mutateAsync(…)`, so each refused action — a 409 on a cancel that
+   had already been cancelled — logged an unhandled rejection in the browser
+   console. Every gate stayed green. The mutation's own `isError` was already
+   rendered, so the fix is `.catch(reportFailure)`.
+7. **A carried-in provider was silently discarded.** Choosing an address in the
+   booking flow cleared `choice` unconditionally, which undid the hand-off from a
+   profile's availability panel one click after it was made. Found by the
+   hand-off test; the address handler now keeps a carried professional.
+8. **`scrollIntoView` on a chat that may not exist.** `booking-chat.tsx` called it
+   unconditionally. It is absent in jsdom and in some embedded webviews, and the
+   resulting `TypeError` took the whole booking page down over a convenience.
 
 ### One API endpoint does not exist, and the client does not pretend otherwise
 
@@ -534,18 +948,26 @@ This is a deliberate choice and worth knowing about:
 
 | # | Sev | Module | Item |
 |---|---|---|---|
-| 1 | **S1** | 2 | Select `areas.centroid` — one line, turns the area filter from a disabled control into a real filter |
+| 0 | **S1** | 1 | **Confirm the refresh cookie survives the proxy** - a successful staff sign-in renders signed-out chrome, and no frontend change can fix it if `GET /auth/me` cannot answer from the cookie alone (§1.9) |
+| 1 | **S1** | 2 | Select `areas.centroid` — one line, turns the area filter from a disabled control into a real filter **and unblocks address creation (§3.8)** |
 | 2 | **S2** | 2 | Reconcile `score` / `ratingScore` with their documentation — a live trap for every consumer |
 | 3 | **S2** | 2 | `remark.reply` in the response schema — a crash for any client that reads the docs literally |
-| 4 | **S1** | 1 | Email OTP delivery — `isEmailTarget()` instead of `startsWith('@')` |
-| 5 | **S1** | 1 | Social authentication is entirely absent — endpoints, `federated_identities`, linking rule (§1.7) |
-| 6 | **S3** | 2 | A cheap anonymous-session answer, removing two console entries per public page load |
-| 7 | **S3** | 3 | SMS gateway routing, sender-ID masking, WhatsApp failover (§3.1) |
-| 8 | **S2** | 1 | `/auth/me` should return `providerStatus` |
-| 9 | **S3** | 1 | Login throttle should cover unknown identifiers |
-| 10 | **S3** | 1 | Grace period for the previous refresh token (§1.6) |
-| 11 | **S2** | 1 | Refresh/logout body schemas: wire or delete |
-| 12 | — | 3, 4 | Localized notification templates; provider KYC trigger (§3.2, §4.1) |
-| 13 | — | 2 | Refresh the stale `/search/providers` OpenAPI description |
-| 14 | — | 2 | Paging / sorting / text on `/search/providers`, once there are enough providers for it to matter |
-| 15 | — | 2 | Provider first name and photo — the biggest change to how the public product looks |
+| 4 | **S2** | 3 | Add names to `BOOKING_COLUMNS` — service, provider, address (§3.1). Without it a booking list can only show ids, and a booking detail cannot show the address at all |
+| 5 | **S2** | 3 | **Reconcile the cancellation fee with itself** (§3.4) — the quote promises Rs 500 and the cancel charges nothing. Either apply it or stop promising it; today the two halves of one feature disagree |
+| 6 | **S2** | 3 | Make the payment `returnUrl` absolute, configurable and locale-aware (§3.7) — it is hardcoded to a path this app had to add a route to match |
+| 7 | **S1** | 1 | Email OTP delivery — `isEmailTarget()` instead of `startsWith('@')` |
+| 8 | **S1** | 1 | Social authentication is entirely absent — endpoints, `federated_identities`, linking rule (§1.7) |
+| 9 | **S2** | 3 | Derive the `GET /bookings?status=` enum from the database (§3.2) — `?status=VERIFIED` is a live 422 |
+| 10 | **S2** | 3 | Correct the module-5 docs: `POST /bookings/:id/quote` does not exist (§3.3) |
+| 11 | **S3** | 3 | Return `items` on `GET /bookings/:id` — the rows exist, nothing reads them (§3.6) |
+| 12 | **S3** | 3 | A provider-agnostic availability endpoint, so an auto-assign booking can show real times (§3.5) |
+| 13 | **S3** | 2 | A cheap anonymous-session answer, removing two console entries per public page load |
+| 14 | **S3** | 5 | SMS gateway routing, sender-ID masking, WhatsApp failover (§5.1) |
+| 15 | **S2** | 1 | `/auth/me` should return `providerStatus` |
+| 16 | **S3** | 1 | Login throttle should cover unknown identifiers |
+| 17 | **S3** | 1 | Grace period for the previous refresh token (§1.6) |
+| 18 | **S2** | 1 | Refresh/logout body schemas: wire or delete |
+| 19 | — | 5, 6 | Localized notification templates; provider KYC trigger (§5.2, §6.1) |
+| 20 | — | 2 | Refresh the stale `/search/providers` OpenAPI description |
+| 21 | — | 2 | Paging / sorting / text on `/search/providers`, once there are enough providers for it to matter |
+| 22 | — | 2 | Provider first name and photo — the biggest change to how the public product looks |

@@ -20,8 +20,13 @@ export function useProviderSearch(filters: ProviderSearchFilters | null, locale:
   return useQuery({
     queryKey: publicKeys.providerSearch(filters ?? { serviceSlug: "", lat: 0, lng: 0 }),
     queryFn: ({ signal }) => searchApi.searchProviders(filters as ProviderSearchFilters, { signal, locale }),
-    /* No query without a service and a point: the API requires both. */
-    enabled: filters !== null,
+    /* No query without a service and a point: the API requires both.
+
+       Also skipped when the service slug is empty, which is what a signed-out
+       visitor or an address-less booking step produces. Without it the API
+       answers 404 for the empty slug, and a 404 from a search that was never
+       meant to run is a confusing thing to surface. */
+    enabled: filters !== null && filters.serviceSlug !== "",
     staleTime: FRESHNESS.search.staleTime,
     gcTime: FRESHNESS.search.gcTime,
     /* Keeps the previous results on screen while the next set is fetched. */

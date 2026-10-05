@@ -1,85 +1,264 @@
 "use client";
 
 import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Info, ShieldCheck, Zap } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Dictionary } from "@/lib/dictionaries";
-import type { Area, Provider, Service } from "@/lib/types";
-import { formatMoney, getText, localizedPath, type Locale } from "@/lib/utils";
-import { Button, ButtonLink, Card, Checkbox, Container, Input, Label, PageBanner, RadioGroup, RadioGroupItem, Rating, Section, Textarea, VerifiedMark, buttonStyles } from "@/components/ui";
-import { SelectField } from "@/components/select-field";
+import { cn, localizedPath, type Locale } from "@/lib/utils";
+import { Button, ButtonLink, Card, Checkbox, Container, Label, PageBanner, RadioGroup, RadioGroupItem, Section, Textarea, buttonStyles } from "@/components/ui";
+import { money } from "@/features/catalogue/pricing";
+import { formatSlotTime } from "@/features/search/location";
+import { addDays, SLOT_WINDOW_DAYS, toApiDate } from "@/features/search/types";
+import { useProviderSearch } from "@/features/search/queries";
+import { useProviderSlots } from "@/features/search/queries";
 import { BookingStepper } from "@/features/booking/booking-stepper";
+import { AddressStep } from "@/features/booking/address-step";
+import { DayPicker, ProviderChoiceStep, RequestedWindowPicker, formatDay, isAutoAssign, type ProviderChoice, type ScheduleRequest } from "@/features/booking/provider-choice";
+import { useCreateBooking, useQuote } from "@/features/booking/queries";
+import { isAwaitingProvider, isHeldPayment } from "@/features/booking/status";
+import type { CreatedBooking, PaymentMode, Quote } from "@/features/booking/api";
+import type { CatalogueService } from "@/features/catalogue/api";
 
-export function BookingFlow({ locale, dict, service, providers, areas }: { locale: Locale; dict: Dictionary; service: Service; providers: Provider[]; areas: Area[] }) {
+/* The booking flow, against the live API.
+
+   The order of the steps is driven by what the API needs, not by what reads
+   best. `POST /bookings` requires an address, a professional-or-auto-assign, a
+   start and an end, and an emergency flag; the price is only knowable once the
+   service, the professional and the emergency flag are settled, so the quote is
+   read at the review step rather than guessed at the top.
+
+   The one thing this flow deliberately refuses to do is show a total it computed
+   itself. Every figure on the review step comes from `POST /bookings/quote`,
+   which is the same `PricingService.price()` that creates the booking — so what
+   the customer agreed to and what they are charged can only differ if the
+   basket changed. */
+
+const STEPS = 6;
+
+type Basket = {
+  addressId: string | null;
+  choice: ProviderChoice | null;
+  /** Only used for a named professional; null when auto-assigning. */
+  slot: { start: string; end: string } | null;
+  /** Only used when auto-assigning. */
+  request: ScheduleRequest | null;
+  problem: string;
+  emergency: boolean;
+  agreed: boolean;
+  paymentMode: PaymentMode | null;
+};
+
+const EMPTY: Basket = {
+  addressId: null,
+  choice: null,
+  slot: null,
+  request: null,
+  problem: "",
+  emergency: false,
+  agreed: false,
+  paymentMode: null,
+};
+
+export function BookingFlow({
+  locale,
+  dict,
+  service,
+  initialProviderId,
+  initialDate,
+  initialStart,
+}: {
+  locale: Locale;
+  dict: Dictionary;
+  service: CatalogueService;
+  /** Carried in from the availability panel, so a chosen slot survives the hop. */
+  initialProviderId: string | null;
+  initialDate: string | null;
+  initialStart: string | null;
+}) {
   const [step, setStep] = useState(0);
-  const [area, setArea] = useState("");
-  const [house, setHouse] = useState("");
-  const [notes, setNotes] = useState("");
-  const [providerId, setProviderId] = useState("");
-  const [slot, setSlot] = useState("");
-  const [problem, setProblem] = useState("");
-  const [payment, setPayment] = useState("");
-  const [emergency, setEmergency] = useState(false);
-  const [agreed, setAgreed] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const steps = [dict.booking.step1, dict.booking.step2, dict.booking.step3, dict.booking.step4, dict.booking.step5, dict.booking.step6];
-  const slots = ["09:00 – 10:30", "11:00 – 12:30", "14:00 – 15:30", "16:00 – 17:30"];
-  const selectedProvider = providers.find((provider) => provider.id === providerId);
-  const surcharge = service.emergency && emergency ? Math.round(service.basePricePaisa * 0.25) : 0;
-  /* FR-PY-11: a cancellation fee owed by a cash customer shows on the next summary. */
-  const outstanding = 50000;
-  const total = service.basePricePaisa + service.visitFeePaisa + surcharge;
+  /* A professional carried in from a provider profile is preselected, but the
+     address is not: only the customer's own saved address can supply the point
+     that `/search/providers` needs, and a booking cannot be created without one
+     anyway. So step 1 is still answered first even when a provider is known. */
+  const [basket, setBasket] = useState<Basket>(() =>
+    initialProviderId === null ? EMPTY : { ...EMPTY, choice: { kind: "provider", providerId: initialProviderId } },
+  );
+  const [point, setPoint] = useState<{ lat: number; lng: number } | null>(null);
+  const [created, setCreated] = useState<CreatedBooking | null>(null);
+  const [slotTaken, setSlotTaken] = useState(false);
+  const [localError, setLocalError] = useState("");
+  const quote = useQuote(null, locale);
+  const createBooking = useCreateBooking(locale);
 
-  function next() {
-    setError("");
-    if (step === 0 && (!area || !house.trim())) return setError(!area ? dict.booking.requiredArea : dict.booking.requiredHouse);
-    if (step === 1 && !providerId) return setError(dict.booking.requiredProvider);
-    if (step === 2 && !slot) return setError(dict.booking.requiredSlot);
-    if (step === 3 && problem.trim().length < 10) return setError(dict.booking.requiredProblem);
-    if (step === 4 && !agreed) return setError(dict.booking.requiredAgreement);
-    if (step === 5 && !payment) return setError(dict.booking.requiredPayment);
-    if (step === 5) return setSuccess(true);
-    setStep((current) => current + 1);
+  const update = (patch: Partial<Basket>): void => setBasket((current) => ({ ...current, ...patch }));
+
+  /* The professional list is a search, and a search needs a point. The chosen
+     address carries one, which is the first honest coordinate this flow has. */
+  const providers = useProviderSearch(
+    point === null || basket.addressId === null
+      ? null
+      : { serviceSlug: service.slug, lat: point.lat, lng: point.lng },
+    locale,
+  );
+
+  const chosenProviderId = basket.choice?.kind === "provider" && basket.choice.providerId !== "" ? basket.choice.providerId : null;
+  const autoAssign = isAutoAssign(basket.choice);
+
+  /* A carried-in date is honoured when it is one of the offered days. Anything
+     else — a past date, a hand-edited `?date=`, a date past the 14-day window —
+     falls back to today, because the API would reject it and the failure would
+     read as the platform's rather than the URL's. */
+  const [selectedDate, setSelectedDate] = useState<string>(() => (initialDate !== null && initialDate <= toApiDate(addDays(new Date(), SLOT_WINDOW_DAYS - 1)) ? initialDate : toApiDate(new Date())));
+
+  const slots = useProviderSlots(chosenProviderId, service.id, chosenProviderId === null ? null : selectedDate, locale);
+
+  /* A professional and a time carried in from a profile's availability panel
+     preselect the matching slot.
+
+     Derived during render rather than written from an effect: the slot is not new
+     information, it is the one the customer already chose arriving from the URL,
+     and it can only be applied once `/slots` has confirmed the start is still
+     free. An effect would set state after the first paint, which costs an extra
+     render and — more importantly — would briefly show an empty step as though
+     nothing had been carried over. */
+  const carriedSlot = useMemo(() => {
+    if (initialProviderId === null || initialStart === null) return null;
+    if (chosenProviderId !== initialProviderId) return null;
+    return slots.data?.items.find((slot) => slot.start === initialStart) ?? null;
+  }, [chosenProviderId, initialProviderId, initialStart, slots.data]);
+
+  /* What the flow actually holds. The carried slot applies only while the
+     customer has not chosen or changed a time themselves — after that it is
+     theirs, and a refetch must not move the selection under their finger. */
+  const effectiveSlot = basket.slot ?? carriedSlot;
+
+  const days = useMemo(() => {
+    const tag = locale === "ur" ? "ur-PK" : "en-PK";
+    return Array.from({ length: SLOT_WINDOW_DAYS }, (_, index) => {
+      const date = addDays(new Date(), index);
+      return { value: toApiDate(date), label: new Intl.DateTimeFormat(tag, { weekday: "short", day: "numeric", month: "short" }).format(date) };
+    });
+  }, [locale]);
+
+  const quoteInput =
+    basket.addressId === null || basket.choice === null
+      ? null
+      : {
+          serviceId: service.id,
+          isEmergency: basket.emergency,
+          ...(chosenProviderId === null ? {} : { providerId: chosenProviderId }),
+        };
+
+  /**
+   * The quote is read on the way into the review step, with `mutateAsync`, so the
+   * review step cannot render a figure that is not in hand. It is deliberately
+   * not cached: it is priced against the signed-in customer's outstanding
+   * balance, so a remembered quote is a quote for a basket that no longer
+   * exists. Any change to the basket resets it.
+   */
+  const readQuote = async (): Promise<Quote | null> => {
+    if (quoteInput === null) return null;
+    try {
+      return await quote.mutateAsync(quoteInput);
+    } catch {
+      return null;
+    }
+  };
+
+  const scheduled = basket.slot ?? basket.request;
+  const emergencyAllowed = service.isEmergencyEligible;
+  /* The mutation's data is `Quote | undefined`; every render below deals in
+     `Quote | null`, so an absent quote is one shape rather than two. */
+  const currentQuote = quote.data ?? null;
+
+  const validate = (): string => {
+    if (step === 0 && basket.addressId === null) return dict.booking.requiredAddress;
+    if (step === 1 && basket.choice === null) return dict.booking.requiredProvider;
+    /* A named professional must have a real slot; auto-assign needs a requested
+       window. Neither falls back to the other's rule. */
+    if (step === 2 && effectiveSlot === null && basket.request === null) return dict.booking.requiredSlot;
+    if (step === 3 && basket.problem.trim().length < 10) return dict.booking.requiredProblem;
+    if (step === 4 && (!basket.agreed || quote.data === null)) return dict.booking.requiredAgreement;
+    if (step === 5 && basket.paymentMode === null) return dict.booking.requiredPayment;
+    return "";
+  };
+
+  const goNext = async (): Promise<void> => {
+    setLocalError("");
+    setSlotTaken(false);
+
+    const complaint = validate();
+    if (complaint !== "") {
+      setLocalError(complaint);
+      return;
+    }
+
+    /* Reading the quote happens on the way into the review step, and the review
+       step is disabled until it has arrived. */
+    if (step === 3) {
+      const priced = await readQuote();
+      if (priced === null) {
+        setLocalError(dict.booking.quoteFailed);
+        return;
+      }
+    }
+
+    if (step < STEPS - 1) {
+      setStep((current) => current + 1);
+      return;
+    }
+
+    if (basket.addressId === null || basket.choice === null || scheduled === null || basket.paymentMode === null) return;
+
+    try {
+      const booking = await createBooking.mutateAsync({
+        serviceId: service.id,
+        addressId: basket.addressId,
+        scheduledStart: scheduled.start,
+        scheduledEnd: scheduled.end,
+        paymentMode: basket.paymentMode,
+        ...(basket.problem.trim() === "" ? {} : { problemText: basket.problem.trim() }),
+        ...(chosenProviderId === null ? {} : { providerId: chosenProviderId }),
+        ...(emergencyAllowed && basket.emergency ? { isEmergency: true } : {}),
+      });
+      setCreated(booking);
+    } catch (error) {
+      /* 409 SLOT_TAKEN is the documented outcome of two people taking the same
+         slot. It is not a generic failure: the customer goes back to the time
+         step with fresh availability rather than being told to try again. */
+      if (isSlotTaken(error)) {
+        setSlotTaken(true);
+        setStep(2);
+        update({ slot: null, request: null });
+        void slots.refetch();
+        return;
+      }
+      setLocalError(createFailure(error, dict));
+    }
+  };
+
+  const goBack = (): void => {
+    setLocalError("");
+    if (step > 0) setStep((current) => current - 1);
+  };
+
+  const backToStep = (target: number): void => {
+    setLocalError("");
+    setStep(target);
+  };
+
+  if (created !== null) {
+    return <BookingConfirmed locale={locale} dict={dict} service={service} booking={created} />;
   }
 
-  if (success) {
-    return (
-      <>
-        <PageBanner eyebrow={dict.booking.reference} title={dict.booking.successTitle} />
-        <Section tone="surface" size="default">
-          <Container>
-            <Card className="mx-auto max-w-2xl p-8">
-            <div className="text-center">
-            <span className="mx-auto grid size-14 place-items-center rounded-full bg-emerald-50 text-emerald-700"><CheckCircle2 className="size-7" /></span>
-            <p className="mt-5 text-sm leading-6 text-secondary">{dict.booking.successText}</p>
-            </div>
-            <dl className="mt-6 grid gap-3 rounded-[10px] bg-slate-50 p-5 text-sm sm:grid-cols-2">
-              <div><dt className="text-muted">{dict.common.service}</dt><dd className="mt-0.5 font-medium text-navy">{service.name[locale]}</dd></div>
-              <div><dt className="text-muted">{dict.common.area}</dt><dd className="mt-0.5 font-medium text-navy">{getText(areas.find((item) => item.slug === area)?.name ?? areas[0].name, locale)}</dd></div>
-              <div><dt className="text-muted">{dict.common.professional}</dt><dd className="mt-0.5 font-medium text-navy">{selectedProvider?.name ?? "-"}</dd></div>
-              <div><dt className="text-muted">{dict.booking.slot}</dt><dd className="mt-0.5 font-medium text-navy">{slot}</dd></div>
-              <div><dt className="text-muted">{dict.booking.total}</dt><dd className="mt-0.5 font-semibold text-navy">{formatMoney(total, locale)}</dd></div>
-              <div><dt className="text-muted">{dict.booking.paymentMode}</dt><dd className="mt-0.5 font-medium text-navy">{payment === "ONLINE" ? dict.booking.online : dict.booking.cash}</dd></div>
-            </dl>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <ButtonLink href={localizedPath(locale, "/account/bookings")}>{dict.booking.viewBooking}</ButtonLink>
-              <ButtonLink href={localizedPath(locale, "/track")} variant="secondary">{dict.trackPage.titleLead}</ButtonLink>
-            </div>
-            </Card>
-          </Container>
-        </Section>
-      </>
-    );
-  }
+  const canContinue = validate() === "";
 
   return (
     <>
       <PageBanner
         eyebrow={dict.brand.name}
         title={dict.booking.titleLead}
-        titleAccent={service.name[locale]}
+        titleAccent={locale === "ur" ? service.nameUr : service.nameEn}
         action={
           <Link href={localizedPath(locale, `/services/${service.slug}`)} className={buttonStyles({ variant: "outline-light" })}>
             {dict.common.cancel}
@@ -89,157 +268,607 @@ export function BookingFlow({ locale, dict, service, providers, areas }: { local
 
       <Section tone="surface" size="default">
         <Container>
-        <BookingStepper
-          steps={steps.length}
-          currentStep={step}
-          labels={steps}
-          onStepClick={(target) => {
-            if (target < step) {
-              setStep(target);
-              setError("");
-            }
-          }}
-        />
+          <BookingStepper
+            steps={STEPS}
+            currentStep={step}
+            labels={[dict.booking.step1, dict.booking.step2, dict.booking.step3, dict.booking.step4, dict.booking.step5, dict.booking.step6]}
+            onStepClick={(target) => {
+              /* Backwards only. Going forward past the review step without a
+                 quote would mean confirming a figure nobody has seen. */
+              if (target < step) backToStep(target);
+            }}
+          />
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_340px]">
-        <Card className="p-6">
-          {step === 0 ? (
-            <div>
-              <h2 className="text-xl font-semibold text-navy">{dict.booking.addressTitle}</h2><p className="mt-1 text-sm text-secondary">{dict.booking.addressText}</p>
-              <div className="mt-6 grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="booking-area">{dict.booking.areaLabel}</Label>
-                  <SelectField id="booking-area" value={area} onChange={setArea} options={[{ value: "", label: dict.booking.chooseArea }, ...areas.map((item) => ({ value: item.slug, label: item.name[locale] }))]} placeholder={dict.booking.chooseArea} />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="booking-house">{dict.booking.houseLabel}</Label>
-                  <Input id="booking-house" value={house} onChange={(event) => setHouse(event.target.value)} placeholder={dict.booking.housePlaceholder} />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="booking-notes">{dict.booking.notesLabel}</Label>
-                  <Textarea id="booking-notes" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={dict.booking.notesPlaceholder} />
-                </div>
-              </div>
-            </div>
-          ) : null}
+          <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_340px]">
+            <Card className="p-6">
+              {step === 0 ? (
+                <AddressStep
+                  locale={locale}
+                  dict={dict}
+                  addressId={basket.addressId}
+                  onSelect={(addressId, addressPoint) => {
+                    setPoint(addressPoint);
+                    /* Choosing the address moves the search point, so the
+                       professional list, the slots and the quote are all stale.
+                       Drop the ones that depend on it rather than showing a quote
+                       priced for a different place.
 
-          {step === 1 ? (
-            <div>
-              <h2 className="text-xl font-semibold text-navy">{dict.booking.providerTitle}</h2><p className="mt-1 text-sm text-secondary">{dict.booking.providerText}</p>
-              <RadioGroup value={providerId} onValueChange={setProviderId} className="mt-6">
-                {providers.length === 0 ? <p className="text-sm text-secondary">{dict.booking.noProviders}</p> : providers.map((provider) => (
-                  <label key={provider.id} className={`flex cursor-pointer items-start gap-4 rounded-[12px] border p-4 transition ${providerId === provider.id ? "border-primary bg-blue-50" : "border-line hover:border-slate-300"}`}>
-                    <RadioGroupItem value={provider.id} className="mt-1" />
-                    <span className="relative size-14 shrink-0 overflow-hidden rounded-[9px] bg-slate-100"><Image src={provider.image.url} alt="" fill sizes="56px" className="object-cover" /></span>
-                    <span className="min-w-0 flex-1"><VerifiedMark label={dict.providers.verified} /><span className="mt-1 block font-semibold text-navy">{provider.name}</span><span className="mt-1 block text-xs text-secondary"><Rating value={provider.rating} count={provider.ratingCount} label={dict.common.rating} /></span></span>
-                  </label>
-                ))}
-              </RadioGroup>
-            </div>
-          ) : null}
-
-          {step === 2 ? (
-            <div>
-              <h2 className="text-xl font-semibold text-navy">{dict.booking.scheduleTitle}</h2><p className="mt-1 text-sm text-secondary">{dict.booking.scheduleText}</p>
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                {slots.map((item) => <button key={item} type="button" onClick={() => setSlot(item)} className={`flex min-h-14 items-center gap-3 rounded-[10px] border px-4 text-sm font-semibold ${slot === item ? "border-primary bg-blue-50 text-primary-strong" : "border-line text-navy"}`}><CalendarDays className="size-4" />26 Sep · {item}</button>)}
-              </div>
-              {/* FR-CAT-06: the surcharge line only appears on an emergency-eligible service. */}
-              {service.emergency ? (
-                <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[10px] border border-line p-3.5 text-sm">
-                  <input type="checkbox" checked={emergency} onChange={(event) => setEmergency(event.target.checked)} className="mt-0.5 size-4 accent-primary" />
-                  <span>
-                    <span className="block font-semibold text-navy">{dict.common.emergency}</span>
-                    <span className="mt-0.5 block text-secondary">{dict.booking.emergencySurchargeNote}</span>
-                  </span>
-                </label>
+                       A professional carried in from a profile is the exception:
+                       the customer already chose it, and discarding it here would
+                       silently undo the hand-off they made one click earlier. */
+                    update({
+                      addressId,
+                      choice: basket.choice?.kind === "provider" && basket.choice.providerId === initialProviderId ? basket.choice : null,
+                      slot: null,
+                      request: null,
+                    });
+                    quote.reset();
+                  }}
+                />
               ) : null}
-            </div>
-          ) : null}
 
-          {step === 3 ? (
-            <div>
-              <h2 className="text-xl font-semibold text-navy">{dict.booking.detailsTitle}</h2><p className="mt-1 text-sm text-secondary">{dict.booking.detailsText}</p>
-              <div className="mt-6 grid gap-2">
-                <Label htmlFor="booking-problem">{dict.booking.problemLabel}</Label>
-                <Textarea id="booking-problem" className="min-h-32" value={problem} onChange={(event) => setProblem(event.target.value)} placeholder={dict.booking.problemPlaceholder} />
+              {step === 1 ? (
+                <ProviderChoiceStep
+                  locale={locale}
+                  dict={dict}
+                  choice={basket.choice}
+                  providers={providers.data?.items ?? []}
+                  searching={providers.isFetching}
+                  hasLocation={point !== null && basket.addressId !== null}
+                  onChange={(choice) => {
+                    update({ choice, slot: null, request: null });
+                    quote.reset();
+                  }}
+                />
+              ) : null}
+
+              {step === 2 ? (
+                <ScheduleStep
+                  locale={locale}
+                  dict={dict}
+                  service={service}
+                  autoAssign={autoAssign}
+                  selectedDate={selectedDate}
+                  days={days}
+                  selected={effectiveSlot ?? basket.request}
+                  slotTaken={slotTaken}
+                  slotError={slots.isError ? dict.booking.slotsError : null}
+                  onRetrySlots={() => void slots.refetch()}
+                  onDateChange={(date) => {
+                    setSelectedDate(date);
+                    update({ slot: null, request: null });
+                  }}
+                  onSlot={(slot) => update({ slot, request: null })}
+                  onRequest={(request) => update({ request, slot: null })}
+                  emergencyAllowed={emergencyAllowed}
+                  emergency={basket.emergency}
+                  onEmergency={(value) => {
+                    update({ emergency: value });
+                    quote.reset();
+                  }}
+                  emergencyLabel={dict.common.emergency}
+                  emergencyNote={dict.booking.emergencyNote}
+                  slotTimes={slots.data?.items ?? []}
+                  slotsLoading={slots.isPending}
+                  slotsEmpty={slots.isSuccess && slots.data.items.length === 0}
+                />
+              ) : null}
+
+              {step === 3 ? (
+                <div>
+                  <h2 className="text-xl font-semibold text-navy">{dict.booking.detailsTitle}</h2>
+                  <p className="mt-1 text-sm text-secondary">{dict.booking.detailsText}</p>
+                  <div className="mt-6 grid gap-2">
+                    <Label htmlFor="booking-problem">{dict.booking.problemLabel}</Label>
+                    <Textarea
+                      id="booking-problem"
+                      className="min-h-32"
+                      value={basket.problem}
+                      onChange={(event) => update({ problem: event.target.value })}
+                      placeholder={dict.booking.problemPlaceholder}
+                    />
+                    <p className="text-xs text-muted">{dict.booking.problemHint}</p>
+                  </div>
+<p className="mt-4 rounded-[9px] border border-line bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.booking.photosAfterBooking}</p>
+                </div>
+              ) : null}
+
+              {step === 4 ? (
+                <ReviewStep
+                  locale={locale}
+                  dict={dict}
+                  service={service}
+                  basket={basket}
+                  /* The public search row publishes no name (§2.2 of the
+                     handoff), so the review step names the choice by its
+                     qualification rather than inventing a person's name. */
+                  chosenProviderName={
+                    providers.data?.items.find((item) => item.providerId === chosenProviderId)?.qualification ?? null
+                  }
+                  quote={currentQuote}
+                  loading={quote.isPending}
+                  error={quote.isError ? dict.booking.quoteFailed : null}
+                  onRetryQuote={() => void quote.mutate(quoteInput ?? { serviceId: service.id })}
+                  onAgree={(value) => update({ agreed: value })}
+                />
+              ) : null}
+
+              {step === 5 ? (
+                <div>
+                  <h2 className="text-xl font-semibold text-navy">{dict.booking.paymentTitle}</h2>
+                  <p className="mt-1 text-sm text-secondary">{dict.booking.paymentText}</p>
+                  <RadioGroup
+                    value={basket.paymentMode ?? ""}
+                    onValueChange={(value) => update({ paymentMode: value === "online" ? "ONLINE" : "cash" === value ? "CASH" : null })}
+                    className="mt-6 grid gap-3"
+                  >
+                    {(
+                      [
+                        { value: "cash", title: dict.booking.cash, body: dict.booking.cashText },
+                        { value: "online", title: dict.booking.online, body: dict.booking.onlineText },
+                      ] as const
+                    ).map((option) => (
+                      <label
+                        key={option.value}
+                        className={cn(
+                          "flex cursor-pointer items-start gap-3 rounded-[12px] border p-4 transition",
+                          basket.paymentMode?.toLowerCase() === option.value ? "border-primary bg-blue-50" : "border-line hover:border-slate-300",
+                        )}
+                      >
+                        <RadioGroupItem value={option.value} className="mt-1" />
+                        <span>
+                          <span className="block font-semibold text-navy">{option.title}</span>
+                          <span className="mt-1 block text-sm leading-6 text-secondary">{option.body}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </RadioGroup>
+                  {currentQuote !== null && currentQuote.outstandingReceivablePaisa > 0 ? (
+                    <p className="mt-4 rounded-[9px] border border-amber-200 bg-amber-50 p-3.5 text-sm leading-6 text-amber-900">
+                      {dict.booking.outstandingWarning} · {money(currentQuote.outstandingReceivablePaisa, locale)}
+                    </p>
+                  ) : null}
+                  {basket.paymentMode === "ONLINE" && currentQuote !== null && currentQuote.totalPaisa <= 0 ? (
+                    <p className="mt-4 rounded-[9px] bg-rose-50 p-3.5 text-sm leading-6 text-rose-700">{dict.booking.nothingToPayOnline}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {localError !== "" ? <p className="mt-5 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">{localError}</p> : null}
+
+              <div className="mt-7 flex items-center justify-between gap-3 border-t border-line pt-5">
+                <Button type="button" variant="secondary" onClick={goBack} disabled={step === 0 || createBooking.isPending}>
+                  <ChevronLeft className="size-4 rtl:rotate-180" />
+                  {dict.common.back}
+                </Button>
+                <Button type="button" onClick={() => void goNext()} disabled={createBooking.isPending}>
+                  {createBooking.isPending
+                    ? dict.booking.creating
+                    : step === STEPS - 1
+                      ? dict.booking.confirm
+                      : dict.common.continue}
+                  <ChevronRight className="size-4 rtl:rotate-180" />
+                </Button>
               </div>
-            </div>
-          ) : null}
+              {step < STEPS - 1 && !canContinue ? (
+                <p className="mt-2 text-end text-xs text-muted" aria-live="polite">{dict.booking.completeStepToContinue}</p>
+              ) : null}
+            </Card>
 
-          {step === 4 ? (
-            <div>
-              <h2 className="text-xl font-semibold text-navy">{dict.booking.reviewTitle}</h2><p className="mt-1 text-sm text-secondary">{dict.booking.reviewText}</p>
-              <dl className="mt-6 divide-y divide-line border-y border-line text-sm">
-                {[service.name[locale], areas.find((item) => item.slug === area)?.name[locale] ?? "-", selectedProvider?.name ?? "-", slot].map((value, index) => <div key={index} className="flex justify-between gap-4 py-3"><dt className="text-muted">{steps[index]}</dt><dd className="text-end font-medium text-navy">{value}</dd></div>)}
-              </dl>
-
-              {/* FR-BK-04: estimate, visit fee, surcharge, outstanding fees and
-                  the cancellation policy all render before confirm is allowed. */}
-              <div className="mt-5 rounded-[12px] border border-line bg-slate-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-strong">{dict.booking.costBreakdown}</p>
-                <dl className="mt-3 grid gap-2 text-sm">
-                  <div className="flex justify-between gap-4"><dt className="text-secondary">{dict.booking.estimate}</dt><dd className="font-medium text-navy tabular-nums">{formatMoney(service.basePricePaisa, locale)}</dd></div>
-                  {service.visitFeePaisa > 0 ? <div className="flex justify-between gap-4"><dt className="text-secondary">{dict.booking.visitFee}</dt><dd className="text-navy tabular-nums">{formatMoney(service.visitFeePaisa, locale)}</dd></div> : null}
-                  {service.emergency ? <div className="flex justify-between gap-4"><dt className="flex items-center gap-1.5 text-secondary"><Zap className="size-3.5 text-amber-500" aria-hidden="true" />{dict.booking.emergencySurcharge}</dt><dd className="text-navy tabular-nums">{formatMoney(surcharge, locale)}</dd></div> : null}
-                  {outstanding > 0 ? <div className="flex justify-between gap-4"><dt className="text-rose-700">{dict.booking.outstandingFees}</dt><dd className="font-medium text-rose-700 tabular-nums">{formatMoney(outstanding, locale)}</dd></div> : null}
-                  <div className="flex justify-between gap-4 border-t border-line pt-2.5"><dt className="font-semibold text-navy">{dict.common.total}</dt><dd className="text-lg font-semibold text-navy tabular-nums">{formatMoney(total, locale)}</dd></div>
+            <aside className="h-fit overflow-hidden rounded-[14px] bg-navy-950 text-white lg:sticky lg:top-24">
+              <div className="p-5">
+                <h2 className="font-semibold text-white">{locale === "ur" ? service.nameUr : service.nameEn}</h2>
+                <p className="mt-1 text-sm leading-6 text-white/70">{service.description}</p>
+                <dl className="mt-5 grid gap-3 border-t border-white/15 pt-4 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-white/60">{dict.booking.estimate}</dt>
+                    <dd className="text-end font-medium text-white">{money(service.basePricePaisa, locale)}</dd>
+                  </div>
+                  {service.visitFeePaisa > 0 ? (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-white/60">{dict.booking.visitFee}</dt>
+                      <dd className="text-end text-white/90">{money(service.visitFeePaisa, locale)}</dd>
+                    </div>
+                  ) : null}
+                  {service.expectedDurationMin > 0 ? (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-white/60">{dict.booking.expectedDuration}</dt>
+                      <dd className="text-end text-white/90">{dict.booking.minutesValue} {service.expectedDurationMin}</dd>
+                    </div>
+                  ) : null}
                 </dl>
+                {/* The catalogue figure is a starting point, not a total. The
+                    authoritative number is the quote, shown on the review step
+                    and never here, so no figure on screen contradicts another. */}
+                <p className="mt-4 text-xs leading-5 text-white/60">{dict.booking.estimateIsGuide}</p>
+                <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-white/60">
+                  <ShieldCheck className="mt-0.5 size-4 shrink-0 text-yellow-500" />
+                  {dict.booking.escrowNote}
+                </p>
               </div>
-
-              <div className="mt-4 flex items-start gap-2.5 rounded-[9px] border border-amber-200 bg-amber-50 p-3.5 text-sm leading-6 text-amber-900">
-                <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <span>{dict.booking.cancellationPolicy}</span>
-              </div>
-
-              <label className="mt-5 flex items-start gap-3 text-sm text-secondary">
-                <Checkbox checked={agreed} onCheckedChange={(value) => setAgreed(value === true)} className="mt-0.5" />
-                {dict.booking.agreeTerms}
-              </label>
-            </div>
-          ) : null}
-
-          {step === 5 ? (
-            <div>
-              <h2 className="text-xl font-semibold text-navy">{dict.booking.paymentTitle}</h2><p className="mt-1 text-sm text-secondary">{dict.booking.paymentText}</p>
-              <RadioGroup value={payment} onValueChange={setPayment} className="mt-6">
-                <label className={`flex cursor-pointer items-start gap-3 rounded-[12px] border p-4 transition ${payment === "cash" ? "border-primary bg-blue-50" : "border-line hover:border-slate-300"}`}>
-                  <RadioGroupItem value="cash" className="mt-1" />
-                  <span><span className="block font-semibold text-navy">{dict.booking.cash}</span><span className="mt-1 block text-sm text-secondary">{dict.booking.cashText}</span></span>
-                </label>
-                <label className={`flex cursor-pointer items-start gap-3 rounded-[12px] border p-4 transition ${payment === "online" ? "border-primary bg-blue-50" : "border-line hover:border-slate-300"}`}>
-                  <RadioGroupItem value="online" className="mt-1" />
-                  <span><span className="block font-semibold text-navy">{dict.booking.online}</span><span className="mt-1 block text-sm text-secondary">{dict.booking.onlineText}</span></span>
-                </label>
-              </RadioGroup>
-            </div>
-          ) : null}
-
-          {error ? <p className="mt-5 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
-          <div className="mt-7 flex items-center justify-between gap-3 border-t border-line pt-5">
-            <Button type="button" variant="secondary" onClick={() => setStep((current) => Math.max(0, current - 1))} disabled={step === 0}><ChevronLeft className="size-4 rtl:rotate-180" />{dict.common.back}</Button>
-            <Button type="button" onClick={next}>{step === 5 ? dict.booking.confirm : dict.common.continue}<ChevronRight className="size-4 rtl:rotate-180" /></Button>
+            </aside>
           </div>
-        </Card>
-
-        <aside className="h-fit overflow-hidden rounded-[14px] bg-navy-950 text-white lg:sticky lg:top-24">
-          <div className="relative aspect-[16/9] overflow-hidden bg-navy-900">
-            <Image src={service.image.url} alt={getText(service.image.alt, locale)} fill sizes="340px" style={{ objectPosition: service.focus }} className="object-cover opacity-90" />
-          </div>
-          <div className="p-5">
-            <h2 className="font-semibold text-white">{service.name[locale]}</h2>
-            <p className="mt-1 text-sm leading-6 text-white/70">{service.description[locale]}</p>
-            <dl className="mt-5 grid gap-3 border-t border-white/15 pt-4 text-sm">
-              <div className="flex justify-between"><dt className="text-white/60">{dict.booking.estimate}</dt><dd className="font-medium text-white">{formatMoney(service.basePricePaisa, locale)}</dd></div>
-              {service.visitFeePaisa > 0 ? <div className="flex justify-between"><dt className="text-white/60">{dict.booking.visitFee}</dt><dd className="text-white/90">{formatMoney(service.visitFeePaisa, locale)}</dd></div> : null}
-              <div className="flex justify-between border-t border-white/15 pt-3 text-base"><dt className="font-semibold text-white">{dict.booking.total}</dt><dd className="font-semibold text-yellow-500">{formatMoney(total, locale)}</dd></div>
-            </dl>
-            <p className="mt-5 flex items-start gap-2 text-xs leading-5 text-white/60"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-yellow-500" />{dict.booking.onlineText}</p>
-          </div>
-        </aside>
-      </div>
         </Container>
       </Section>
     </>
+  );
+}
+
+function ScheduleStep({
+  locale,
+  dict,
+  service,
+  autoAssign,
+  selectedDate,
+  days,
+  selected,
+  slotTaken,
+  slotError,
+  onRetrySlots,
+  onDateChange,
+  onSlot,
+  onRequest,
+  emergencyAllowed,
+  emergency,
+  onEmergency,
+  emergencyLabel,
+  emergencyNote,
+  slotTimes,
+  slotsLoading,
+  slotsEmpty,
+}: {
+  locale: Locale;
+  dict: Dictionary;
+  service: CatalogueService;
+  autoAssign: boolean;
+  selectedDate: string;
+  days: { value: string; label: string }[];
+  selected: ScheduleRequest | { start: string; end: string } | null;
+  slotTaken: boolean;
+  slotError: string | null;
+  onRetrySlots: () => void;
+  onDateChange: (date: string) => void;
+  onSlot: (slot: { start: string; end: string }) => void;
+  onRequest: (request: ScheduleRequest) => void;
+  emergencyAllowed: boolean;
+  emergency: boolean;
+  onEmergency: (value: boolean) => void;
+  emergencyLabel: string;
+  emergencyNote: string;
+  slotTimes: { start: string; end: string }[];
+  slotsLoading: boolean;
+  slotsEmpty: boolean;
+}) {
+  const tag = locale === "ur" ? "ur-PK" : "en-PK";
+  const asRequest = selected !== null && "date" in selected ? selected : null;
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-navy">{dict.booking.scheduleTitle}</h2>
+      <p className="mt-1 text-sm text-secondary">{autoAssign ? dict.booking.scheduleTextAuto : dict.booking.scheduleText}</p>
+
+      <div className="mt-6 grid gap-5">
+        <DayPicker dict={dict} days={days} selected={selectedDate} onSelect={onDateChange} />
+
+        {autoAssign ? (
+          <RequestedWindowPicker
+            locale={locale}
+            dict={dict}
+            date={selectedDate}
+            durationMin={Math.max(30, service.expectedDurationMin)}
+            selected={asRequest}
+            onSelect={onRequest}
+          />
+        ) : (
+          <div className="grid gap-2">
+            {slotsLoading ? (
+              <p className="text-sm text-secondary" aria-busy="true">{dict.booking.slotsLoading}</p>
+            ) : slotError !== null ? (
+              <div role="alert" className="rounded-[9px] bg-rose-50 p-3.5 text-sm text-rose-700">
+                {slotError}
+                <Button type="button" variant="secondary" size="sm" className="ms-3" onClick={onRetrySlots}>
+                  {dict.catalogue.retry}
+                </Button>
+              </div>
+            ) : slotsEmpty ? (
+              <p className="rounded-[9px] border border-line bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.booking.slotsNone}</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {slotTimes.map((slot) => {
+                    const active = selected !== null && "start" in selected && selected.start === slot.start;
+                    return (
+                      <button
+                        key={slot.start}
+                        type="button"
+                        onClick={() => onSlot(slot)}
+                        aria-pressed={active}
+                        className={cn(
+                          "min-h-11 whitespace-nowrap rounded-[9px] border px-3 text-sm font-semibold tabular-nums transition-colors duration-200",
+                          active ? "border-primary bg-blue-50 text-primary-strong" : "border-line bg-white text-navy hover:bg-slate-50",
+                        )}
+                      >
+                        {formatSlotTime(slot.start, tag)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs leading-5 text-muted">{dict.booking.slotsAreNotHeld}</p>
+              </>
+            )}
+            {slotTaken ? (
+              <p role="alert" className="rounded-[9px] border border-amber-200 bg-amber-50 p-3.5 text-sm leading-6 text-amber-900">
+                {dict.booking.slotTaken}
+              </p>
+            ) : null}
+          </div>
+        )}
+
+        {/* FR-CAT-06: the surcharge only appears on an emergency-eligible
+            service, and the amount itself comes from the quote. */}
+        {emergencyAllowed ? (
+          <label className="flex cursor-pointer items-start gap-3 rounded-[10px] border border-line p-3.5 text-sm">
+            <input type="checkbox" checked={emergency} onChange={(event) => onEmergency(event.target.checked)} className="mt-0.5 size-4 accent-primary" />
+            <span>
+              <span className="flex items-center gap-1.5 block font-semibold text-navy">
+                <Zap className="size-3.5 text-amber-500" aria-hidden="true" />
+                {emergencyLabel}
+              </span>
+              <span className="mt-0.5 block text-secondary">{emergencyNote}</span>
+            </span>
+          </label>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ReviewStep({
+  locale,
+  dict,
+  service,
+  basket,
+  chosenProviderName,
+  quote,
+  loading,
+  error,
+  onRetryQuote,
+  onAgree,
+}: {
+  locale: Locale;
+  dict: Dictionary;
+  service: CatalogueService;
+  basket: Basket;
+  chosenProviderName: string | null;
+  quote: Quote | null;
+  loading: boolean;
+  error: string | null;
+  onRetryQuote: () => void;
+  onAgree: (value: boolean) => void;
+}) {
+  const autoAssign = isAutoAssign(basket.choice);
+  const scheduled = basket.slot ?? basket.request;
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-navy">{dict.booking.reviewTitle}</h2>
+      <p className="mt-1 text-sm text-secondary">{dict.booking.reviewText}</p>
+
+      <dl className="mt-6 divide-y divide-line border-y border-line text-sm">
+        <div className="flex justify-between gap-4 py-3">
+          <dt className="text-muted">{dict.common.service}</dt>
+          <dd className="text-end font-medium text-navy">{locale === "ur" ? service.nameUr : service.nameEn}</dd>
+        </div>
+        <div className="flex justify-between gap-4 py-3">
+          <dt className="text-muted">{dict.booking.professional}</dt>
+          <dd className="text-end font-medium text-navy">
+            {autoAssign ? dict.booking.autoAssignChosen : (chosenProviderName ?? dict.booking.selectedProfessional)}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4 py-3">
+          <dt className="text-muted">{dict.booking.slot}</dt>
+          <dd className="text-end font-medium text-navy tabular-nums">
+            {describeSchedule(scheduled, locale)}
+          </dd>
+        </div>
+        {basket.problem.trim() !== "" ? (
+          <div className="flex flex-col gap-1 py-3">
+            <dt className="text-muted">{dict.booking.problemLabel}</dt>
+            <dd className="text-end text-secondary">{basket.problem.trim()}</dd>
+          </div>
+        ) : null}
+      </dl>
+
+      {/* FR-BK-04: the itemised price, any outstanding receivable and the
+          cancellation policy all render before confirm is allowed. Every figure
+          is the server's, from POST /bookings/quote. */}
+      <div className="mt-5 rounded-[12px] border border-line bg-slate-50 p-4">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-strong">{dict.booking.costBreakdown}</p>
+        {loading ? (
+          <p className="mt-3 text-sm text-secondary" aria-busy="true">{dict.booking.pricingBooking}</p>
+        ) : error !== null ? (
+          <div role="alert" className="mt-3 text-sm text-rose-700">
+            {error}
+            <Button type="button" variant="secondary" size="sm" className="ms-3" onClick={onRetryQuote}>
+              {dict.catalogue.retry}
+            </Button>
+          </div>
+        ) : quote === null ? (
+          <p className="mt-3 text-sm text-secondary">{dict.booking.quoteFailed}</p>
+        ) : (
+          <>
+            <dl className="mt-3 grid gap-2 text-sm">
+              {quote.lines.map((line, index) => (
+                <div key={`${line.kind}-${index}`} className="flex justify-between gap-4">
+                  <dt className={cn("text-secondary", line.kind === "DISCOUNT" && "text-emerald-700")}>{line.description}</dt>
+                  <dd className={cn("text-navy tabular-nums", line.kind === "DISCOUNT" && "text-emerald-700")}>{money(line.amountPaisa, locale)}</dd>
+                </div>
+              ))}
+              <div className="flex justify-between gap-4 border-t border-line pt-2.5">
+                <dt className="font-semibold text-navy">{dict.booking.total}</dt>
+                <dd className="text-lg font-semibold text-navy tabular-nums">{money(quote.totalPaisa, locale)}</dd>
+              </div>
+              {/* FR-PY-11: collected separately from the booking total, and the
+                  API is explicit that it is not part of it. */}
+              {quote.outstandingReceivablePaisa > 0 ? (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-rose-700">{dict.booking.outstandingFees}</dt>
+                  <dd className="font-medium text-rose-700 tabular-nums">{money(quote.outstandingReceivablePaisa, locale)}</dd>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-4 border-t border-line pt-2.5">
+                <dt className="font-semibold text-navy">{dict.booking.payable}</dt>
+                <dd className="font-semibold text-navy tabular-nums">{money(quote.payablePaisa, locale)}</dd>
+              </div>
+            </dl>
+            <div className="mt-4 flex items-start gap-2.5 rounded-[9px] border border-amber-200 bg-amber-50 p-3.5 text-sm leading-6 text-amber-900">
+              <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              {/* Server-rendered from the platform's own settings, so it cannot
+                  drift from the rules the API will actually apply. */}
+              <span>{quote.cancellationPolicy}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <label className="mt-5 flex items-start gap-3 text-sm text-secondary">
+        <Checkbox checked={basket.agreed} onCheckedChange={(value) => onAgree(value === true)} className="mt-0.5" />
+        {dict.booking.agreeTerms}
+      </label>
+    </div>
+  );
+}
+
+function BookingConfirmed({
+  locale,
+  dict,
+  service,
+  booking,
+}: {
+  locale: Locale;
+  dict: Dictionary;
+  service: CatalogueService;
+  booking: CreatedBooking;
+}) {
+  /* An ONLINE booking is PENDING_PAYMENT until the gateway's signed webhook
+     confirms capture, so it is not yet a request. Saying "your booking is in"
+     here would be a claim the platform cannot make yet. */
+  const awaitingPayment = booking.payment !== undefined || booking.status === "PENDING_PAYMENT";
+  const tag = locale === "ur" ? "ur-PK" : "en-PK";
+
+  return (
+    <>
+      <PageBanner
+        eyebrow={dict.booking.reference}
+        title={awaitingPayment ? dict.booking.awaitingPaymentTitle : dict.booking.successTitle}
+        titleAccent={booking.code}
+      />
+      <Section tone="surface" size="default">
+        <Container>
+          <Card className="mx-auto max-w-2xl p-8">
+            <div className="text-center">
+              <span className={cn("mx-auto grid size-14 place-items-center rounded-full", awaitingPayment ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700")}>
+                {awaitingPayment ? <CalendarDays className="size-7" /> : <CheckCircle2 className="size-7" />}
+              </span>
+              <p className="mt-5 text-sm leading-6 text-secondary">
+                {awaitingPayment ? dict.booking.awaitingPaymentText : dict.booking.successText}
+              </p>
+            </div>
+
+            <dl className="mt-6 grid gap-3 rounded-[10px] bg-slate-50 p-5 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-muted">{dict.common.service}</dt>
+                <dd className="mt-0.5 font-medium text-navy">{locale === "ur" ? service.nameUr : service.nameEn}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">{dict.booking.professional}</dt>
+                <dd className="mt-0.5 font-medium text-navy">
+                  {isAwaitingProvider(booking) ? dict.booking.awaitingAssignment : dict.booking.assignedProfessional}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted">{dict.booking.slot}</dt>
+                <dd className="mt-0.5 font-medium text-navy tabular-nums">
+                  {new Intl.DateTimeFormat(tag, { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Karachi" }).format(
+                    new Date(booking.scheduledStart),
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted">{dict.booking.total}</dt>
+                <dd className="mt-0.5 font-semibold text-navy tabular-nums">{money(booking.quotedAmountPaisa, locale)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">{dict.booking.paymentMode}</dt>
+                <dd className="mt-0.5 font-medium text-navy">{booking.paymentMode === "ONLINE" ? dict.booking.online : dict.booking.cash}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">{dict.common.status}</dt>
+                <dd className="mt-0.5 font-medium text-navy">
+                  {awaitingPayment ? dict.booking.statusAwaitingPayment : dict.booking.statusRequested}
+                </dd>
+              </div>
+            </dl>
+
+            {isHeldPayment(booking) ? (
+              <p className="mt-4 rounded-[9px] border border-line bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.booking.heldNote}</p>
+            ) : null}
+
+            {booking.payment !== undefined ? (
+              <div className="mt-6">
+                <a
+                  /* Same-origin: the gateway URL is the mock provider's own page
+                     behind the same rewrite, so the httpOnly refresh cookie
+                     still applies on the way back. */
+                  href={booking.payment.redirectUrl}
+                  className={buttonStyles({ className: "w-full" })}
+                >
+                  {dict.booking.payNow}
+                </a>
+                <p className="mt-2 text-xs leading-5 text-muted">{dict.booking.payNowNote}</p>
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <ButtonLink href={localizedPath(locale, `/account/bookings/${booking.id}`)}>{dict.booking.viewBooking}</ButtonLink>
+              <ButtonLink href={localizedPath(locale, "/account/bookings")} variant="secondary">
+                {dict.portal.bookings}
+              </ButtonLink>
+            </div>
+          </Card>
+        </Container>
+      </Section>
+    </>
+  );
+}
+
+/* The API's own `detail` is the only account of *why* a booking was refused, and
+   it names a rule the customer can act on ("must start in the future", "provider
+   has recorded leave"). It is shown verbatim — translated or softened, it would be
+   a different sentence from the one the platform will actually enforce — and then
+   the reassurance, because the one thing a customer wants to know after a refusal
+   is that nothing was taken. */
+const createFailure = (error: unknown, dict: Dictionary): string => {
+  const reason = error instanceof Error && error.message.trim() !== "" ? error.message.trim() : "";
+  return reason === "" ? dict.booking.createFailed : `${reason} ${dict.booking.createFailed}`;
+};
+
+const isSlotTaken = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "SLOT_TAKEN";
+
+/**
+ * The schedule line on the review step, in Asia/Karachi.
+ *
+ * A requested window names its day and its start; a real slot does not carry a
+ * day of its own, because `/slots` was asked for one and returns instants inside
+ * it. Formatting in the browser's zone would show the wrong day to anybody
+ * outside Pakistan — midnight local is 19:00Z the previous day.
+ */
+function describeSchedule(scheduled: ScheduleRequest | { start: string; end: string } | null, locale: Locale): string {
+  if (scheduled === null) return locale === "ur" ? "منتخب نہیں" : "Not chosen yet";
+  const tag = locale === "ur" ? "ur-PK" : "en-PK";
+  if ("date" in scheduled) return `${formatDay(scheduled.date, locale)}, ${formatSlotTime(scheduled.start, tag)}`;
+  return new Intl.DateTimeFormat(tag, { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Karachi" }).format(
+    new Date(scheduled.start),
   );
 }

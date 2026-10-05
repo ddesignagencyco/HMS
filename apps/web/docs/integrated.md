@@ -15,8 +15,8 @@ already built, and what will I collide with?"
 2. [Summary](#2-summary)
 3. [Module 1 — Authentication ✅](#module-1--authentication-)
 4. [Module 2 — Search, Catalogue & Places ✅](#module-2--search-catalogue--places-)
-5. [Module 3 — Booking ⬜](#module-3--booking-)
-6. [Module 4 — Customer ⬜](#module-4--customer-)
+5. [Module 3 — Booking ✅](#module-3--booking-)
+6. [Module 4 — Customer 🟡](#module-4--customer-)
 7. [Module 5 — Provider ⬜](#module-5--provider-)
 8. [Module 6 — Verification agent ⬜](#module-6--verification-agent)
 9. [Module 7 — Finance ⬜](#module-7--finance-)
@@ -47,15 +47,15 @@ entirely mock.
 |---|---|---|---|---|
 | 1 | Authentication | 11 | **11** | ✅ complete |
 | 2 | Search, Catalogue & Places | 8 | **8** | ✅ complete |
-| 3 | Booking | 3 | 0 | ⬜ mock |
-| 4 | Customer | 12 | 0 | ⬜ mock |
+| 3 | Booking | 12 | **12** | ✅ complete |
+| 4 | Customer | 12 | 4 | 🟡 addresses only |
 | 5 | Provider | 24 | 0 | ⬜ mock |
 | 6 | Verification agent | 10 | 0 | ⬜ mock |
 | 7 | Finance | 17 | 0 | ⬜ mock |
 | 8 | Administration | 46 | 0 | ⬜ mock |
 | — | Cross-cutting / dev | 34 | 3 | see below |
 
-**21 of 165 endpoints are called by the web app today.** Everything else is either a
+**36 of 165 endpoints are called by the web app today.** Everything else is either a
 later module or not for the browser.
 
 ---
@@ -121,46 +121,102 @@ the natural home for the paging and text search `/search/providers` also lacks.
 
 ---
 
-## Module 3 — Booking ⬜ — **next**
+## Module 3 — Booking ✅
 
-Source: `src/features/booking/booking-flow.tsx` · page: `/[locale]/book/[slug]`
+Source: `src/features/booking/` · addresses: `src/features/account/` · tests: `src/tests/booking/`
 
-| Endpoint | Access | Status |
+**Routes:** `/[locale]/book/[slug]` (the checkout flow) · `/[locale]/account/bookings`
+· `/[locale]/account/bookings/[id]`
+
+The previous mock flow is gone. It read `src/lib/data.ts`, so its `serviceId` did
+not exist in the database and `POST /bookings` could never have accepted it.
+
+### Checkout
+
+| Endpoint | Access | Where it is used |
 |---|---|---|
-| `POST /bookings/quote` | `CUSTOMER` | ⬜ not called |
-| `POST /bookings` | `CUSTOMER` | ⬜ not called |
-| `POST /bookings/checkout` | `CUSTOMER` | ⬜ alias of the above |
-| `GET /bookings/:id` | customer or provider | ⬜ |
-| `POST /bookings/:id/accept` | provider | ⬜ |
-| `POST /bookings/:id/decline` | provider | ⬜ |
-| `POST /bookings/:id/cancel` | customer or provider | ⬜ |
-| `POST /bookings/:id/reschedule` | customer | ⬜ |
+| `POST /bookings/quote` | `CUSTOMER` | `queries.ts` → `useQuote`, the review step's figures and the cancellation policy |
+| `POST /bookings` | `CUSTOMER` | `useCreateBooking` → the confirm button, and the payment redirect when ONLINE |
+| `GET /customer/addresses` | `CUSTOMER` | `useAddresses` → step one; an empty list opens the inline create form |
+| `POST /customer/addresses` | `CUSTOMER` | `useCreateAddress` → the inline create form |
+| `GET /places/cities` · `/cities/:id/areas` | `@Public` | reused from module 2 — `areaId` on a new address must be a real area |
+| `GET /search/providers` | `@Public` | reused from module 2 → the professional list, searched around the chosen address |
+| `GET /search/providers/:id/slots` | `@Public` | reused from module 2 → real availability for a *named* professional |
 
-**Ready to start.** `POST /bookings` already accepts everything module 2 hands
-over: `providerId`, `serviceId`, `addressId`, `scheduledStart`, `scheduledEnd`,
-`problemText`, `paymentMode`, `isEmergency`. Both quote and create require a
-**customer session**, so the flow must handle signed-out visitors.
+`POST /bookings/checkout` is an alias of `POST /bookings` and is deliberately
+**not** called: one function for one route, and the alias exists only for the
+payment-flow documentation.
 
-The current `/book/[slug]` page takes only a service slug and reads mock data.
-Module 2 links to it and tells the visitor on screen that the professional and
-time are chosen inside the booking flow — that copy should be removed once this
-module lands.
+### After the booking
 
-**Also needs `GET /customer/addresses`** (module 4) — `addressId` is required.
+| Endpoint | Access | Where it is used |
+|---|---|---|
+| `GET /bookings` | `CUSTOMER` / `PROVIDER` | `booking-list.tsx` → `/account/bookings` |
+| `GET /bookings/:id` | `CUSTOMER` / `PROVIDER` | `booking-detail.tsx` → `/account/bookings/[id]` |
+| `POST /bookings/:id/cancel` | either | the cancel card, shown only where the transition table allows it |
+| `POST /bookings/:id/reschedule` | `CUSTOMER` | the reschedule panel, picking a new slot from live availability |
+| `POST /bookings/:id/revisions/approve` · `/reject` | `CUSTOMER` | the revision card, only while `status === "QUOTE_REVISION"` |
+| `POST /bookings/:id/evidence` | either | problem photos, only before the visit begins |
+| `GET /bookings/:id/evidence` | either | available in `bookingApi`; the page shows uploads, not a gallery |
+| `POST /bookings/:id/warranty-claim` | `CUSTOMER` | the warranty card, only for a released booking |
+| `POST /bookings/:id/no-show` | either | the no-show card, only while `EN_ROUTE` |
+| `GET` · `POST /bookings/:id/messages` | either | `booking-chat.tsx` — FR-BK-07 |
+
+Plus one route that exists because the API names it: `app/[locale]/checkout/return`
+is the gateway's `returnUrl`, hardcoded server-side as
+`/checkout/return?bookingId=…`. It was a 404 until the frontend added it — see
+`BACKEND_REQUIREMENTS.md` §3.7.
+
+### Four decisions worth knowing before editing this module
+
+1. **The server prices the booking; this app never does.** `POST /bookings/quote`
+   and `POST /bookings` both run `PricingService.price()`, so what the customer
+   agreed to and what they are charged can only differ if the basket changed.
+   The catalogue's `basePricePaisa` appears in the sidebar labelled as a *guide*.
+   A locally computed total next to the server's would be two sources of truth
+   for one number.
+
+2. **`providerId` is optional, and that is a product choice.** Omitted, the
+   booking is auto-assigned: offered to ranked professionals one at a time until
+   one accepts (FR-SR-07), `UNFULFILLED` — and refunded — if nobody does. **A
+   slot cannot be shown on that path**, because `/slots` is keyed on a provider
+   who has not accepted yet. So the flow offers a *requested* window and says on
+   screen that nothing is held. A chosen professional gets real slots instead.
+
+3. **`GET /bookings` has no paging and no cursor.** It takes one optional
+   `status` and returns everything. There is no pager, and a "load more" over an
+   already-complete response would be a control that does nothing.
+
+4. **A booking row carries no readable names.** `BOOKING_COLUMNS` projects ids and
+   money only — no service name, no provider name, no address text. The list joins
+   `serviceId` against the catalogue (`service-names.ts`); a service the catalogue
+   no longer publishes shows an honest placeholder rather than a bare number. The
+   detail page has **no** way to show the address — see
+   `BACKEND_REQUIREMENTS.md` §3.4.
+
+### Not wired, deliberately
+
+| Endpoint | Why |
+|---|---|
+| `POST /bookings/:id/accept` · `/decline` · `/depart` · `/start` · `/complete` · `/cash-received` | `PROVIDER`-role; these are the provider workspace, module 5 |
+| `POST /bookings/:id/checklist/:itemId` · `/revisions` | provider job execution, module 5 |
+| `POST /bookings/:id/quote` | listed in module 5's own docs; no route of that name exists on the controller — see `BACKEND_REQUIREMENTS.md` §3.3 |
 
 ---
 
-## Module 4 — Customer ⬜
+## Module 4 — Customer 🟡
 
-Source: `src/features/portal/customer-*.tsx` · pages: `/[locale]/account/*`
+Source: `features/portal/customer-*.tsx` · pages: `/[locale]/account/*`
+
+Addresses are wired because booking cannot start without one — `POST /bookings`
+takes an `addressId`. Everything else here is still mock.
 
 | Endpoint | Access | Status |
 |---|---|---|
-| `GET /customer/addresses` | authenticated | ⬜ |
-| `POST /customer/addresses` | `CUSTOMER` | ⬜ |
-| `PATCH /customer/addresses/:id` | `CUSTOMER` | ⬜ |
-| `DELETE /customer/addresses/:id` | `CUSTOMER` | ⬜ |
-| `GET /bookings` (customer list) | `CUSTOMER` | ⬜ with module 3 |
+| `GET /customer/addresses` | `CUSTOMER` | ✅ `account/api.ts` — step one and `/account/addresses` |
+| `POST /customer/addresses` | `CUSTOMER` | ✅ `useCreateAddress` — the inline form in the booking flow |
+| `PATCH /customer/addresses/:id` | `CUSTOMER` | 🟡 typed in `accountApi`, not yet rendered |
+| `DELETE /customer/addresses/:id` | `CUSTOMER` | 🟡 typed in `accountApi`, not yet rendered |
 | `GET /notifications` | authenticated | ⬜ |
 | `POST /notifications/:id/read` | authenticated | ⬜ |
 | `POST /notifications/read-all` | authenticated | ⬜ |
@@ -170,6 +226,38 @@ Source: `src/features/portal/customer-*.tsx` · pages: `/[locale]/account/*`
 | `GET /complaints/:id` | customer | ⬜ |
 | `POST /complaints/:id/evidence` | customer | ⬜ |
 | `POST /complaints/:id/reply` | customer | ⬜ |
+
+`GET /bookings` and `GET /bookings/:id` are listed in this module's original
+table but were built with module 3, since they are the same resource.
+
+---
+
+## Module 4 — Customer 🟡
+
+Source: `src/features/portal/customer-*.tsx` · pages: `/[locale]/account/*`
+
+Addresses are wired because booking cannot start without one — `POST /bookings`
+takes an `addressId`. Everything else on these pages is still mock.
+
+| Endpoint | Access | Status |
+|---|---|---|
+| `GET /customer/addresses` | `CUSTOMER` | ✅ `account/api.ts` — booking step one and `/account/addresses` |
+| `POST /customer/addresses` | `CUSTOMER` | ✅ `useCreateAddress` — the inline form in the booking flow |
+| `PATCH /customer/addresses/:id` | `CUSTOMER` | 🟡 typed in `accountApi`, not yet rendered |
+| `DELETE /customer/addresses/:id` | `CUSTOMER` | 🟡 typed in `accountApi`, not yet rendered |
+| `GET /notifications` | authenticated | ⬜ |
+| `POST /notifications/:id/read` | authenticated | ⬜ |
+| `POST /notifications/read-all` | authenticated | ⬜ |
+| `POST /complaints` | customer | ⬜ |
+| `POST /complaints/from-receipt` | customer | ⬜ |
+| `GET /complaints` | customer | ⬜ |
+| `GET /complaints/:id` | customer | ⬜ |
+| `POST /complaints/:id/evidence` | customer | ⬜ |
+| `POST /complaints/:id/reply` | customer | ⬜ |
+
+`GET /bookings` and `GET /bookings/:id` were listed in this module's original
+table but were built with module 3 — they are the same resource, and a customer
+who cannot see the booking they just made has not really booked anything.
 
 ---
 
@@ -223,10 +311,11 @@ Source: `src/features/portal/provider-*.tsx` · pages: `/[locale]/provider/*`
 | Endpoint | Access | Status |
 |---|---|---|
 | `GET /provider/jobs` | provider | ⬜ `/provider`, `/provider/offers`, `/provider/today` |
-| `POST /bookings/:id/accept` · `/decline` | provider | ⬜ with module 3 |
-| `POST /bookings/:id/quote` | provider | ⬜ `/provider/jobs/[id]` |
-| `POST /bookings/:id/evidence` | provider | ⬜ |
-| `POST /bookings/:id/complete` | provider | ⬜ |
+| `POST /bookings/:id/accept` · `/decline` · `/depart` · `/start` · `/complete` · `/cash-received` | provider | ⬜ with module 5 — typed in `bookingApi`, no UI yet |
+| `POST /bookings/:id/quote` | provider | ⬜ `/provider/jobs/[id]` — **no such route exists**; see `BACKEND_REQUIREMENTS.md` §3.3 |
+| `POST /bookings/:id/evidence` · `GET /bookings/:id/evidence` | provider | 🟡 typed in `bookingApi`; the customer side is built, the provider side is not |
+| `POST /bookings/:id/checklist/:itemId` · `/revisions` | provider | ⬜ |
+| `GET /bookings` · `/bookings/:id` · `/messages` | either | ✅ built with module 3 |
 | `GET /provider/conduct` | authenticated | ⬜ `/provider/conduct` |
 | `GET /provider/penalties` · `/:id` | authenticated | ⬜ |
 | `POST /provider/penalties/:id/appeal` · `/reply` | authenticated | ⬜ |
@@ -354,18 +443,28 @@ Everything below renders correctly but fabricates its content from
 
 | Area | Pages |
 |---|---|
-| Booking | `/book/[slug]` |
-| Customer | `/account`, `/account/bookings`, `/account/bookings/[id]`, `/account/addresses`, `/account/favourites`, `/account/plans`, `/account/profile` |
+| Booking | **none** — `/book/[slug]`, `/account/bookings` and `/account/bookings/[id]` are all on the API |
+| Customer | `/account`, `/account/favourites`, `/account/plans`, `/account/profile`, `/account/security` (`/account/addresses` is real; the page around it is not) |
 | Provider | `/provider` and all 12 `/provider/*` routes |
 | Agent | `/agent`, `/agent/verification/[id]`, `/agent/attempts` |
 | Finance | `/finance`, `/finance/escrow`, `/finance/releases`, `/finance/refunds`, `/finance/payouts`, `/finance/cash`, `/finance/debts`, `/finance/ledger` |
 | Admin | all 16 `/admin/*` routes |
 | Also mock | `/track`, `/verification/[token]`, `/plans`, `/how-verification-works`, `/` (home page sections) |
 
+Two follow-ups module 3 leaves, both because the API does not expose what the
+page needs:
+
+- **`/account` still reads mock bookings** while `/account/bookings` reads the
+  API. Two sources of truth for one customer's bookings, which is the same
+  problem the home page has with the catalogue. Wiring `CustomerDashboard` to
+  `GET /bookings` is a small job and belongs with the rest of module 4.
+- **`/account/addresses` renders mock addresses** beside the real create form.
+  `accountApi` already types `updateAddress` and `archiveAddress`; only the list
+  page is outstanding.
+
 The home page (`/`) is worth calling out: it reads mock data for its service and
 category sections while `/services` reads the API. **Two sources of truth for the
-same catalogue.** Module 3 should reconcile that, or the home page will advertise
-services the catalogue does not have.
+same catalogue.** That should be reconciled before or alongside module 4.
 
 ---
 
@@ -384,3 +483,9 @@ services the catalogue does not have.
 6. **Add a freshness entry** to `lib/api/keys.ts` with a comment saying why.
 7. **Tests in `src/tests/<module>/`**, and `.tsx` tests need `afterEach(cleanup)`.
 8. **Update this file** as you go — it is the only place that says what is real.
+9. **Never compute a price the API prices.** `POST /bookings/quote` and
+   `POST /bookings` share one `PricingService.price()`, so a locally derived
+   total can only ever disagree with the server about what is owed.
+10. **A status with no name must not reach the screen.** `bookingStatus` in
+    `dictionaries.ts` covers all 22 values of `booking_status`. Adding an enum
+    value without a label would render `SCREAMING_SNAKE` to a customer.

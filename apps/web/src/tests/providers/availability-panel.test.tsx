@@ -99,14 +99,23 @@ describe("availability panel", () => {
     expect((action as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("enables the hand-off only after a real slot is picked", async () => {
+it("carries the professional, the day and the exact start into the booking flow", async () => {
     renderPanel();
     await settled();
     fireEvent.click(slotButtons()[0] as HTMLElement);
 
     await waitFor(() => expect(bookingLink()).not.toBeNull());
-    /* The booking flow accepts a service slug — not a provider, not a slot. */
-    expect(bookingLink()?.getAttribute("href")).toBe("/en/book/leak-repair");
+    /* `POST /bookings` needs all four of service, provider, start and end, so the
+       hand-off carries the three this panel knows. The booking flow validates each
+       one before using it. */
+    const href = bookingLink()?.getAttribute("href") ?? "";
+    expect(href.startsWith("/en/book/leak-repair?")).toBe(true);
+    const params = new URLSearchParams(href.split("?")[1]);
+    expect(params.get("provider")).toBe(providerId);
+    expect(params.get("date")).toBeTruthy();
+    expect(params.get("start")).toBeTruthy();
+    /* The instant is encoded, not pasted raw. */
+    expect(href).not.toContain("T19:00:00.000Z");
     /* Only one action, and it is now the link. */
     expect(screen.queryByRole("button", { name: dict.profile.bookingAction })).toBeNull();
   });
