@@ -7,7 +7,8 @@
 | Project key | `SHM` |
 | Baseline docs | SRS v2.1 (`SRS.md`) · TRD (`TRD.md`) · ERD (`ERD.md`) · `schema.sql` · Cursor build prompt |
 | Tracker created | 21 Sep 2026 |
-| Last updated | 1 Oct 2026 - *update on every change* |
+| Last updated | 5 Oct 2026 - *update on every change* |
+| Reconciled against | `apps/api/test/api-surface.baseline.json` — **171 operations**, 2026-10-05 |
 | Product owner | Muhammad Hamza Kundi |
 | BE lead | backend agent |
 | FE lead | _name_ |
@@ -66,66 +67,49 @@
 *Recount after every status change.* Quick count from the repo root:
 
 ```bash
-grep -oE '\| (TODO|IN PROGRESS|IN REVIEW|BLOCKED|DONE) \|' docs/PROGRESS_TRACKER.md | sort | uniq -c
+grep -oE '\| (TODO|IN PROGRESS|IN REVIEW|BLOCKED|DONE) \|' docs-final/PROGRESS_TRACKER.md | sort | uniq -c
 ```
 
-| Epic | BE done / total | FE done / total | Shared done / total | SP done / total | % |
-|---|---|---|---|---|---|
-| E0 | 0 / 10 | 0 / 5 | 0 / 3 | 0 / 69 | 0 % |
-| E1 | 0 / 7 | 0 / 6 | 0 / 1 | 0 / 77 | 0 % |
-| E2 | 0 / 13 | 0 / 7 | 0 / 1 | 0 / 117 | 0 % |
-| E3 | 0 / 12 | 0 / 8 | 0 / 1 | 0 / 100 | 0 % |
-| E4 | 0 / 7 | 0 / 6 | 0 / 1 | 0 / 74 | 0 % |
-| E5 | 0 / 7 | 0 / 4 | 0 / 2 | 0 / 70 | 0 % |
-| **All** | **0 / 56** | **0 / 36** | **0 / 9** | **0 / 507** | **0 %** |
+**Two columns, deliberately.** *Done* counts only tickets a reviewer has signed off (§1 rule 5) — that number is the one that means something to the product owner. *Built* counts `IN REVIEW + DONE`, i.e. code merged, lint/typecheck/tests green, acceptance criteria evidenced. Reading only *Done* badly understates where the project is, because no reviewer pass has ever happened; reading only *Built* would flatter work that has never been looked at by a second pair of eyes.
 
-Nothing is counted as `DONE` yet: SHM-001 to SHM-012 are merged and every one of
-their acceptance criteria is either ticked on evidence or still open, but per
-section 1 only a reviewer sets `DONE` after confirming the criteria. The counts
-above stay at zero until then. SHM-013 has not been run in CI.
+| Epic | BE built / total | FE built / total | Shared built / total | SP built / total | Built % | Done |
+|---|---|---|---|---|---|---|
+| E0 | 10 / 10 | 0 / 5 | 3 / 3 | 53 / 69 | 77 % | 0 |
+| E1 | 2 / 7 | 0 / 6 | 0 / 1 | 10 / 77 | 13 % | 0 |
+| E2 | 12 / 13 | 0 / 7 | 0 / 1 | 64 / 117 | 55 % | 0 |
+| E3 | 12 / 12 | 0 / 8 | 0 / 1 | 60 / 100 | 60 % | 0 |
+| E4 | 1 / 7 | 0 / 6 | 0 / 1 | 5 / 74 | 7 % | 0 |
+| E5 | 0 / 7 | 0 / 4 | 0 / 2 | 0 / 70 | 0 % | 0 |
+| **All** | **37 / 56** | **0 / 36** | **3 / 9** | **192 / 507** | **38 %** | **0** |
 
-**Open in E0, with evidence attached to each:** the four MinIO buckets cannot be
-created locally (see Blockers); the doc pack lives in `smart-home-docs/` rather
-than the `docs/` path the SHM-001 criteria name, and the ticket still says
-`pnpm` where the project uses npm workspaces; SHM-013 has not been run in CI.
+By status, across all 101 tickets:
 
-Verification as of this update, all on this machine: lint, typecheck and build
-clean in every package; 64 unit tests and 116 integration tests green against
-live PostGIS and Redis; the API boots and `/health/ready` reports database,
-redis, queues, settings and storage all ok. Five new modules exist since the
-last update — catalogue (SHM-019), customer addresses (part of SHM-020),
-provider profile/availability/time-off/service-areas and approval (part of
-SHM-021 and SHM-023), and search (part of SHM-035), plus a small unticketed
-`places` module (cities/areas) that address creation and provider location
-both depend on. Every endpoint was exercised twice: once through the
-integration suite, and once as a live HTTP walkthrough against the running
-dev server using the exact example payloads now shown in Swagger — register
-a customer, register a provider, build out their profile/availability/areas/
-price, have an admin approve the offer and the account, and have search
-actually surface that provider by real PostGIS distance. None of these
-tickets are complete against their originally written acceptance criteria
-(see §5) — each detail card below records exactly what is built and tested
-versus what is still open, rather than being marked done on a partial match.
+| Status | Tickets | SP | Meaning |
+|---|---|---|---|
+| `DONE` | 0 | 0 | Merged, CI green, **reviewer confirmed** acceptance criteria |
+| `IN REVIEW` | 40 | 192 | Built and tested; awaiting a reviewer pass |
+| `IN PROGRESS` | 11 | 68 | Partially built; the card in §5 says exactly what is missing |
+| `TODO` | 48 | 237 | Not started — 36 frontend (no `apps/web`), 6 backend, 6 shared |
+| `BLOCKED` | 2 | 10 | SHM-095, SHM-096 — waiting on a product decision |
 
-**M5 (booking) build in progress, same session:** a design spec
-(`docs/superpowers/specs/2026-09-26-m5-booking-design.md`) and implementation
-plan (`docs/superpowers/plans/2026-09-26-m5-booking-plan.md`) were written and
-approved, and execution has started task-by-task with a fresh reviewer per
-task (no git repository exists in this project, so review packages are full
-file contents rather than diffs, and there is no worktree/branch/commit
-history for this work — see the plan's Global Constraints and the execution
-ledger at `.superpowers/sdd/2026-09-26-m5-booking-plan/progress.md` for the
-full detail). So far: the pure state-transition table (`packages/domain`,
-task 1) and booking creation (`POST /bookings`, task 2) are both implemented
-and independently reviewed clean, including one real fix round on task 2
-(the create write sequence wasn't transactional — fixed, re-reviewed clean).
-Booking read/list (`GET /bookings/:id`, `GET /bookings`, task 3) is
-implemented and self-tested by its implementer (9/9 passing) but its task
-review was interrupted mid-run and has not yet completed — treat it as
-unreviewed until that finishes. Tasks 4-12 (state-service foundation,
-accept/decline, cancel, reschedule, arrival OTP, no-show, checklist, quote
-revisions, completion, and the final full-suite verification pass) have not
-started.
+**What the shape of this actually says.** The backend is roughly two-thirds built (184 of 297 BE story points, 62 %); the frontend is untouched (0 of 176 points). So the binding constraint on shipping is not backend breadth, it is that **no frontend exists at all** — `apps/web` is absent from the repo, 36 of the 48 `TODO` tickets are frontend, and all five remaining phase exit gates (SHM-032, 053, 074, 088, 101) depend on it. Second constraint: **no reviewer pass has ever run**, which is why *Done* is zero across 192 points of working, tested code. That is a process gap, not a code gap, and it is the cheapest thing on this page to fix.
+
+**Verified against the running system on 5 Oct 2026**, not inferred: 171 API operations in the committed surface snapshot; 398 integration tests and 219 unit tests; lint, typecheck and build clean. 397 of 398 integration tests pass — the one failure (`booking-completion.test.ts`, an 88 ms timestamp drift) reproduces identically on a clean checkout with all in-progress work stashed, so it is pre-existing and not a regression.
+
+### Known defects and gaps carried, by phase
+
+| Where | Gap | Ticket |
+|---|---|---|
+| E0 | CI pipeline written and committed but **never observed running on a real PR**; branch protection and the 15-minute budget are unverified | SHM-013 |
+| E0 | Every external provider (payment, SMS, email, maps, telephony, WhatsApp, storage) is pinned to `mock` in *every* environment; the env schema rejects any other value | SHM-095, SHM-096 |
+| E1 | Provider approval writes **no `audit_log` row**, unlike every other admin action — breaks the Definition of Done | SHM-023 |
+| E1 | Approval is **not gated** on a verified CNIC. SHM-022 (5 Oct) supplies the gate's input; the gate itself is unwired | SHM-023 |
+| E1 | "Submit for approval" does not exist, so an admin can approve a provider at any profile completeness | SHM-021 |
+| E1 | Customer profile, favourites and deactivate are unbuilt (only addresses exist) | SHM-020 |
+| E2 | Search applies only `rating` + `distance` of the five configured `ranking.weights`; the other three have no data yet and are renormalised away | SHM-035 |
+| E3 | `provider_stats` table does not exist — score, distribution and badge are computed on read | SHM-063 |
+| E4 | Disputes, conduct, appeals, conduct jobs and the notification planner are **built but have no integration tests** — the code paths are unproven | SHM-076…081 |
+| E5 | Nothing started | SHM-089…094 |
 
 Priority: **P0** = required for the phase exit gate · **P1** = required for release · **P2** = nice to have. Story points are relative size (Fibonacci). Calibrate velocity at the end of Phase 0 and re-plan dates from that, not from the point totals.
 
@@ -149,7 +133,7 @@ Priority: **P0** = required for the phase exit gate · **P1** = required for rel
 | [SHM-010](#shm-010) | BE | Story | P0 | 5 | Staff TOTP + RBAC policy guard | SHM-009 | backend agent | IN REVIEW | merged, awaiting reviewer |
 | [SHM-011](#shm-011) | BE | Task | P0 | 5 | Integration ports + working mocks; dev inbox | SHM-007 | backend agent | IN REVIEW | merged, awaiting reviewer |
 | [SHM-012](#shm-012) | BE | Test | P0 | 3 | DB invariant integration tests | SHM-003, SHM-008 | backend agent | IN REVIEW | merged, awaiting reviewer |
-| [SHM-013](#shm-013) | SHARED | Task | P0 | 3 | CI pipeline (GitHub Actions) | SHM-001, SHM-002 | backend agent | TODO | — |
+| [SHM-013](#shm-013) | SHARED | Task | P0 | 3 | CI pipeline (GitHub Actions) | SHM-001, SHM-002 | backend agent | IN REVIEW | committed; never yet run on a real PR |
 | [SHM-014](#shm-014) | FE | Task | P0 | 3 | Web app scaffold: Next.js 15, i18n, design system | SHM-001 | — | TODO | — |
 | [SHM-015](#shm-015) | FE | Task | P0 | 3 | Typed API client with token refresh | SHM-005, SHM-007 | — | TODO | — |
 | [SHM-016](#shm-016) | FE | Story | P0 | 5 | Auth pages | SHM-009, SHM-010, SHM-015 | — | TODO | — |
@@ -160,12 +144,12 @@ Priority: **P0** = required for the phase exit gate · **P1** = required for rel
 
 | Key | Owner | Type | Pri | SP | Title | Depends on | Assignee | Status | PR |
 |---|---|---|---|---|---|---|---|---|---|
-| [SHM-019](#shm-019) | BE | Story | P0 | 5 | Catalogue API (admin CRUD + public read) | SHM-008, SHM-010 | backend agent | IN PROGRESS | — |
-| [SHM-020](#shm-020) | BE | Story | P0 | 5 | Customer profile, addresses, favourites, deactivate | SHM-009 | backend agent | IN PROGRESS | — |
-| [SHM-021](#shm-021) | BE | Story | P0 | 8 | Provider onboarding API | SHM-009, SHM-019 | backend agent | IN PROGRESS | — |
-| [SHM-022](#shm-022) | BE | Story | P0 | 5 | Provider documents & CNIC protection | SHM-021, SHM-011 | backend agent | TODO | — |
-| [SHM-023](#shm-023) | BE | Story | P0 | 5 | Admin approval workflow | SHM-022 | backend agent | IN PROGRESS | — |
-| [SHM-024](#shm-024) | BE | Story | P1 | 5 | Admin management: users, roles, settings, conflicts | SHM-010, SHM-008 | backend agent | TODO | — |
+| [SHM-019](#shm-019) | BE | Story | P0 | 5 | Catalogue API (admin CRUD + public read) | SHM-008, SHM-010 | backend agent | IN PROGRESS | 17 ops live; caching + commission precedence open |
+| [SHM-020](#shm-020) | BE | Story | P0 | 5 | Customer profile, addresses, favourites, deactivate | SHM-009 | backend agent | IN PROGRESS | addresses only (4 ops) |
+| [SHM-021](#shm-021) | BE | Story | P0 | 8 | Provider onboarding API | SHM-009, SHM-019 | backend agent | IN PROGRESS | profile/availability/areas/leave done; no submit step |
+| [SHM-022](#shm-022) | BE | Story | P0 | 5 | Provider documents & CNIC protection | SHM-021, SHM-011 | backend agent | IN REVIEW | 6 ops, 36 integration + 14 unit tests |
+| [SHM-023](#shm-023) | BE | Story | P0 | 5 | Admin approval workflow | SHM-022 | backend agent | IN PROGRESS | gate + audit row still missing |
+| [SHM-024](#shm-024) | BE | Story | P1 | 5 | Admin management: users, roles, settings, conflicts | SHM-010, SHM-008 | backend agent | TODO | settings UI API only; 0 of 6 surfaces |
 | [SHM-025](#shm-025) | BE | Story | P0 | 5 | Slot generator + slots endpoint | SHM-021, SHM-006 | backend agent | IN REVIEW | built, awaiting reviewer |
 | [SHM-026](#shm-026) | FE | Story | P0 | 5 | Public catalogue pages (SSR) | SHM-017, SHM-019 | — | TODO | — |
 | [SHM-027](#shm-027) | FE | Story | P0 | 5 | Customer account pages | SHM-020, SHM-017 | — | TODO | — |
@@ -179,9 +163,9 @@ Priority: **P0** = required for the phase exit gate · **P1** = required for rel
 
 | Key | Owner | Type | Pri | SP | Title | Depends on | Assignee | Status | PR |
 |---|---|---|---|---|---|---|---|---|---|
-| [SHM-033](#shm-033) | BE | Story | P0 | 8 | Booking state machine (domain) T1–T26 | SHM-006, SHM-005 | backend agent | IN REVIEW | built, awaiting reviewer |
-| [SHM-034](#shm-034) | BE | Story | P0 | 5 | `BookingStateService.apply()` | SHM-033, SHM-008 | backend agent | IN REVIEW | built, awaiting reviewer |
-| [SHM-035](#shm-035) | BE | Story | P0 | 8 | Search & ranking API | SHM-025, SHM-020 | backend agent | IN PROGRESS | — |
+| [SHM-033](#shm-033) | BE | Story | P0 | 8 | Booking state machine (domain) T1–T26 | SHM-006, SHM-005 | backend agent | IN REVIEW | 20 states modelled; post-verification states are phase 3 |
+| [SHM-034](#shm-034) | BE | Story | P0 | 5 | `BookingStateService.apply()` | SHM-033, SHM-008 | backend agent | IN REVIEW | built |
+| [SHM-035](#shm-035) | BE | Story | P0 | 8 | Search & ranking API | SHM-025, SHM-020 | backend agent | IN PROGRESS | 3 ops; no filters, 2 of 5 weights |
 | [SHM-036](#shm-036) | BE | Story | P0 | 3 | Quote endpoint | SHM-019, SHM-020 | backend agent | IN REVIEW | built, awaiting reviewer |
 | [SHM-037](#shm-037) | BE | Story | P0 | 8 | Checkout: cash + online, webhook, capture, abandonment | SHM-034, SHM-036, SHM-011 | backend agent | IN REVIEW | built, awaiting reviewer |
 | [SHM-038](#shm-038) | BE | Story | P0 | 8 | Offers & auto-assign cascade | SHM-037 | backend agent | IN REVIEW | built, awaiting reviewer |
@@ -231,13 +215,13 @@ Priority: **P0** = required for the phase exit gate · **P1** = required for rel
 
 | Key | Owner | Type | Pri | SP | Title | Depends on | Assignee | Status | PR |
 |---|---|---|---|---|---|---|---|---|---|
-| [SHM-075](#shm-075) | BE | Story | P0 | 5 | Complaints API | SHM-057 | backend agent | IN REVIEW | built, awaiting reviewer |
-| [SHM-076](#shm-076) | BE | Story | P0 | 8 | Disputes API & resolution postings | SHM-075, SHM-058 | backend agent | IN PROGRESS | — |
-| [SHM-077](#shm-077) | BE | Story | P0 | 8 | Conduct engine: penalties, demerits, thresholds | SHM-076 | backend agent | IN PROGRESS | — |
-| [SHM-078](#shm-078) | BE | Story | P0 | 5 | Appeals & reversals | SHM-077 | backend agent | IN PROGRESS | — |
-| [SHM-079](#shm-079) | BE | Task | P0 | 3 | Daily conduct job: expiry, decay, suspensions | SHM-077 | backend agent | IN PROGRESS | — |
-| [SHM-080](#shm-080) | BE | Story | P1 | 5 | Automatic breach proposals | SHM-077 | backend agent | IN PROGRESS | — |
-| [SHM-081](#shm-081) | BE | Story | P0 | 8 | Notifications: full planner & delivery | SHM-044 | backend agent | IN PROGRESS | — |
+| [SHM-075](#shm-075) | BE | Story | P0 | 5 | Complaints API | SHM-057 | backend agent | IN REVIEW | 22 integration tests |
+| [SHM-076](#shm-076) | BE | Story | P0 | 8 | Disputes API & resolution postings | SHM-075, SHM-058 | backend agent | IN PROGRESS | built; resolve/reply have 0 tests |
+| [SHM-077](#shm-077) | BE | Story | P0 | 8 | Conduct engine: penalties, demerits, thresholds | SHM-076 | backend agent | IN PROGRESS | domain unit-tested; 0 HTTP tests |
+| [SHM-078](#shm-078) | BE | Story | P0 | 5 | Appeals & reversals | SHM-077 | backend agent | IN PROGRESS | built; 0 tests of any kind |
+| [SHM-079](#shm-079) | BE | Task | P0 | 3 | Daily conduct job: expiry, decay, suspensions | SHM-077 | backend agent | IN PROGRESS | scheduled; 0 tests of any kind |
+| [SHM-080](#shm-080) | BE | Story | P1 | 5 | Automatic breach proposals | SHM-077 | backend agent | IN PROGRESS | 5 of 6 triggers; 0 tested |
+| [SHM-081](#shm-081) | BE | Story | P0 | 8 | Notifications: full planner & delivery | SHM-044 | backend agent | IN PROGRESS | built; 4 booking-only tests |
 | [SHM-082](#shm-082) | FE | Story | P0 | 5 | Complaint forms & timeline | SHM-075 | — | TODO | — |
 | [SHM-083](#shm-083) | FE | Story | P0 | 8 | Admin complaints & disputes workspace | SHM-075, SHM-076 | — | TODO | — |
 | [SHM-084](#shm-084) | FE | Story | P0 | 5 | Admin penalties & appeals | SHM-077, SHM-078 | — | TODO | — |
@@ -580,6 +564,8 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 
 **Evidence (26 Sep 2026):** `apps/api/src/customer/addresses.service.ts` — full CRUD (`GET`/`POST /customer/addresses`, `PATCH`/`DELETE /customer/addresses/:id`), PostGIS point storage, single-default-address enforced in a transaction, soft-archive on delete. **Not built:** `GET/PATCH /me` profile (no separate customer profile exists beyond `/auth/me`), favourites, deactivate. 7 integration tests in `customer-addresses.test.ts`, all green.
 
+**Re-verified 5 Oct 2026:** still exactly four `customer`-tagged operations, all of them addresses. `GET/PATCH /me`, `POST/DELETE /me/favourites/:providerId` and `POST /me/deactivate` are all still absent from the committed surface. The deactivate criterion matters beyond its own ticket — SHM-020's scope says PII is anonymised while financial records are retained, and the `audit_log` insert-only trigger plus the bookings/ledger foreign keys mean the anonymisation has to be done carefully rather than by deletion.
+
 <a id="shm-021"></a>
 #### SHM-021 · Provider onboarding API
 
@@ -599,6 +585,8 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 
 **Evidence (26 Sep 2026):** `apps/api/src/provider/` — profile (`GET`/`PATCH /provider/profile`), weekly availability (`GET`/`PUT /provider/availability`, replace-all), time off (`GET`/`POST /provider/time-off`, `DELETE .../:id`), service areas (`GET`/`PUT /provider/service-areas`, replace-all). Route paths are `/provider/*`, not `/provider/me/*` as the contract above names them. Payout account and penalty-schedule acceptance are not built (both need modules — M8 payouts, M15 penalties — that don't exist yet). 17 integration tests in `provider-profile.test.ts`, all green.
 
+**Correction (5 Oct 2026):** the "payout account not built" half of that note is now **stale**. `GET/POST /provider/payout-accounts` and `GET/POST /provider/payouts` exist and are tested — they were delivered under **SHM-061** (finance), not here, and are tagged `payment` in the surface snapshot, which is why they were missed. Penalty-schedule acceptance (`penalty_schedule_accepted_at`, FR-PN-08) is **still** unbuilt, as is the submit-for-approval step: `providers.submitted_at` exists in the schema but nothing writes it, so an admin can still approve a provider at any profile completeness. SHM-022 (5 Oct) has now made CNIC verification possible, which was this ticket's other hard prerequisite.
+
 <a id="shm-022"></a>
 #### SHM-022 · Provider documents & CNIC protection
 
@@ -611,10 +599,30 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **API contract:** `POST /uploads/presign` · `POST /provider/documents`
 
 **Acceptance criteria**
-- [ ] Agent and finance roles get 403 on document access
-- [ ] Every document view creates an audit row
-- [ ] Same CNIC on a second account → 409
-- [ ] Definition of Done met
+- [x] Agent and finance roles get 403 on document access — every admin route is `roles: ['ADMIN'], totpRequired: true`, so the policy guard rejects the role before the handler runs. `provider-documents.test.ts`: agent and finance are refused on list, on the signed link, and on review; provider and customer are refused too; admin is let in (proving the 403 is a role rule, not a broken route)
+- [x] Every document view creates an audit row — `provider_document.view` with the acting admin's id and role, one row per view (a second view adds a second row rather than updating the first); **zero** rows when the request was refused 403. Upload and review decisions are audited too
+- [x] Same CNIC on a second account → 409 — the unique index on `providers.cnic_hash` is the authority, so the clash is caught even under a race that a pre-flight SELECT would lose. Caught however the CNIC was written (dashes, spaces or bare), and a rejected write leaves the second provider with no partial state
+- [x] Definition of Done met
+
+**Evidence (5 Oct 2026):** `apps/api/src/provider/` — `cnic-vault.ts`, `provider-documents.service.ts`, three controllers, `provider-documents.schemas.ts`. Six operations (surface 165 → 171): `POST /uploads/presign`, `GET/POST /provider/documents`, `GET /admin/providers/:id/documents`, `GET /admin/documents/:id/url`, `POST /admin/documents/:id/review`.
+
+Design points worth keeping:
+
+- **The CNIC is never at rest in the clear.** AES-256-GCM with a fresh nonce per encryption (`iv | authTag | ciphertext`, matching the TOTP vault). A separate `CNIC_ENCRYPTION_KEY` is required rather than reusing TOTP's — key separation per purpose, and a production `superRefine` rejects the two being equal. `.env.example`, the CI workflow and `environment.test.ts` all carry it.
+- **The blind index is what makes "one person, one account" enforceable**: a keyed HMAC (`cnic:`-prefixed, so it cannot collide with another pepper use) in a plain `UNIQUE` column. A database dump alone cannot tell you whose CNIC is on file, only which rows collide.
+- **Nothing echoes the digits.** Responses carry review state and a boolean pair (`hasCnic`, `cnicVerified`), never the number. Tested by asserting the digits appear in no response body, and separately that the stored bytes are neither the plaintext nor its hex.
+- **Viewing is privileged and logged**: admin + TOTP only, a 5-minute signed link (the storage port rejects a TTL outside 1–900), and an audit row naming who looked at whose document.
+- **No schema migration was needed.** `provider_documents` has no `content_type`/`size_bytes`; adding them would mean editing `docs-final/schema.sql` and keeping `0001_init.sql` byte-identical, which CI enforces. Content type is validated at the request boundary instead (JPEG/PNG/PDF only — a generic `application/octet-stream` would let anything be parked in the documents bucket and later served back as if it were a CNIC scan).
+- **No unique constraint on `(provider_id, doc_type)`, deliberately** — a rejected document must be replaceable, so review state lives per row and only a `VERIFIED` row counts.
+
+**Tests:** 36 integration (`provider-documents.test.ts`) + 14 unit (`cnic-vault.test.ts`). Unit covers normalisation, a fresh nonce per encryption, refusal under the wrong key, tamper detection via the GCM tag, truncation, and blind-index stability/separation. Integration covers all three criteria above, CNIC secrecy end to end, re-upload after rejection, cross-provider isolation, the presign handshake, and that a rejected write leaves no partial state.
+
+**Two defects found and fixed while writing the tests** (both worth remembering, both in the tests rather than the code):
+
+1. Hard-coded CNICs made the file pass on a freshly reset database and fail on **every re-run against the same one**, because the unique index is global and permanent. CNICs are now generated per call; the file is re-runnable without a reset, which CI depends on.
+2. An initial assertion that a provider re-submitting *their own* CNIC gets 409 was **wrong**, and the code was right. Postgres does not raise a unique violation when a row is updated to the value it already holds, so the same provider completing their own front-and-back upload succeeds. The index enforces *one account per CNIC*, not *one row per CNIC*. The test now documents that rule.
+
+**Scope note:** SHM-023's gate ("approval blocked unless CNIC is `VERIFIED`") was left unwired here on purpose. `ProviderDocumentsService.cnicReviewState()` now supplies exactly what that gate needs, but wiring it changes `POST /admin/providers/:id/approve`, which `readyBookableProvider` in the test harness calls for providers with no documents — so it belongs in SHM-023, with the harness updated alongside it.
 
 <a id="shm-023"></a>
 #### SHM-023 · Admin approval workflow
@@ -628,12 +636,14 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **API contract:** `GET /admin/providers?status` · `POST /admin/providers/:id/approve|reject` · `POST /admin/documents/:id/verify`
 
 **Acceptance criteria**
-- [ ] Approval blocked unless CNIC is `VERIFIED` — cannot be built until SHM-022 (documents) exists; today `POST /admin/providers/:id/approve` has no gate at all
-- [ ] Decision + reason + actor recorded in **audit log** — **known gap, not just a naming difference:** `approved_by`/`rejection_reason` are stamped on the `providers` row itself, but unlike every other admin write in this codebase (e.g. `settings.service.ts`'s `set()`), no row is written to `audit_log`. This breaks the project's own Definition of Done ("audit rows written for admin actions") and should be fixed before relying on this endpoint.
-- [ ] Wallet account exists immediately after approval — not built (needs M8 ledger/wallets)
-- [ ] Definition of Done met — **not met**, see audit log gap above
+- [ ] Approval blocked unless CNIC is `VERIFIED` — **the input now exists; the gate is still unwired.** SHM-022 (5 Oct) delivered `ProviderDocumentsService.cnicReviewState()` returning `{ hasCnic, cnicVerified }` specifically so this gate can be written, but `POST /admin/providers/:id/approve` still has no check at all. Not built here deliberately: the gate changes an endpoint that `readyBookableProvider` in the test harness calls for providers with no documents, so it has to land with the harness updated alongside it
+- [ ] Decision + reason + actor recorded in **audit log** — **known gap, not just a naming difference:** `approved_by`/`rejection_reason` are stamped on the `providers` row itself, but unlike every other admin write in this codebase (e.g. `settings.service.ts`'s `set()`, and now `provider_document.review`), no row is written to `audit_log`. This breaks the project's own Definition of Done ("audit rows written for admin actions") and should be fixed before relying on this endpoint
+- [ ] Wallet account exists immediately after approval — not built. `DebtService` creates the `PROVIDER_WALLET` account lazily the first time the wallet moves, so there is no window where money is lost, but the criterion as written is not satisfied
+- [ ] Definition of Done met — **not met**, see the audit-log gap above
 
 **Evidence (26 Sep 2026):** `apps/api/src/provider/provider-approval.service.ts` — `POST /admin/providers/:id/approve` and `.../reject`, `ADMIN`+TOTP gated. This was added ahead of its listed dependency (SHM-022) because without *some* way to approve a provider, SHM-035 (search) had no way to be tested honestly — a provider can never appear in search while stuck at `PENDING_APPROVAL`. 4 integration tests, all green, but see the audit-log gap noted above before treating this as done.
+
+**Now that SHM-022 has landed, this ticket has no remaining dependency and is the cheapest meaningful P0 in Phase 1.** Three concrete pieces of work: (1) gate `approve()` on `cnicVerified`, (2) write the `audit_log` row, (3) create the `PROVIDER_WALLET` ledger account on approval. Provider-service offer approval (`/admin/provider-services/:providerId/:serviceId/approve|reject`) is separately complete and tested under SHM-019 — that part of SHM-023's scope is done.
 
 <a id="shm-024"></a>
 #### SHM-024 · Admin management: users, roles, settings, conflicts
@@ -647,9 +657,13 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **API contract:** `POST /admin/providers/:id/block|unblock|deactivate` · `/admin/customers/*` · `/admin/users/:id/send-reset` · `/admin/roles/*` · `/admin/staff-conflicts/*` · `GET/PUT /admin/settings` · `GET /admin/audit`
 
 **Acceptance criteria**
-- [ ] No hard delete endpoint exists for users
-- [ ] Every setting change audited with old/new value
-- [ ] Definition of Done met
+- [ ] No hard delete endpoint exists for users — true, and worth stating as a *verified negative*: a repo-wide search of the committed 171-operation surface for any delete-user or delete-provider route returns nothing. `DEACTIVATED` is a `provider_status` enum value and `users` has DB-level delete protection
+- [ ] Every setting change audited with old/new value — **the settings surface is already built and audited** (`GET /admin/settings`, `GET/PUT /admin/settings/{key}`, 3 operations tagged `settings`), which is the one part of this ticket that exists. The five surfaces below it do not
+- [ ] Definition of Done met — not met
+
+**Evidence (5 Oct 2026):** of the six surfaces in scope, **exactly one is built** — the typed, audited settings editor. Confirmed absent from the committed API surface: `/admin/users/*` (block/unblock/deactivate, send-reset), `/admin/roles/*`, `/admin/audit`, `/admin/staff-conflicts/*`, `/admin/customers/*`, and the provider block/unblock/deactivate routes. Block and suspend are reachable only indirectly today, through the conduct engine (`provider.block` / `provider.suspend` on a penalty), which is a *different* mechanism from the admin-facing management buttons this ticket asks for — so there is no way for an admin to block a provider on demand without going through a penalty.
+
+The staff-conflict surface (FR-AD-16, CL-19) is worth noting: conflict-of-interest *enforcement* exists and is tested on the agent verification path (`FR-VC-10`, SHM-055), and `staff_conflicts` is referenced there. What is missing is the HR process of *declaring* a conflict via `/admin/staff-conflicts/*`, so the table has no way to be populated through the API.
 
 <a id="shm-025"></a>
 #### SHM-025 · Slot generator + slots endpoint
@@ -820,12 +834,20 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **API contract:** `GET /search/providers?serviceId&addressId&…` · `GET /providers/:id`
 
 **Acceptance criteria**
-- [ ] p95 < 800 ms locally with 10 000 providers — not measured; no 10k-provider seed script exists
-- [ ] Debt-blocked provider never returned — "debt" doesn't exist yet (needs M8); blocked/suspended/rejected providers *are* excluded via `providers.status = 'APPROVED'`
-- [ ] Ranking weights read from settings — not built
-- [ ] Definition of Done met
+- [ ] p95 < 800 ms locally with 10 000 providers — not measured; no 10k-provider seed script exists. SHM-092's k6 pass is where this belongs
+- [x] Debt-blocked provider never returned — **done, and now stronger than the criterion asked.** Over `cash.debt_ceiling_paisa` a provider gets no direct booking (409 `DEBT_BLOCKED`), is skipped by auto-assign, **is hidden from search**, and sees no offers
+- [ ] Ranking weights read from settings — **partially done, and the gap is a trap.** `ranking.weights` *is* read from settings and search results now carry `ratingScore`, `ratingCount` and `badge`; but only **two of the five** configured weights (rating 0.35, distance 0.25) are actually applied. Completion rate, response speed and recency have no backing data yet, so their weights are renormalised away
+- [ ] Definition of Done met — not met
 
-**Evidence (26 Sep 2026):** `apps/api/src/search/`. Deliberately scoped down from this ticket's full description: it's a real PostGIS query (`ST_DWithin`/`ST_Distance` against `providers.base_location`/`radius_m`) ranked by **distance only**, filtered to `providers.status = 'APPROVED'` and an **approved** `provider_services` binding for the requested service. The Bayesian-prior weighted formula (rating, completion rate, response speed, recent activity) is not implemented, on purpose: those signals don't exist yet (no ratings/M9, no completed bookings/M5), so a "weighted" formula today would just be distance plus zeros — worth building once the inputs are real, not before. Query params are `serviceSlug`/`lat`/`lng`, not `serviceId`/`addressId` as the contract above names them (built before there was a booking-address concept to reference; a customer's own saved address could be resolved to lat/lng client-side, or this can be revisited once M5 needs it). Filters named in scope (experience, rating, price, available-today, verified-docs) are not implemented — rating/price/experience have no backing data yet, available-today and verified-docs need M5 bookings and SHM-022 documents respectively. 7 integration tests in `search.test.ts`, all green, plus a live end-to-end walkthrough (register → build profile → admin-approve → found by search) run twice against the running server.
+**Evidence (26 Sep 2026):** `apps/api/src/search/`. Deliberately scoped down from this ticket's full description: it's a real PostGIS query (`ST_DWithin`/`ST_Distance` against `providers.base_location`/`radius_m`) filtered to `providers.status = 'APPROVED'` and an **approved** `provider_services` binding for the requested service. Query params are `serviceSlug`/`lat`/`lng`, not `serviceId`/`addressId` as the contract above names them. 7 integration tests in `search.test.ts`, plus a live end-to-end walkthrough.
+
+**Correction (5 Oct 2026):** two parts of the 26 Sep note are now out of date. **Debt exclusion is built** — `DebtService` maintains `offer_blocked_reason = 'DEBT'` whenever the wallet moves, and search honours it (delivered under SHM-060). And **reputation data now exists** (SHM-063), so the rating weight is real rather than a placeholder.
+
+Still missing, and now the main substance of this ticket:
+- **No filters at all.** Experience, price range, available-today and minimum-completed-jobs are not implemented.
+- **The `verified-docs` filter is now unblocked** — it was previously impossible because documents did not exist. SHM-022 (5 Oct) landed `provider_documents` with a `review_status`, so "verified documents only" is now implementable against real data.
+- **Three of five ranking weights are dead config.** The seeded setting advertises a five-signal ranking that the code does not deliver. Either wire the remaining signals (which needs completion/response data that does not exist yet) or trim the setting, so operators are not misled by a weight vector that is silently renormalised.
+- **No `addressId` input** — a customer with a saved address must resolve it to coordinates client-side.
 
 <a id="shm-036"></a>
 #### SHM-036 · Quote endpoint
@@ -1468,9 +1490,13 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **API contract:** `POST /complaints` · `GET /complaints/:id` · `POST /complaints/:id/reply` · `GET /admin/complaints` · `POST /admin/complaints/:id/transition`
 
 **Acceptance criteria**
-- [ ] Safety complaint triggers admin alert within 1 min
-- [ ] Complaint visible in agent console for that booking
-- [ ] Definition of Done met
+- [x] Safety complaint triggers admin alert within 1 min — `complaints.test.ts:193` drains the outbox through `NotificationService.handle` and asserts `admin.safety_complaint` rows carry the admin's user id; the event is emitted in the same transaction as the complaint (`complaints.service.ts:90`)
+- [x] Complaint visible in agent console for that booking — `complaints.test.ts:244`
+- [x] Definition of Done met
+
+**Evidence (5 Oct 2026, re-verified):** `apps/api/src/complaints/` — `complaints.service.ts` (345 lines). **All five scope items are built and all are tested**, which makes this the most completely evidenced ticket outside booking and identity. 22 integration tests in `complaints.test.ts`. Verified individually rather than assumed: both customer *and* provider can raise (with the category set switched by role, and each refused for the other's categories, `complaints.test.ts:81`); severity→SLA mapping is data-driven from settings and tested (`:70`); safety complaints sort above every other open complaint regardless of age *and* raise the admin alert (`:173`, `:193`); the `complaint_events` timeline records CREATED / STATUS_CHANGED / COMMENT / EVIDENCE_ADDED / PARTY_REPLY; assignment is admin-or-agent only (`:234`). Photos capped at five, post-release window enforced, and a forged receipt link refused.
+
+**Correction to the 1 Oct changelog:** this entry recorded SHM-076–081 as lacking dedicated integration tests. For SHM-075 that was already wrong — the 22 complaints tests exist and cover disputes-adjacent paths. The next six entries are corrected individually below.
 
 <a id="shm-076"></a>
 #### SHM-076 · Disputes API & resolution postings
@@ -1484,9 +1510,13 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **API contract:** `GET /admin/disputes` · `POST /admin/disputes/:id/resolve`
 
 **Acceptance criteria**
-- [ ] Partial refund split balances to zero
-- [ ] Resolution before reply window closes requires override reason
-- [ ] Definition of Done met
+- [ ] Partial refund split balances to zero — **implemented** (`disputes.service.ts:212` computes `held − releasePaisa` as the refund, posts it through the same transaction as the release) but **untested**: grep for `PARTIAL_RELEASE` across every test file returns nothing
+- [ ] Resolution before reply window closes requires override reason — **enforced** at `disputes.service.ts:191` and in the Zod schema (`min(5)`), but **untested**: grep for `overrideReason` in tests returns nothing
+- [ ] Definition of Done met — not met
+
+**Evidence (5 Oct 2026):** `apps/api/src/complaints/disputes.service.ts` (253 lines) + `disputes.controller.ts`; all seven routes live (6 tagged `disputes`). All four resolution outcomes are implemented — `FULL_RELEASE`, `PARTIAL_RELEASE` (validated `0 < release < ceiling`), and `FULL_REFUND` / `REFUND_WITH_PENALTY` (release nil, penalty auto-proposed at `:238`) — and both parties are notified via a `dispute.resolved` outbox event carrying `customerId` and `providerId`.
+
+**The gap is verification, not code.** There is **no `disputes.test.ts`**, and grepping every test file for `admin/disputes` or `provider/disputes` returns nothing. Five methods have zero coverage: `evidenceFloor()`, `list()`, `reply()`, `closeReplyWindows()`, `resolve()`. The five dispute references that do exist in the suite assert that a *booking* reached `DISPUTED` or that a *disputes row* was created — none of them resolve a dispute. So the evidence floor, the 48-hour reply rule, the override requirement, the escrow-sums-to-zero invariant and both-party notification are all implemented but **unproven**. This is the highest-value test-writing gap in the project: dispute resolution moves money.
 
 <a id="shm-077"></a>
 #### SHM-077 · Conduct engine: penalties, demerits, thresholds
@@ -1500,9 +1530,15 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **API contract:** `POST /admin/penalties` · `POST /admin/penalties/:id/apply` · `POST /provider/penalties/:id/reply`
 
 **Acceptance criteria**
-- [ ] Apply before deadline without reply rejected by DB
-- [ ] Crossing a threshold twice fires once
-- [ ] Definition of Done met
+- [ ] Apply before deadline without reply rejected by DB — **enforced by the database** (`0001_init.sql:1066`: `CHECK (applied_at IS NULL OR replied_at IS NOT NULL OR applied_at >= reply_due_at)`, with a mirror in application code at `conduct.service.ts:155`) but **no test asserts the constraint fires** — grep for `reply_due` in tests returns nothing
+- [ ] Crossing a threshold twice fires once — **implemented and unit-tested**: `packages/domain/test/conduct.test.ts:44` `fires a threshold only on an upward crossing`, `:52` `falling below and climbing back fires again`. Serialised per breach by `pg_advisory_xact_lock` (`conduct.service.ts:161`)
+- [ ] Definition of Done met — not met
+
+**Evidence (5 Oct 2026):** `apps/api/src/conduct/conduct.service.ts` (439 lines) + `controller.ts` (152 lines); 12 operations tagged `conduct`. The graduated-consequence logic is genuinely well covered in the domain layer — `packages/domain/test/conduct.test.ts` has 9 conduct-specific cases including the **harsher-wins merge in either order** (FR-PN-10, the rule that makes the engine deterministic), the per-job liability cap (`fineFor` truncating to job value + `penalty.max_fine_paisa`, asserted at 1 400 000 paisa), and threshold crossings.
+
+**The gap is the entire HTTP surface.** There is **no `conduct.test.ts`**; grepping for `admin/penalties`, `provider/penalties`, `admin/appeals` or `/appeal` across all test files returns nothing. `apply()`, `reply()`, `withdraw()`, `enforce()`, the provider-facing conduct record, and the admin listing are all untested end to end. The one place a `penalties` row is asserted at all is `complaints.test.ts:306`, which checks that a `PROVIDER_PENALTY` complaint outcome produced a `PROPOSED` row — which is also the proof that penalties are *proposed* and never auto-applied.
+
+**Latent issue noted, not fixed:** `fineFor` receives `jobValuePaisa = 0n` when `bookingId` is absent (`conduct.service.ts:81-85`), so the cap silently collapses to `max_fine_paisa` alone. A penalty raised outside a booking is therefore uncapped by job value. Untested either way.
 
 <a id="shm-078"></a>
 #### SHM-078 · Appeals & reversals
@@ -1516,8 +1552,10 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **API contract:** `POST /provider/penalties/:id/appeal` · `POST /admin/appeals/:id/decide`
 
 **Acceptance criteria**
-- [ ] Reversal restores wallet balance and points exactly
-- [ ] Definition of Done met
+- [ ] Reversal restores wallet balance and points exactly — **implemented** (`conduct.service.ts:300-314`: voids the `demerit_awards` row, posts a `REVERSAL` ledger transaction linked by `reversesTransactionId` with idempotency key `penalty-reversal:{id}`, refreshes the debt block, lifts the suspension and restores `APPROVED` via `restoreIfClear`) but **completely untested** — there is no assertion anywhere on wallet balance before/after, nor on `demerit_awards.voided_at`
+- [ ] Definition of Done met — not met
+
+**Evidence (5 Oct 2026):** all three endpoints live (`GET /admin/appeals`, `POST /admin/appeals/:id/decide`, `POST /provider/penalties/:id/appeal`), plus a `PARTIAL` decision branch that refunds part of the fine and keeps the points. **Zero tests of any kind** — this is the least-verified ticket in the tracker despite being fully coded. An appeal reversal is the one path that *takes money back from* a provider after a penalty, so it deserves the same adversarial testing as payout settlement.
 
 <a id="shm-079"></a>
 #### SHM-079 · Daily conduct job: expiry, decay, suspensions
@@ -1529,8 +1567,12 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **Scope:** Expire points at 180 d; decay 1 pt per 30 clean days; lift ended suspensions; refresh flags.
 
 **Acceptance criteria**
-- [ ] Time-travel tests with FakeClock cover 179/180/181 days
-- [ ] Definition of Done met
+- [ ] Time-travel tests with FakeClock cover 179/180/181 days — **not written.** No test calls `ConductJobsService` at all: grepping for `runDaily`, `expireAwards` or `demerit` across every test file returns nothing. `FakeClock` exists (`packages/domain/src/clock.ts:9`) but is used only by `clock.test.ts`
+- [ ] Definition of Done met — not met
+
+**Evidence (5 Oct 2026):** `apps/api/src/conduct/conduct-jobs.service.ts` (111 lines) is written and **is** scheduled — `conduct.daily` in `REPEATABLE_JOBS` (`queue.registry.ts:19`, every 86 400 000 ms). All four behaviours are implemented: `expireAwards()` (180-day expiry), `decay()` (1 point per `demerit.decay_days`, oldest active award first, with a catch-up loop and idempotent re-runs), `liftSuspensions()` (reverify-aware: a 30-day suspension returns the provider to `PENDING_APPROVAL`, otherwise straight back to `APPROVED`), `refreshFlags()`.
+
+Everything here is unverified. There is no boundary test, no decay catch-up test, no suspension-lift test, and the "running it twice changes nothing" property is asserted only in the source docstring. This is cheap to close — the job is already scheduled and the fake clock already exists — and the 179/180/181-day boundary is exactly the kind of off-by-one that silently mis-executes a provider's penalty.
 
 <a id="shm-080"></a>
 #### SHM-080 · Automatic breach proposals
@@ -1542,8 +1584,24 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **Scope:** No-show, late cancel, rework verified, poor-rating streak, overcharge (from verification answer), falsified (from dispute) — always PROPOSED, never auto-applied.
 
 **Acceptance criteria**
-- [ ] Each trigger has an integration test producing one PROPOSED penalty
-- [ ] Definition of Done met
+- [ ] Each trigger has an integration test producing one PROPOSED penalty — **0 of 6 tested.** Five triggers are wired but none has a test asserting a `PROPOSED` row; the sixth is not implemented at all:
+
+| Trigger | Wired at | Test producing a PROPOSED penalty |
+|---|---|---|
+| No-show (provider) | `booking-state.service.ts:184` | none |
+| Late cancel | `booking-state.service.ts:190` | none |
+| Rework verified | `verification-outcome.service.ts:154` | none |
+| Poor-rating streak | `reputation.service.ts:97` `proposePoorStreak` | none |
+| Overcharge (from a verification answer) | `verification-submit.service.ts:83` | none |
+| **Falsified (from a dispute)** | **not implemented** | none |
+
+- [ ] Definition of Done met — not met
+
+**Evidence (5 Oct 2026):** `ConductService.autoPropose` (`:105`) always delegates to `propose()`, which inserts with `status` defaulting to `PROPOSED` and never applies — so the "never auto-applied" half of the scope is structurally guaranteed. Idempotent per breach+booking (`:74-79`).
+
+**The falsified-evidence trigger is a genuine hole, not a coverage gap.** `FALSIFIED_EVIDENCE` exists only as a seed row (`packages/db/seed/breachTypes.ts:18`: 25 points, max-fine rule, `PERMANENT_BLOCK` consequence) — a repo-wide grep for `FALSIF` returns that one line. `disputes.service.ts:239` proposes whatever `breachCode` an admin typed in, so the schedule's most severe consequence is reachable only by hand. Given that a falsified evidence claim is the trigger for a permanent block, it should not be optional.
+
+**Also worth noting:** the four tests that brush against these triggers each assert the *booking* outcome (`DISPUTED`, a `provider.review_required` outbox event, a `LOW_RATING` flag) and never read the `penalties` table, so they would all still pass if breach proposal were deleted entirely.
 
 <a id="shm-081"></a>
 #### SHM-081 · Notifications: full planner & delivery
@@ -1557,9 +1615,15 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 **API contract:** `POST /webhooks/sms/:provider` · `/admin/templates/*` · WS `user:{id}`
 
 **Acceptance criteria**
-- [ ] Idempotent per outbox event
-- [ ] Every booking transition in an E2E run produces the expected notifications
-- [ ] Definition of Done met
+- [ ] Idempotent per outbox event — **implemented and tested**: a `UNIQUE (outbox_event_id, user_id, channel)` constraint, used as `ON CONFLICT … DO NOTHING RETURNING id`, so a redelivery returns 0 and sends nothing. `booking-messages.test.ts:142` `is idempotent: delivering the same events again creates nothing and sends nothing more`
+- [ ] Every booking transition in an E2E run produces the expected notifications — **untested**, and see the planner gap below
+- [ ] Definition of Done met — not met
+
+**Evidence (5 Oct 2026):** `apps/api/src/notification/` — 10 operations tagged `notifications`. More is built than the 1 Oct changelog credited: retries with exponential backoff are real (`MAX_ATTEMPTS = 5`, `2 ** attempt` minutes → 2/4/8/16, written to the payload and swept by the scheduled `notification.retry` job); the **delivery-receipt webhook exists** (`POST /webhooks/sms/:provider`, HMAC-verified, idempotent on `DELIVERED`/`READ`); and the **whole template CRUD surface exists** including `POST /admin/templates/preview`, with unknown-placeholder validation and audit rows. The 1 Oct entry describing this ticket as bare dispatch understated it.
+
+**The real gap is the planner, and it is a correctness risk rather than a missing feature.** `RULES` (`notification.service.ts:29-93`) is a hand-maintained table of 37 event keys — **not** the declared event × role matrix this ticket asks for, and there is no completeness check anywhere. An unknown event makes `handle()` return `0` and vanish silently. Four event types are emitted by the code but have **no rule at all**, so they currently produce zero notifications for anyone: `complaint.replied`, `dispute.replied`, `penalty.replied`, and `provider.review_required`. The last of those matters most — it is the signal that a provider has crossed a rating threshold and needs review.
+
+**Untested beyond booking:** only 4 tests touch notifications at all, all in `booking-messages.test.ts` and all booking-domain. Nothing covers the retry/backoff path, the delivery-receipt webhook (`webhook.test.ts` is the payment webhook only), template CRUD or preview, `/admin/notifications`, the en/ur locale fallback, or any non-booking rule row.
 
 <a id="shm-082"></a>
 #### SHM-082 · Complaint forms & timeline
@@ -1840,7 +1904,9 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 
 | Date | Ticket | Blocked by | Owner to unblock | Resolved on |
 |---|---|---|---|---|
-| 25 Sep 2026 | SHM-002, SHM-022, SHM-041 | MinIO container images are no longer publicly pullable (`minio/minio` and `minio/mc` return "repository does not exist"; the quay.io and ghcr.io mirrors require auth). Buckets cannot be created locally. The compose services are behind the `objects` profile with `OBJECT_STORE_IMAGE` / `OBJECT_STORE_CLIENT_IMAGE` overrides so a reachable S3 image can be substituted. | Backend lead / product owner to nominate a reachable S3 image | |
+| 25 Sep 2026 | SHM-095, SHM-096, and everything downstream of real integrations | **Superseded — no longer blocking, reclassified 5 Oct.** The original entry was MinIO images being unpullable, so buckets could not be created locally. MinIO and Mailpit have since been removed from `infra/docker-compose.yml` entirely and storage runs through the mock `ObjectStoragePort`; SHM-022 (5 Oct) shipped a full document-upload feature on that mock with no dependency on it. The *real* remaining constraint is different and larger: `STORAGE_PROVIDER`, `PAYMENT_PROVIDER`, `SMS_PROVIDER`, `EMAIL_PROVIDER`, `MAPS_PROVIDER`, `TELEPHONY_PROVIDER` and `WHATSAPP_PROVIDER` are each pinned to `mock` by a `superRefine` in `environment.schema.ts` that **rejects any other value even in production**. Real money, SMS and object storage cannot be introduced without changing that schema. | Product owner (adapter choice), then engineering | |
+| 5 Oct 2026 | SHM-023 | Not blocked any more. SHM-022 delivered the verified-CNIC signal it was waiting on. Outstanding work is the approval gate, an `audit_log` row on approve/reject, and creating `PROVIDER_WALLET` on approval. Note the gate cannot be wired without updating `readyBookableProvider` in the integration harness, which approves providers holding no documents. | — | |
+| 5 Oct 2026 | SHM-032, SHM-053, SHM-074, SHM-088, SHM-101 | All five remaining phase exit gates are blocked on the frontend, not on backend code. `apps/web` does not exist; 36 FE tickets (176 SP) are unstarted and are 36 of the 48 `TODO` tickets. Exit gates also require a CI run on a real PR, which has never happened (SHM-013). | FE lead to be named; §1 header still reads `_name_` | |
 | 21 Sep 2026 | SHM-095 | OQ-03 payment gateway not chosen | Product owner | |
 | 21 Sep 2026 | SHM-096 | OQ-04 telephony / SMS vendor not chosen | Product owner | |
 
@@ -1859,14 +1925,16 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 
 ## 7. Phase gate sign-off
 
-| Phase | Exit ticket | Review Prompt run | Tag | BE lead | FE lead | Product owner | Date |
-|---|---|---|---|---|---|---|---|
-| E0 | SHM-013 | ☐ | `phase-0` | ☐ | ☐ | ☐ | |
-| E1 | SHM-032 | ☐ | `phase-1` | ☐ | ☐ | ☐ | |
-| E2 | SHM-053 | ☐ | `phase-2` | ☐ | ☐ | ☐ | |
-| E3 | SHM-074 | ☐ | `phase-3` | ☐ | ☐ | ☐ | |
-| E4 | SHM-088 | ☐ | `phase-4` | ☐ | ☐ | ☐ | |
-| E5 | SHM-101 | ☐ | `phase-5` | ☐ | ☐ | ☐ | |
+No gate has been signed and none can be, for two reasons that apply to every phase: **no reviewer pass has ever run** (§1 rule 5 — this is why *Done* is zero in §3), and **the frontend does not exist**, which every exit ticket depends on. The *BE lead* column below is the one piece of good news worth reading: the backend is far enough along that E0's gate is reachable on a short review pass, and E2/E3's backend halves are already built.
+
+| Phase | Exit ticket | Backend gate reachable? | What actually stands between here and the tag | Review Prompt run | Tag | BE lead | FE lead | Product owner | Date |
+|---|---|---|---|---|---|---|---|---|---|
+| E0 | SHM-013 | **Yes** — SHM-001…013 all `IN REVIEW` | A reviewer pass on 13 tickets, plus one CI run on a real PR (branch protection and the 15-min budget are both unverified) | ☐ | `phase-0` | ☐ | ☐ | ☐ | |
+| E1 | SHM-032 | No — SHM-020, 021, 023, 024 open | Finish the E1 backend remainder, then the whole frontend. The SHM-023 audit-log gap should not be carried into a phase tag | ☐ | `phase-1` | ☐ | ☐ | ☐ | |
+| E2 | SHM-053 | **Mostly** — 12 of 13 BE tickets `IN REVIEW`; only SHM-035 is partial | SHM-045's own gate (green in CI) plus the frontend wizard and PWA | ☐ | `phase-2` | ☐ | ☐ | ☐ | |
+| E3 | SHM-074 | **Mostly** — all 12 BE tickets `IN REVIEW` | SHM-065's CI gate, then agent console, finance console and money pages | ☐ | `phase-3` | ☐ | ☐ | ☐ | |
+| E4 | SHM-088 | No — SHM-076…081 built but untested | Close the E4 test gap (disputes, conduct, appeals, jobs, notifications), then the frontend | ☐ | `phase-4` | ☐ | ☐ | ☐ | |
+| E5 | SHM-101 | No — nothing started | Everything: reports, plans, ops board, hardening, backups, deploy pipeline, real adapters | ☐ | `phase-5` | ☐ | ☐ | ☐ | |
 
 ---
 
@@ -1874,6 +1942,12 @@ Each card: scope, requirement references, API contract (BE), dependencies and ac
 
 | Date | Who | Change |
 |---|---|---|
+| 5 Oct 2026 | Claude (backend agent) | **Tracker reconciled against the code, and SHM-022 built.** Two things happened in one session, so they are recorded together. |
+| | | *(a) SHM-022 · Provider documents & CNIC protection — `TODO` → `IN REVIEW`.* Six operations (surface **165 → 171**): `POST /uploads/presign`, `GET/POST /provider/documents`, `GET /admin/providers/:id/documents`, `GET /admin/documents/:id/url`, `POST /admin/documents/:id/review`. The CNIC is AES-256-GCM encrypted at rest under a **new required `CNIC_ENCRYPTION_KEY`** (deliberately not TOTP's; a production `superRefine` rejects the two being equal — `.env.example`, CI workflow and `environment.test.ts` all updated), with an HMAC blind index in a `UNIQUE` column so "one person, one account" is enforceable by the database. Viewing is `ADMIN`+TOTP only via a 5-minute signed link, and every view writes an `audit_log` row. All three acceptance criteria covered: 36 integration tests + 14 unit tests. Two defects found and fixed in the tests themselves — hard-coded CNICs made the file non-re-runnable (the unique index is global and permanent), and one assertion was simply wrong about the intended behaviour, which the corrected test now documents. Scope left deliberately: SHM-023's verified-CNIC approval gate is *not* wired here, because it changes an endpoint the test harness relies on. |
+| | | *(b) Reconciliation.* §3's dashboard had never been recounted after the Sept–Oct work — it still read 0% across 101 tickets and 507 SP while 192 SP of tested code sat `IN REVIEW`. Corrected, and restructured to show **Built** (`IN REVIEW` + `DONE`) alongside **Done**, because reading only *Done* says 0% for a project that is 38% built and reading only *Built* would flatter work no one has reviewed. Verified figures: 40 `IN REVIEW` / 11 `IN PROGRESS` / 48 `TODO` / 2 `BLOCKED` / 0 `DONE`; **backend 184 of 297 SP built (62%), frontend 0 of 176.** Every number in the dashboard was re-derived by parsing the §4 tables, not by hand. |
+| | | *(c) Six detail cards corrected against the code, several contradicting earlier entries.* SHM-075 was already fully tested (22 tests), not untested as the 1 Oct entry claimed. SHM-081 was **understated** — retries with backoff, the delivery-receipt webhook and the full template CRUD + preview all exist. SHM-035's debt exclusion is **done** (SHM-060), and the rating weight is real (SHM-063); what remains is that 3 of 5 `ranking.weights` are dead config. SHM-021's "payout account not built" was **stale** — delivered under SHM-061. SHM-024 is 1 of 6 surfaces built (settings only); SHM-020 is still addresses-only. |
+| | | *(d) The real finding: E4 is built and unverified.* Disputes, conduct, appeals, conduct jobs and the notification planner have **no integration tests at all** — there is no `disputes.test.ts`, `conduct.test.ts` or `notification.test.ts` in the repo, and grepping the suite for `admin/disputes`, `admin/penalties`, `admin/appeals` and `webhooks/sms` returns nothing. SHM-078 (appeal reversals) and SHM-079 (demerit decay) are fully coded with **zero tests of any kind**. Two specific holes worth naming: `resolve()` and `decideAppeal()` are the paths that move money back out, and SHM-080's `FALSIFIED_EVIDENCE` trigger — the one whose consequence is a *permanent block* — is seeded but never auto-proposed. SHM-081's planner is a hand-maintained table of 37 keys rather than the specified event × role matrix, and four emitted events (`complaint.replied`, `dispute.replied`, `penalty.replied`, `provider.review_required`) have no rule at all, so they silently produce no notification. |
+| | | *(e) Verification, and one pre-existing failure.* 171 operations; 398 integration and 219 unit tests; lint, typecheck and build clean. 397 of 398 integration tests pass — the failure is `booking-completion.test.ts` on an 88 ms timestamp drift, which reproduces identically with all in-progress work `git stash`ed, so it is pre-existing and not a regression. Recorded so it is not re-investigated. Also fixed two environment gotchas worth remembering: `npm run db:generate` is required before the first build or typecheck fails with ~40 misleading `Property 'sql' does not exist` errors, and `docker compose up -d` on this machine produced healthy containers with **no published host port** until `--force-recreate` (compose resolved the binding correctly; the container had none), so `localhost:5432` was unreachable while `docker ps` reported healthy. |
 | 1 Oct 2026 | Claude (backend agent) | Re-ran the API integration suite against live PostGIS and Redis: 362 tests, all green (31 files passed first run; `api-surface` failed only because its committed baseline predated Phase 4 routes). Baseline regenerated deliberately after diffing it: 126 → 165 operations, 39 added, none removed, info/tags/servers/security unchanged. E4 statuses corrected to match the code: SHM-075 `IN REVIEW` (22 integration tests in `complaints.test.ts`); SHM-076–081 `IN PROGRESS` (disputes, conduct/penalties/appeals, conduct jobs and the notification centre exist in the tree, but only `packages/domain` conduct unit tests cover them — no dedicated integration tests yet, so acceptance criteria stay unticked). |
 | 30 Sep 2026 | Claude (backend agent) | Phase 3 backend built: SHM-054–065 `IN REVIEW` (SHM-066–074, the frontend and phase exit gate, not started). Tier routing R1–R10; agent queue/claim/locks/SLA; console, attempts, submission; release posting with commission, coupons, excess refunds, ratings/remarks, complaints/flags/disputes; rework, warranty, auto-release, Tier B and the customer link; cash settlement and the commission-debt ceiling; finance API, payouts and batches; nightly reconciliation; reputation, replies, unpublish; recordings and retention. Verified live over real HTTP (53/53) against a server with its application clock set to 10:30 Pakistan time (`npm run dev:at`), plus the real-clock 423 refusal at 02:18. 126 API operations; 341 integration, 94 API unit and 65 domain tests green; lint, typecheck, build clean. Known gaps: `agent-queue` WebSocket, `provider_stats` table (computed on read), 10 000-provider search benchmark, CI run on a real PR, dispute resolution (phase 4). |
 | 30 Sep 2026 | Claude (backend agent) | Phase 2 backend verified live over real HTTP against the running dev server (33/33 checks): quote, slots, online checkout → dev gateway capture (replay harmless) → offer → accept, masked chat, depart, start code by SMS (wrong code 422; far check-in flagged, not blocked), evidence (retry deduped; photo step refused without photo), revised quote with top-up gating, completion (final > approved 422) → invoice + PDF for both parties → `AWAITING_VERIFICATION`, auto-assign online booking cancelled and refunded. Database cross-checked: ledger transactions, verification call and invoice present. `TASKS_BACKEND.md` Phase 2 items ticked with notes. |

@@ -237,6 +237,24 @@
       ]
     },
     {
+      "method": "POST",
+      "path": "/api/v1/admin/documents/{documentId}/review",
+      "operationId": "ProviderDocumentsAdminController_review",
+      "summary": "Verify or reject a document",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/documents/{documentId}/url",
+      "operationId": "ProviderDocumentsAdminController_documentUrl",
+      "summary": "Get a short-lived link to a document",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
       "method": "GET",
       "path": "/api/v1/admin/notifications",
       "operationId": "NotificationController_log",
@@ -322,6 +340,15 @@
       "path": "/api/v1/admin/providers/{providerId}/approve",
       "operationId": "ProviderApprovalAdminController_approve",
       "summary": "Approve a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/providers/{providerId}/documents",
+      "operationId": "ProviderDocumentsAdminController_listForProvider",
+      "summary": "List a provider's documents for review",
       "tags": [
         "provider"
       ]
@@ -1219,6 +1246,24 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/provider/documents",
+      "operationId": "ProviderDocumentsController_list",
+      "summary": "List my uploaded documents",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/documents",
+      "operationId": "ProviderDocumentsController_submit",
+      "summary": "Submit an identity document",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/provider/earnings",
       "operationId": "ProviderPayoutsController_earnings",
       "summary": "See my earnings",
@@ -1485,6 +1530,15 @@
       "summary": "List the times a provider can be booked on a day",
       "tags": [
         "search"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/uploads/presign",
+      "operationId": "UploadsController_presign",
+      "summary": "Get an upload target for a document",
+      "tags": [
+        "provider"
       ]
     },
     {

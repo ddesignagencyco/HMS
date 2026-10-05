@@ -34,6 +34,20 @@ export const environmentSchema = z
           return false;
         }
       }, 'TOTP_ENCRYPTION_KEY must be a base64 encoded 32 byte key'),
+    /**
+     * A provider's CNIC is government identity data, so it gets its own key
+     * rather than sharing TOTP's. Keys are separated per purpose so one being
+     * rotated or leaked does not expose the other.
+     */
+    CNIC_ENCRYPTION_KEY: z
+      .string()
+      .refine(value => {
+        try {
+          return Buffer.from(value, 'base64').length === 32;
+        } catch {
+          return false;
+        }
+      }, 'CNIC_ENCRYPTION_KEY must be a base64 encoded 32 byte key'),
 
     /** Where customers open links we text them (the verification link). */
     PUBLIC_BASE_URL: z.string().url().default('http://localhost:3000'),
@@ -61,6 +75,7 @@ export const environmentSchema = z
       if (value.JWT_ACCESS_SECRET.startsWith('development-')) add('JWT_ACCESS_SECRET', 'The development JWT secret must not be used in production');
       if (value.JWT_REFRESH_SECRET === value.JWT_ACCESS_SECRET) add('JWT_REFRESH_SECRET', 'Access and refresh secrets must differ');
       if (value.OTP_PEPPER === value.JWT_ACCESS_SECRET) add('OTP_PEPPER', 'The OTP pepper must not reuse a JWT secret');
+      if (value.CNIC_ENCRYPTION_KEY === value.TOTP_ENCRYPTION_KEY) add('CNIC_ENCRYPTION_KEY', 'The CNIC key must not reuse the TOTP key');
     }
     for (const key of ['PAYMENT_PROVIDER', 'SMS_PROVIDER', 'EMAIL_PROVIDER', 'MAPS_PROVIDER', 'TELEPHONY_PROVIDER', 'WHATSAPP_PROVIDER', 'STORAGE_PROVIDER'] as const) {
       if (value[key] !== 'mock') add(key, `Only the mock adapter is wired in this increment; ${key} must be "mock"`);

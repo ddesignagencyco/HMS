@@ -15,6 +15,7 @@ const base = (): NodeJS.ProcessEnv => ({
   CSRF_SECRET: 'c'.repeat(32),
   OTP_PEPPER: 'd'.repeat(32),
   TOTP_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
+  CNIC_ENCRYPTION_KEY: Buffer.alloc(32, 11).toString('base64'),
   MOCK_PAYMENT_WEBHOOK_SECRET: 'e'.repeat(16)
 });
 
