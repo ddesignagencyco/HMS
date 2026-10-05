@@ -1,7 +1,7 @@
 import type { Locale } from "@/lib/utils";
 
 const en = {
-  brand: { name: "Hunar", tagline: "Verified home services in Lahore" },
+  brand: { name: "Smart Home Maintenance", tagline: "Verified home services in Lahore" },
   nav: {
     services: "Services",
     professionals: "Professionals",
@@ -110,11 +110,11 @@ const en = {
     process4Text: "Completion evidence and a customer check protect both sides before release.",
     trustEyebrow: "Trust is part of the service",
     trustTitle: "Not just a directory. A managed home-service journey.",
-    trustDescription: "Hunar checks identity and qualifications, controls booking states and verifies completion before funds are released.",
+    trustDescription: "We check identity and qualifications, controls booking states and verifies completion before funds are released.",
     brandEyebrow: "Why home repairs go wrong",
     brandTitleLead: "Home repairs shouldn't",
     brandTitleAccent: "feel like a gamble.",
-    brandDescription: "Unverified quotes, surprise costs and no accountability are how home repairs go wrong. Hunar checks the professional, fixes the price before the work starts, and holds payment until the job is verified complete.",
+    brandDescription: "Unverified quotes, surprise costs and no accountability are how home repairs go wrong. We check the professional, fixes the price before the work starts, and holds payment until the job is verified complete.",
     brandCta: "See how we protect you",
     metricProfessionals: "Verified professionals",
     metricRating: "Average verified rating",
@@ -271,7 +271,7 @@ const en = {
     eyebrow: "The defining rule",
     titleLead: "Money moves only after",
     titleAccent: "we check with you.",
-    description: "Hunar never pays a tradesman on his own word. Every finished job puts your money on hold until we have spoken to you and recorded a structured answer.",
+    description: "We never pay a tradesman on his own word. Every finished job puts your money on hold until we have spoken to you and recorded a structured answer.",
     whyTitle: "Four steps between a finished job and your money moving.",
     whyText: "Escrow, evidence and a verification call sit on every single booking. There is no path that skips them.",
     rulesEyebrow: "Non-negotiable",
@@ -351,7 +351,7 @@ const en = {
     allAreas: "All areas",
     results: "{count} professionals",
     noResults: "No professionals match those filters.",
-    verified: "Hunar verified",
+    verified: "Smart Home verified",
     jobs: "{count} verified jobs",
     experience: "{years} years’ experience",
     about: "About",
@@ -480,7 +480,7 @@ const en = {
     savingAddress: "Saving…",
     saveAddress: "Save address",
     requiredAddress: "Choose an address to continue.",
-    autoAssignTitle: "Let Hunar choose",
+    autoAssignTitle: "Let us choose",
     autoAssignText: "We offer the job to the nearest eligible professionals in turn until one accepts. You are not tied to a name, and the price is the service's standard rate.",
     autoAssignAction: "Best when you would rather have the earliest available professional.",
     chooseProvider: "Or choose a professional",
@@ -509,7 +509,7 @@ const en = {
     slotsNone: "No start times are free on this day. Try another day.",
     emergencyNote: "Book this for today. An emergency surcharge is added to the estimate.",
     professional: "Professional",
-    autoAssignChosen: "Hunar will assign one",
+    autoAssignChosen: "We will assign one",
     selectedProfessional: "A professional you chose",
     notChosen: "Not chosen yet",
     outstandingWarning: "You still owe an earlier cancellation charge. It is collected separately from this booking",
@@ -670,7 +670,7 @@ const en = {
     socialDivider: "or continue with",
     socialComingSoon: "Google and Facebook sign-in is coming soon.",
     /* ---- navigation copy ---- */
-    noAccount: "New to Hunar?",
+    noAccount: "New to Smart Home?",
     haveAccount: "Already have an account?",
     needAccount: "Need an account?",
     haveAccountShort: "Already registered?",
@@ -1361,7 +1361,7 @@ const en = {
   legal: {
     privacyEyebrow: "Privacy",
     privacyTitle: "What we collect, and why",
-    privacyIntro: "Hunar only holds the information a booking, a payment or a verification call actually needs. This page says what that is, and what you can ask us to remove.",
+    privacyIntro: "We only hold the information a booking, a payment or a verification call actually needs. This page says what that is, and what you can ask us to remove.",
     privacySections: {
       account: {
         title: "Your account",
@@ -1386,7 +1386,7 @@ const en = {
     },
     termsEyebrow: "Terms",
     termsTitle: "The rules both sides work to",
-    termsIntro: "Hunar connects customers with independent home-service professionals. These terms set out what each side agrees to, and what happens when something goes wrong.",
+    termsIntro: "We connect customers with independent home-service professionals. These terms set out what each side agrees to, and what happens when something goes wrong.",
     termsSections: {
       booking: {
         title: "Booking a job",
@@ -1406,7 +1406,7 @@ const en = {
       },
       liability: {
         title: "Liability",
-        body: "Hunar is responsible for the controls described on this site: verification before approval, a fixed price before work starts, and payment held until a job is verified. Workmanship remains the professional's responsibility, and warranty claims follow the terms shown with each service.",
+        body: "We are responsible for the controls described on this site: verification before approval, a fixed price before work starts, and payment held until a job is verified. Workmanship remains the professional's responsibility, and warranty claims follow the terms shown with each service.",
       },
     },
     contactEyebrow: "Support",
@@ -1427,7 +1427,7 @@ const en = {
 };
 
 const ur: typeof en = {
-  brand: { name: "Hunar", tagline: "لاہور میں تصدیق شدہ گھریلو خدمات" },
+  brand: { name: "سمارٹ ہوم مینٹیننس", tagline: "لاہور میں تصدیق شدہ گھریلو خدمات" },
   nav: { services: "خدمات", professionals: "پیشہ کار", plans: "مینٹیننس پلان", howWeVerify: "تصدیق کا طریقہ", signIn: "سائن اِن", signOut: "سائن آؤٹ", myAccount: "میرا اکاؤنٹ", bookService: "بکنگ کریں", menu: "نیویگیشن کھولیں", close: "مینو بند کریں" },
   common: {
     from: "سے", rating: "درجہ بندی", verified: "تصدیق شدہ", fixed: "مقررہ حد", emergency: "اُسی دن کے لیے مستحق", warranty: "{days} دن ضمانت",
@@ -1475,11 +1475,11 @@ const ur: typeof en = {
     process4: "کام کی تصدیق کریں", process4Text: "تصویری ثبوت اور صارف کی تصدیق رقم جاری ہونے سے پہلے دونوں فریقوں کی حفاظت کرتی ہے۔",
     trustEyebrow: "خدمت ہی اعتماد ہے",
     trustTitle: "صرف ڈائریکٹری نہیں۔ ایک منظم گھریلو خدمات کا سفر۔",
-    trustDescription: "Hunar شناخت، مہارت، بکنگ کی حالت اور کام مکمل ہونے کی تصدیق کا انتظام کرتا ہے۔",
+    trustDescription: "سمارٹ ہوم شناخت، مہارت، بکنگ کی حالت اور کام مکمل ہونے کی تصدیق کا انتظام کرتا ہے۔",
     brandEyebrow: "گھریلو مرمت خراب کیوں ہوتی ہے",
     brandTitleLead: "گھر کی مرمت",
     brandTitleAccent: "قسمت پر نہ ہو۔",
-    brandDescription: "بغیر تصدیق کے کوئٹی، ہنپٹے خرچ اور ذمہ داری کی کمی ہی گھریلو مرمت کو ڈھاگے بناتی ہے۔ Hunar پیشہ کار کی تصدیق کرتا ہے، کام شروع ہونے سے پہلے قیمت طے کرتا ہے، اور کام کی کامیاب تصدیق تک رقم روکے رکھتا ہے۔",
+    brandDescription: "بغیر تصدیق کے کوئٹی، ہنپٹے خرچ اور ذمہ داری کی کمی ہی گھریلو مرمت کو ڈھاگے بناتی ہے۔ سمارٹ ہوم پیشہ کار کی تصدیق کرتا ہے، کام شروع ہونے سے پہلے قیمت طے کرتا ہے، اور کام کی کامیاب تصدیق تک رقم روکے رکھتا ہے۔",
     brandCta: "ہم آپ کی حفاظت کیسے کرتے ہیں",
     metricProfessionals: "تصدیق شدہ پیشہ کار",
     metricRating: "اوسط تصدیق شدہ درجہ بندی",
@@ -1522,7 +1522,7 @@ const ur: typeof en = {
   providers: {
     titleLead: "تجربہ کار افراد،", titleAccent: "واضح ثبوت۔", description: "منظور شدہ مہارت، کاموں کی تاریخ، علاقے، درجہ بندی اور دستیابی کا موازنہ کریں۔",
     search: "نام یا مہارت تلاش کریں", allAreas: "تمام علاقے", results: "{count} پیشہ کار", noResults: "ان فلٹرز سے کوئی پیشہ کار نہیں ملتا۔",
-    verified: "Hunar تصدیق شدہ", jobs: "{count} تصدیق شدہ کام", experience: "{years} سال کا تجربہ", about: "تعارف",
+    verified: "سمارٹ ہوم تصدیق شدہ", jobs: "{count} تصدیق شدہ کام", experience: "{years} سال کا تجربہ", about: "تعارف",
     expertise: "منظور شدہ مہارت", areasServed: "خدمات کے علاقے", reviewsTitle: "صارف کی رائے", book: "اس پیشہ کار کو بک کریں", qualification: "اہلیت",
     statExperience: "سال", statJobs: "کام", statRating: "درجہ بندی", statNext: "اگلا وقت",
     ctaEyebrow: "اس پیشہ کار کے ساتھ کام کریں", ctaTitleLead: "بک کریں", ctaTitleAccent: "{name} کو براہِ راست۔",
@@ -1616,7 +1616,7 @@ const ur: typeof en = {
     eyebrow: "بنیادی اصول",
     titleLead: "پیسہ صرف اس کے بعد",
     titleAccent: "حرکت کرتا ہے۔",
-    description: "Hunar پیشہ کار کو اس کے اپنے لفظ پر کبھی ادائیگی نہیں کرتا۔ ہر مکمل کام آپ کا پیسہ روکے رکھتا ہے یہاں تک کہ ہم آپ سے بات کر کے جواب درج کر لیں۔",
+    description: "سمارٹ ہوم پیشہ کار کو اس کے اپنے لفظ پر کبھی ادائیگی نہیں کرتا۔ ہر مکمل کام آپ کا پیسہ روکے رکھتا ہے یہاں تک کہ ہم آپ سے بات کر کے جواب درج کر لیں۔",
     whyTitle: "مکمل کام اور آپ کے پیسے کی ادائیگی کے درمیان چار قدم۔",
     whyText: "ہر بکنگ پر ایسکرو، ثبوت اور تصدیق کی کال لازمی ہے۔ ایسا کوئی راستہ نہیں جس سے یہ چھوٹ سکتا ہو۔",
     rulesEyebrow: "غیر قابلِ نظر انداز",
@@ -1746,7 +1746,7 @@ const ur: typeof en = {
     savingAddress: "محفوظ ہو رہا ہے…",
     saveAddress: "پتہ محفوظ کریں",
     requiredAddress: "آگے بڑھنے کے لیے پتہ منتخب کریں۔",
-    autoAssignTitle: "Hunar ہی چنے",
+    autoAssignTitle: "سمارٹ ہوم ہی چنے",
     autoAssignText: "کام قریبی مستند پیشہ کاروں کو ایک ایک کر کے دیا جائے گا جب تک کوئی قبول نہ کرے۔ نام کا پابندی نہیں، اور قیمت خدمت کی معیاری ریٹ ہوگی۔",
     autoAssignAction: "جب آپ کو جلدی دستیاب پیشہ کار چاہیے تو بہتر ہے۔",
     chooseProvider: "یا پیشہ کار منتخب کریں",
@@ -1775,7 +1775,7 @@ const ur: typeof en = {
     slotsNone: "اس دن کوئی شروعات کا وقت دستیاب نہیں۔ دوسرا دن آزمائیں۔",
     emergencyNote: "آج کے لیے بکنگ کریں۔ تخمینے میں ایمرجنسی اضافی فیس شامل ہوگی۔",
     professional: "پیشہ کار",
-    autoAssignChosen: "Hunar خود انتخاب کرے گا",
+    autoAssignChosen: "سمارٹ ہوم خود انتخاب کرے گا",
     selectedProfessional: "آپ کا منتخب کردہ پیشہ کار",
     notChosen: "ابھی منتخب نہیں",
     outstandingWarning: "پچھلی منسوخی کی رقم ابھی باقی ہے۔ یہ اس بکنگ سے الگ جمع ہوگی",
@@ -1904,7 +1904,7 @@ auth: {
     socialDivider: "یا جاری رکھیں",
     socialComingSoon: "گوگل اور فیس بک سائن اِن جلد آ رہا ہے۔",
     /* ---- navigation copy ---- */
-    noAccount: "Hunar پر نئے ہیں؟", haveAccount: "پہلے سے اکاؤنٹ ہے؟",
+    noAccount: "سمارٹ ہوم پر نئے ہیں؟", haveAccount: "پہلے سے اکاؤنٹ ہے؟",
     needAccount: "اکاؤنٹ بنانا ہے؟", haveAccountShort: "پہلے سے رجسٹرڈ ہیں؟",
     signedOut: "آپ سائن آؤٹ ہو گئے ہیں۔", stepOf: "مرحلہ {current} از {total}",
     /* ---- states and feedback ---- */
@@ -2397,7 +2397,7 @@ auth: {
   legal: {
     privacyEyebrow: "پرائیویسی",
     privacyTitle: "ہم کیا جمع کرتے ہیں، اور کیوں",
-    privacyIntro: "Hunar صرف وہی معلومات رکھتا ہے جو بکنگ، ادائیگی یا تصدیقی کال کے لیے ضروری ہیں۔ اس صفحے پر بتایا گیا ہے کہ یہ کیا ہے، اور آپ حذف کرنے کو کہا سکتے ہیں۔",
+    privacyIntro: "سمارٹ ہوم صرف وہی معلومات رکھتا ہے جو بکنگ، ادائیگی یا تصدیقی کال کے لیے ضروری ہیں۔ اس صفحے پر بتایا گیا ہے کہ یہ کیا ہے، اور آپ حذف کرنے کو کہا سکتے ہیں۔",
     privacySections: {
       account: {
         title: "آپ کا اکاؤنٹ",
@@ -2422,7 +2422,7 @@ auth: {
     },
     termsEyebrow: "شرائط",
     termsTitle: "وہ اصول جن پر دونوں طرف کام کرتی ہے",
-    termsIntro: "Hunar گاہکوں کو آزاد گھریلو خدمات کے پیشہ کاروں سے ملاتا ہے۔ یہ شرائط بتاتی ہیں کہ ہر فریق کیا قبول کرتا ہے، اور غلطی ہونے پر کیا ہوتا ہے۔",
+    termsIntro: "سمارٹ ہوم گاہکوں کو آزاد گھریلو خدمات کے پیشہ کاروں سے ملاتا ہے۔ یہ شرائط بتاتی ہیں کہ ہر فریق کیا قبول کرتا ہے، اور غلطی ہونے پر کیا ہوتا ہے۔",
     termsSections: {
       booking: {
         title: "کام بک کرنا",
@@ -2442,7 +2442,7 @@ auth: {
       },
       liability: {
         title: "ذمہ داری",
-        body: "اس سائٹ پر بیان کردہ کنٹرول Hunar کی ذمہ داری ہیں: منظوری سے پہلے تصدیق، کام شروع ہونے سے پہلے مقررہ قیمت، اور تصدیق تک محفوظ ادائیگی۔ کام کی معیاریت پیشہ کار کی ذمہ داری ہے، اور ضمانت کے دعوے ہر خدمت کے ساتھ دی گئی شرائط کے مطابق ہوتے ہیں۔",
+        body: "اس سائٹ پر بیان کردہ کنٹرول سمارٹ ہوم کی ذمہ داری ہیں: منظوری سے پہلے تصدیق، کام شروع ہونے سے پہلے مقررہ قیمت، اور تصدیق تک محفوظ ادائیگی۔ کام کی معیاریت پیشہ کار کی ذمہ داری ہے، اور ضمانت کے دعوے ہر خدمت کے ساتھ دی گئی شرائط کے مطابق ہوتے ہیں۔",
       },
     },
     contactEyebrow: "معاونت",

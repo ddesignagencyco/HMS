@@ -5,9 +5,11 @@ import QRCode from "qrcode";
 
 /* Renders an otpauth URI as a scannable QR code. The SVG is generated
    locally in the browser, so the secret never leaves the device for this.
-   It draws at 224px with a white padded frame — comfortably above the 200px
-   minimum authenticator apps need — and a skeleton holds the space meanwhile
-   so the layout never jumps when it appears. */
+   The frame is square and capped rather than fixed, so it draws at 224px —
+   comfortably above the 200px minimum authenticator apps need — on any phone
+   with room for it and shrinks on the narrow ones instead of overflowing the
+   card. A skeleton holds the same box meanwhile so the layout never jumps when
+   it appears. */
 export function TotpQrCode({ uri, label }: { uri: string; label: string }) {
   const [src, setSrc] = useState<string | null>(null);
 
@@ -26,12 +28,12 @@ export function TotpQrCode({ uri, label }: { uri: string; label: string }) {
   }, [uri]);
 
   if (src === null) {
-    return <span className="skeleton mx-auto block size-56 rounded-[9px]" aria-hidden="true" />;
+    return <span className="skeleton mx-auto block aspect-square w-full max-w-[248px] rounded-[9px]" aria-hidden="true" />;
   }
 
   return (
-    <span className="mx-auto block w-fit rounded-[9px] border border-line bg-white p-3">
-      <img src={src} alt={label} width={224} height={224} className="block size-56" />
+    <span className="mx-auto block aspect-square w-full max-w-[248px] rounded-[9px] border border-line bg-white p-2.5">
+      <img src={src} alt={label} width={224} height={224} className="size-full" />
     </span>
   );
 }

@@ -309,12 +309,21 @@ above you find.
 ### Not a backend gap, but worth stating
 
 The two-factor enrolment screen (`/en/auth/totp`) is the tallest card in the
-authentication set and was being clipped with `overflow: hidden` on short desktop
-windows, with the confirm button off the bottom and unreachable. That was purely
-a layout defect and is fixed in `apps/web` - no API change. The only TOTP item
-still open against the API is §1.5 question 2: `POST /auth/totp/setup` is
-`@Authenticated()` with no role restriction, so a `CUSTOMER` can enrol a code that
-is then never asked for.
+authentication set. Two things were wrong with it and both were layout, not API:
+
+- Stacked, it measured **927px** inside the **607px** frame that sign-in,
+  register and forgot all fill exactly, and that frame is `overflow: hidden` — so
+  the confirm button fell off the bottom of the page with no way to reach it.
+  From `lg` the two steps now sit side by side, QR left and code entry right, and
+  the card measures 607px with no scrolling from 1280x720 up.
+- "Can't scan the code?" was a `<details>` that expanded **in place**. Opening it
+  pushed the card back past the frame again and clipped the footer, and it
+  squeezed a 32-character key into a column too narrow to read. The key now opens
+  a dialog, so the card is the same 607px whichever way the step is answered.
+
+**No API change.** The only TOTP item still open against the API is §1.5
+question 2: `POST /auth/totp/setup` is `@Authenticated()` with no role
+restriction, so a `CUSTOMER` can enrol a code that is then never asked for.
 
 ---
 
@@ -827,7 +836,9 @@ Registration and OTP login both use Pakistani numbers (`+92 3XX XXXXXXX`).
 
 - Route SMS through an approved local gateway (Telenor / Jazz / a Twilio Pakistan
   route).
-- Support **sender ID masking** — `HUNAR` or `SMART-HOME`.
+- Support **sender ID masking** — `SMART-HOME`. An earlier draft of this document
+  offered a second sender ID; the brand is Smart Home Maintenance, so there is
+  only that one.
 - Normalise to international **E.164** before sending. This is already load-bearing:
   `MockSmsSender` throws on a non-E.164 recipient, and that plain `Error` is what
   turns an email OTP into a 500 (§1.1).

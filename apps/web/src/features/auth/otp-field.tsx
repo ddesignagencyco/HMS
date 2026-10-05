@@ -4,9 +4,10 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 /* Six boxes that behave like one field: typing advances, backspace retreats, a
-   pasted code fills every box, arrow keys move. The form holds the code as a
-   single string, so what is submitted is one value and one error — not six
-   partial names. */
+    pasted code fills every box, arrow keys move. The form holds the code as a
+    single string, so what is submitted is one value and one error — not six
+    partial names. The gap stays tight because this also renders in a narrow
+    column beside the two-factor QR, where six boxes have to share ~200px. */
 
 const LENGTH = 6;
 
@@ -46,7 +47,7 @@ export function OtpField({
   return (
     <div className="grid gap-2">
       <span className="text-sm font-medium text-navy">{label}</span>
-      <div dir="ltr" role="group" aria-label={label} className="flex justify-between gap-2">
+      <div dir="ltr" role="group" aria-label={label} className="flex justify-between gap-1.5">
         {digits.map((digit, index) => (
           <input
             key={index}

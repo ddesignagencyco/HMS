@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/* Hunar mark: a house elevation with a verified tick and one yellow
+/* Brand mark: a house elevation with a verified tick and one yellow
    construction detail. Drawn rather than iconographic so it stays crisp
    at favicon size and matches the blueprint language. */
 export function BrandMark({ className, tone = "navy" }: { className?: string; tone?: "navy" | "light" }) {

@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
 import { AuthBackground } from "@/features/auth/auth-background";
 import "./auth.css";
+/* Authentication layout: scrollable on mobile viewports, fixed-height on
+   desktop. Every card in here is built to fit that fixed frame rather than
+   grow past it - two-factor enrolment is the tallest of them, so it puts the
+   code entry beside the QR instead of below it. */
 
-/* Authentication layout: scrollable on mobile viewports, fixed-height on desktop. */
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div

@@ -33,7 +33,12 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
   ];
   const otherLocale: Locale = locale === "en" ? "ur" : "en";
   const localeHref = pathname.replace(/^\/(en|ur)/, `/${otherLocale}`);
+  /* Three states, not two: while /auth/me is in flight nobody yet knows whether
+     this browser has a session, so the header holds a placeholder rather than
+     offering sign-in to somebody who is already signed in — which is the state
+     every full page load renders before the answer arrives. */
   const signedIn = status === "authenticated";
+  const sessionSettled = status !== "loading";
   const accountHref = homePathForRoles(roles, locale);
 
   const leave = async () => {
@@ -52,9 +57,11 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
       )}
     >
       <div className="container-shell flex h-[72px] items-center justify-between gap-4">
-        <Link href={localizedPath(locale)} className="flex items-center gap-2.5">
+        <Link href={localizedPath(locale)} className="flex min-w-0 items-center gap-2.5">
           <BrandMark />
-          <span className="text-lg font-bold tracking-[-0.03em] text-navy">{dict.brand.name}</span>
+          {/* The full brand name does not fit beside the menu button at the
+              narrowest phones, and it is not a name worth truncating. */}
+          <span className="text-[15px] font-bold tracking-[-0.03em] text-navy sm:text-lg">{dict.brand.name}</span>
         </Link>
 
         <nav className="hidden items-center gap-1 xl:flex" aria-label={dict.brand.name}>
@@ -73,12 +80,14 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
           ))}
         </nav>
 
-        <div className="hidden items-center gap-2 lg:flex">
+        <div className="hidden items-center gap-2 xl:flex">
           <Link href={localeHref} className={buttonStyles({ variant: "quiet", className: "px-3" })}>
             <Globe2 className="size-4" />
             {otherLocale === "ur" ? "اردو" : "EN"}
           </Link>
-          {signedIn ? (
+          {!sessionSettled ? (
+            <span className="skeleton h-11 w-32 rounded-[9px]" aria-hidden="true" />
+          ) : signedIn ? (
             <>
               <Link href={accountHref} className={buttonStyles({ variant: "secondary" })}>
                 <UserRound className="size-4" />
@@ -126,7 +135,9 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
             </nav>
             <div className="mt-5 grid grid-cols-2 gap-3 border-t border-line pt-5">
               <Link href={localeHref} className={buttonStyles({ variant: "secondary" })}>{otherLocale === "ur" ? "اردو" : "EN"}</Link>
-              {signedIn ? (
+              {!sessionSettled ? (
+                <span className="skeleton h-11 w-full rounded-[9px]" aria-hidden="true" />
+              ) : signedIn ? (
                 <>
                   <Link href={accountHref} className={buttonStyles()}>{dict.nav.myAccount}</Link>
                   <button type="button" onClick={leave} className={buttonStyles({ variant: "quiet", className: "col-span-2 w-full" })}>

@@ -9,7 +9,7 @@ import { isLocale } from "@/lib/utils";
 /* Contact details for the deployment. Replace both before launch — the tel:
    and mailto: links below are wired to these values. */
 const SUPPORT_PHONE = "+92 42 3577 0000";
-const SUPPORT_EMAIL = "support@hunar.pk";
+const SUPPORT_EMAIL = "support@smarthome.pk";
 
 const channelIcons: Record<string, LucideIcon> = {
   phone: PhoneCall,

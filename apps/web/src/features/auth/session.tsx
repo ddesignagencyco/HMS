@@ -67,7 +67,12 @@ export function SessionProvider({ locale, children }: { locale: Locale; children
       }
     },
     retry: false,
-    refetchOnWindowFocus: false,
+    /* The one query that is allowed to re-check itself when the tab comes back.
+       A session can be signed in or out in another tab, and this is what the
+       header renders its sign-in/sign-out controls from — a cached answer that
+       is never revisited leaves the header wrong until the next full load. The
+       staleTime still bounds it to one cheap request per minute per tab. */
+    refetchOnWindowFocus: true,
     staleTime: 60_000,
   });
 

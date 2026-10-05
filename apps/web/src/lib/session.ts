@@ -14,11 +14,11 @@ export type Session = {
   role: AccountRole;
 };
 
-export const SESSION_COOKIE = "hunar_session";
+export const SESSION_COOKIE = "shm_session";
 
 /* A per-deploy secret keeps the cookie from being forged by hand. Override it
-   with HUNAR_SESSION_SECRET in any real deployment. */
-const SECRET = process.env.HUNAR_SESSION_SECRET ?? "hunar-session-secret";
+   with SHM_SESSION_SECRET in any real deployment. */
+const SECRET = process.env.SHM_SESSION_SECRET ?? "shm-session-secret";
 
 const encoder = new TextEncoder();
 

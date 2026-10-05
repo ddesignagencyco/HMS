@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { Check, Copy, KeyRound, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
@@ -44,12 +44,21 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
   const [done, setDone] = useState(false);
   const [disabling, setDisabling] = useState(false);
   const [copied, setCopied] = useState(false);
+  const manualKey = useRef<HTMLDialogElement>(null);
 
   const form = useForm<z.infer<typeof codeSchema>>({
     resolver: zodResolver(codeSchema),
     defaultValues: { code: "" },
     mode: "onBlur",
   });
+
+  /* Enrolment is a session-only operation, so a visitor with none is sent to
+     sign in rather than shown a setup button whose only answer would be 401.
+     `safeReturnTo` drops an /auth/ destination, so this lands on sign-in
+     itself and the account's own role home after — never back here in a loop. */
+  useEffect(() => {
+    if (status === "anonymous") router.replace(signInPath(locale, returnTo));
+  }, [locale, returnTo, router, status]);
 
   /* Nothing to enrol on this account. */
   useEffect(() => {
@@ -113,7 +122,9 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
     }
   };
 
-  if (status === "loading") {
+  /* Held for loading and for the frame in which a visitor with no session is
+     being redirected — an enrolment card either way would be a dead end. */
+  if (status !== "authenticated") {
     return (
       <AuthShell locale={locale} dict={dict} title={dict.auth.totpTitle} description={dict.auth.totpIntro} imageSrc={AUTH_TOTP_IMAGE}>
         <div className="grid gap-3" aria-busy="true" aria-live="polite">
@@ -161,7 +172,6 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
       title={dict.auth.totpSetupTitle}
       titleAccent={dict.auth.totpAccent}
       description={dict.auth.totpSetupText}
-      step={secret === null ? { current: 1, total: 2 } : { current: 2, total: 2 }}
       imageSrc={AUTH_TOTP_IMAGE}
       footer={
         <Link href={signInPath(locale, returnTo)} className="font-semibold text-primary-strong hover:text-primary">
@@ -178,68 +188,109 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
           </Button>
         </div>
       ) : (
+        /* Stacked, this card measured 927px inside the 607px frame every other
+           auth card fits, and the confirm button fell off the bottom of the
+           page. So from lg the two steps sit side by side - QR on the left,
+           everything to type on the right - which is also the order they are
+           done in. Below lg it is one column, because a QR beside six code
+           boxes is more than a phone screen is wide.
+
+           The QR track is a fixed 212px rather than a fraction so the code
+           never gets wider and squeezes the QR below what an authenticator app
+           reads comfortably; the code boxes take what is left. 212 is also what
+           keeps the whole card inside the 607px frame the other auth cards fill
+           exactly. The card description already says what `totpStepOneText`
+           said, and in a 200px column that sentence alone was four lines and
+           96px of the budget. The numbered headers carry the steps. */
         <form onSubmit={onSubmit} className="grid gap-4" noValidate>
-          <div className="grid gap-3">
-            <p className="flex items-center gap-2 text-sm font-semibold text-navy">
-              <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
-                1
-              </span>
-              {dict.auth.totpStepOne}
-            </p>
-            <TotpQrCode uri={secret.otpauthUri} label={dict.auth.totpQrAlt} />
-            <p className="text-[13px] leading-6 text-secondary">{dict.auth.totpStepOneText}</p>
+          <div className="grid gap-4 lg:grid-cols-[212px_minmax(0,1fr)] lg:items-start lg:gap-4">
+            <div className="grid gap-3">
+              <p className="flex items-center gap-2 text-sm font-semibold text-navy">
+                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
+                  1
+                </span>
+                {dict.auth.totpStepOne}
+              </p>
+              <TotpQrCode uri={secret.otpauthUri} label={dict.auth.totpQrAlt} />
+            </div>
 
-            <details className="rounded-[9px] border border-line bg-surface-2 p-3">
-              <summary className="cursor-pointer text-[13px] font-semibold text-secondary">{dict.auth.totpManualTitle}</summary>
-              <p className="mt-2 text-[13px] leading-6 text-secondary">{dict.auth.totpManualText}</p>
-              <div className="mt-2 flex items-stretch gap-2">
-                <p
-                  dir="ltr"
-                  className="min-w-0 flex-1 select-all break-all rounded-[9px] border border-line bg-white p-3 text-start font-mono text-sm tracking-[0.12em] text-navy"
-                >
-                  {secret.secret}
-                </p>
-                <button
-                  type="button"
-                  onClick={copyKey}
-                  className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-[8px] border border-line bg-white px-3 py-2 text-[13px] font-semibold text-navy transition-colors duration-200 hover:bg-slate-50"
-                >
-                  {copied ? <Check className="size-4 text-emerald-600" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
-                  {dict.auth.totpCopyKey}
-                </button>
-              </div>
-            </details>
-          </div>
-
-          <div className="grid gap-3 border-t border-line pt-4">
-            <p className="flex items-center gap-2 text-sm font-semibold text-navy">
-              <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
-                2
-              </span>
-              {dict.auth.totpStepTwo}
-            </p>
-            <Controller
-              control={form.control}
-              name="code"
-              render={({ field }) => (
-                <OtpField
-                  value={field.value}
-                  onChange={field.onChange}
-                  onBlur={field.onBlur}
-                  label={dict.auth.totpCode}
-                  error={form.formState.errors.code?.message}
-                />
-              )}
-            />
+            <div className="grid gap-3">
+              <p className="flex items-center gap-2 text-sm font-semibold text-navy">
+                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
+                  2
+                </span>
+                {dict.auth.totpStepTwo}
+              </p>
+              <Controller
+                control={form.control}
+                name="code"
+                render={({ field }) => (
+                  <OtpField
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    label={dict.auth.totpCode}
+                    error={form.formState.errors.code?.message}
+                  />
+                )}
+              />
+              {/* A disclosure that expanded in place made the card taller than
+                  the fixed auth frame, which clipped the footer off the page,
+                  and squeezed a 32-character key into a column too narrow to
+                  read. This button opens a dialog instead - see below - so the
+                  card is the same height whichever way it is answered. */}
+              <button
+                type="button"
+                onClick={() => manualKey.current?.showModal()}
+                className="justify-self-start text-[13px] font-semibold text-primary-strong underline-offset-4 hover:underline"
+              >
+                {dict.auth.totpManualTitle}
+              </button>
+              <SubmitButton pending={form.formState.isSubmitting} pendingLabel={dict.auth.verifyBusy} className="mt-1">
+                {dict.auth.totpConfirm}
+              </SubmitButton>
+            </div>
           </div>
 
           {done ? <Notice tone="success">{dict.auth.totpEnabledText}</Notice> : null}
-
-          <SubmitButton pending={form.formState.isSubmitting} pendingLabel={dict.auth.verifyBusy} className="mt-1">
-            {dict.auth.totpConfirm}
-          </SubmitButton>
         </form>
       )}
+
+      {/* Outside the two-column row above, so nothing here can resize the card: a
+          closed <dialog> is display:none and an open one is promoted to the top
+          layer, out of the document flow. */}
+      <dialog
+        ref={manualKey}
+        aria-labelledby="totp-manual-key-title"
+        onClose={() => setCopied(false)}
+        className="m-auto w-[min(30rem,calc(100vw-2rem))] rounded-[14px] border border-line bg-white p-0 text-start text-navy shadow-lifted backdrop:bg-navy/50"
+      >
+        <div className="grid gap-4 p-5">
+          <div>
+            <h2 id="totp-manual-key-title" className="text-[15px] font-bold text-navy">
+              {dict.auth.totpSecretLabel}
+            </h2>
+            <p className="mt-1 text-[13px] leading-6 text-secondary">{dict.auth.totpSecretHint}</p>
+          </div>
+          {/* Full width here, and selectable: an unavailable clipboard still
+              leaves a way in. */}
+          <p
+            dir="ltr"
+            className="select-all break-all rounded-[9px] border border-line bg-surface-2 p-3 font-mono text-sm tracking-[0.12em] text-navy"
+          >
+            {secret?.secret}
+          </p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => manualKey.current?.close()}>
+              {dict.common.cancel}
+            </Button>
+            <Button type="button" onClick={() => void copyKey()}>
+              {copied ? <Check className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+              {dict.auth.totpCopyKey}
+            </Button>
+          </div>
+        </div>
+      </dialog>
     </AuthShell>
   );
 }
