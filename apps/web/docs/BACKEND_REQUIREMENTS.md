@@ -230,6 +230,10 @@ Option 1 needs a rate limit and must not leak provider identity or the address.
   - [3.7 S2 — The payment return URL is fixed, locale-less, and names no route](#37-s2--the-payment-return-url-is-fixed-locale-less-and-names-no-route)
   - [3.8 S3 — `addressCreateSchema` requires a point nobody can supply](#38-s3--addresscreateschema-requires-a-point-nobody-can-supply)
   - [3.9 Verified working — no action needed](#39-verified-working--no-action-needed)
+  - [3.10 S1 — A provider cannot read the address they are travelling to](#310-s1--a-provider-cannot-read-the-address-they-are-travelling-to)
+  - [3.11 S1 — Nothing reads a booking's checklist](#311-s1--nothing-reads-a-bookings-checklist)
+  - [3.10 S1 — A provider cannot read the address they are travelling to](#310-s1--a-provider-cannot-read-the-address-they-are-travelling-to)
+  - [3.11 S1 — Nothing reads a booking's checklist](#311-s1--nothing-reads-a-bookings-checklist)
 - [Module 4 — Notifications](#module-4--notifications)
   - [3.1 SMS gateway routing and failover](#31-sms-gateway-routing-and-failover)
   - [3.2 Localized notification templates](#32-localized-notification-templates)
@@ -1020,6 +1024,107 @@ with `customer@smart-home.local`. The seeded fixtures are: 6 active categories,
   messages as read.
 - **`getOwned` 404 is rendered as "not found".** The page never says a booking
   exists but belongs to somebody else.
+
+---
+
+## 3.10 S1 — A provider cannot read the address they are travelling to
+
+**Found while building `/provider/jobs/[id]`. This is the one gap that makes the
+provider module unusable, so it is S1 despite being a read.**
+
+`GET /bookings/:id` returns a bare `BookingRow`. For an assigned provider that row
+carries:
+
+```
+addressId: "0f2c…-…"      ← a UUID, and nothing else about the place
+```
+
+There is no way to turn that into a street address from a provider's session:
+
+- `GET /customer/addresses` is `@PolicyDecorator({ roles: ['CUSTOMER'] })`
+  (`apps/api/src/customer/addresses.controller.ts:16`) — a provider gets a 403.
+- `BookingRow` deliberately carries no lat/lng or address text. That omission is
+  *correct and should stay*: `on-behalf.ts` explains that every provider-facing
+  endpoint in the booking module returns this row, so an address on it would be
+  handed to a professional who is still deciding whether to take the job.
+- `GET /bookings/:id/on-behalf-contact` returns `{ name, phone, revealed }` and is
+  `null` for an ordinary booking. It is who-to-knock-on, not where-to-go.
+
+So the professional accepts a job and learns the service, the time, the problem
+description — and cannot find the house.
+
+**Ask:** one endpoint that returns the service address *for the assigned provider
+of that booking only*, after acceptance, under the same masking discipline as
+`onBehalfContact`:
+
+```
+GET /bookings/:id/service-address
+→ { label, line1, areaName, lat, lng, revealed }
+```
+
+Rules the frontend will hold it to:
+
+- **404 for anyone who is not the assigned provider**, and **refused before the
+  booking leaves `REQUESTED`** — the same `maySeeFullContact` threshold the contact
+  number already uses, so a provider cannot harvest addresses from jobs they may
+  still decline.
+- **Coordinates are needed.** `POST /bookings/:id/start` accepts `lat`/`lng` and
+  reports `distanceM` and `withinGeofence`; a shortfall is flagged, never blocking,
+  but it is recorded. Without the destination the check-in is meaningless.
+- **Optional `areaId`/`areaName`** — §2.2 notes areas carry no centroid, so the
+  address's own point is the only thing that works.
+
+**What the frontend does until this exists.** The job screen shows the booking code,
+the service, the slot, the problem text and the on-behalf contact, and states plainly
+that the address is not available to a provider through the API — pointing at the
+chat thread as the route the customer can use. It does **not** render a placeholder
+address. A mock address here would have been the most dangerous thing in the whole
+migration: a professional driving to a fabricated address.
+
+## 3.11 S1 — Nothing reads a booking's checklist
+
+**Found in the same pass. The write path exists and the enforcement is real, so a
+provider can reach a 409 they have no way to satisfy through the UI.**
+
+The checklist is written and enforced:
+
+- `POST /bookings/:id/checklist/:itemId` takes `{ done, evidenceId? }` and marks a
+  step done (`execution.markChecklistItemDone`). A photo step needs the `evidenceId`
+  of a `CHECKLIST` photo already uploaded for that step, else 422.
+- `POST /bookings/:id/complete` refuses with **409** until the start code was used,
+  **every active step is done**, and a `BEFORE` and an `AFTER` photo are on file.
+
+Nothing reads it. `GET /bookings/:id` is a bare `BookingRow` — no checklist — and
+there is no `GET /bookings/:id/checklist`. So:
+
+- the screen cannot list the service's steps;
+- it cannot show which are done, which need a photo, or which are outstanding;
+- **`itemId` is undiscoverable**, so `POST …/checklist/:itemId` cannot be called with
+  a value obtained from anywhere;
+- a provider who has genuinely done every step still gets a 409, with no way to
+  satisfy it and no way to see what is left.
+
+**Ask:**
+
+```
+GET /bookings/:id/checklist
+→ { items: [{ itemId, position, labelEn, labelUr, requiresPhoto, done, evidenceId, doneAt }] }
+```
+
+- `itemId` must be the integer the `POST` route's `ParseIntPipe` expects.
+- **Bilingual, like `breach_types`** — `service_checklist` should carry `label_en`
+  and `label_ur`. The Urdu provider screen has nothing to show here at all today.
+- `requiresPhoto` must be explicit: it decides whether the screen asks for an upload
+  before it will let the tick stand.
+- The `done` flags must come from the same source `complete` reads, or the UI will
+  disagree with the 409 it is trying to avoid.
+
+**Interim behaviour, and it is not good.** Until this exists the frontend shows the
+photo requirements — which it *can* derive from `GET /bookings/:id/evidence` — and
+says plainly that the steps themselves are driven by the service definition, which
+the API does not publish to a provider. It does **not** render steps from catalogue
+mock data and then post invented `itemId` values; that would produce 422s the
+provider cannot diagnose.
 
 ---
 

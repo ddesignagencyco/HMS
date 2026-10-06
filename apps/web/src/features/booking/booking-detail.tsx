@@ -1,4 +1,4 @@
-ï»¿'use client';
+'use client';
 
 import { AlertTriangle, CalendarDays, CheckCircle2, Image as ImageIcon, Info, ShieldCheck, XCircle } from 'lucide-react';
 import { useState } from 'react';
@@ -12,7 +12,7 @@ import {
   MAX_PROBLEM_PHOTOS,
   useApproveRevision,
   useBooking,
-  useBookingEvidence,
+  useAddEvidence,
   useCancelBooking,
   useRejectRevision,
   useReportNoShow,
@@ -28,7 +28,7 @@ import { formatSlotTime } from '@/features/search/location';
 import { addDays, SLOT_WINDOW_DAYS, toApiDate } from '@/features/search/types';
 import { prepareEvidenceImage } from '@/features/uploads/image';
 
-/* `GET /bookings/:id` â€” one booking, its live state, and everything the
+/* `GET /bookings/:id` — one booking, its live state, and everything the
    customer can do about it.
 
    Which actions appear is decided by `booking/status.ts`, which mirrors the
@@ -38,11 +38,11 @@ import { prepareEvidenceImage } from '@/features/uploads/image';
 
    The 404 is load-bearing. The API answers 404 for a booking that belongs to
    someone else *and* for one that does not exist, so this page can only ever
-   say "not found" â€” never "this is not yours", which would confirm it exists. */
+   say "not found" — never "this is not yours", which would confirm it exists. */
 
 /* Every action on this page reports its own failure through the mutation's
    `isError`, which the cards below render. This handler exists so a refused
-   action does not also become an unhandled promise rejection in the console â€”
+   action does not also become an unhandled promise rejection in the console —
    `void promise` discards the value but attaches no rejection handler, so a 409
    would be reported by the browser as a fault in the product. */
 const reportFailure = (): void => {
@@ -64,7 +64,7 @@ export function BookingDetail({ locale, dict, bookingId }: { locale: Locale; dic
   }
 
   if (booking.isError) {
-    /* 404 is the API refusing to confirm that this booking exists at all â€” the
+    /* 404 is the API refusing to confirm that this booking exists at all — the
        same answer it gives for a booking that belongs to somebody else. */
     if (isNotFoundError(booking.error)) {
       return (
@@ -115,7 +115,7 @@ export function BookingDetail({ locale, dict, bookingId }: { locale: Locale; dic
               ) : null}
               {record.discountPaisa > 0 ? (
                 <Row label={dict.booking.discount}>
-                  <span className="text-emerald-700 tabular-nums">âˆ’{money(record.discountPaisa, locale)}</span>
+                  <span className="text-emerald-700 tabular-nums">-{money(record.discountPaisa, locale)}</span>
                 </Row>
               ) : null}
               {record.isEmergency ? <Row label={dict.common.emergency}>{dict.common.yes}</Row> : null}
@@ -175,7 +175,7 @@ function StatusPill({ dict, status }: { dict: Dictionary; status: Booking['statu
  * fixed list of four.
  *
  * The previous mock version rendered the same four steps for every booking and
- * labelled the last one "Current live stage" whatever the status was â€” so a
+ * labelled the last one "Current live stage" whatever the status was — so a
  * cancelled booking showed a progress bar that looked like it was advancing.
  */
 function StageTimeline({ dict, booking }: { dict: Dictionary; booking: Booking }) {
@@ -261,7 +261,7 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
             <div className="rounded-[10px] border border-line p-4">
               <p className="text-sm font-semibold text-navy">{dict.booking.cancelTitle}</p>
               {/* FR-BK-06 is not applied by the API yet, so no fee is quoted
-                  here â€” claiming one would name a rule that does not run. */}
+                  here — claiming one would name a rule that does not run. */}
               <p className="mt-1 text-sm leading-6 text-secondary">{dict.booking.cancelNote}</p>
               {confirmingCancel ? (
                 <div className="mt-3 grid gap-3">
@@ -335,7 +335,7 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
  * send both instants.
  *
  * The slot list is the same `/slots` endpoint the booking flow uses, refetched
- * per day and never cached â€” the whole point of a reschedule is a time that is
+ * per day and never cached — the whole point of a reschedule is a time that is
  * still free. Only a slot that is actually free is offered; there is no free-text
  * time field, because the API would reject it and the customer would be the one
  * explaining why.
@@ -503,21 +503,21 @@ function WarrantyCard({ locale, dict, booking }: { locale: Locale; dict: Diction
   );
 }
 
-/* FR-BK-03: up to five photos of the problem, and only before the job starts â€”
+/* FR-BK-03: up to five photos of the problem, and only before the job starts —
    `ExecutionService` refuses them afterwards. The count in the copy is the
    server's limit, not a client-side guess. */
 /**
  * FR-BK-03: up to five photos of the problem.
  *
  * `ExecutionService` accepts CUSTOMER_PROBLEM photos only while the booking is
- * PENDING_PAYMENT, REQUESTED or SCHEDULED â€” after the professional is under way
+ * PENDING_PAYMENT, REQUESTED or SCHEDULED — after the professional is under way
  * they are refused. The card is not rendered at all outside those states, so the
  * five-photo limit and the upload button never appear where they would 409.
  */
 const canAttachProblemPhotos = (booking: Pick<Booking, 'status'>): boolean => booking.status === 'PENDING_PAYMENT' || booking.status === 'REQUESTED' || booking.status === 'SCHEDULED';
 
 function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: Locale; dict: Dictionary; bookingId: string; canUpload: boolean }) {
-  const upload = useBookingEvidence(locale);
+  const upload = useAddEvidence(locale);
   const [files, setFiles] = useState<File[]>([]);
   const [results, setResults] = useState<{ url: string }[]>([]);
   const [failed, setFailed] = useState('');
@@ -525,7 +525,7 @@ function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: Locale;
      every attempt at uploading it.
 
      The previous version called `crypto.randomUUID()` inside the loop, so a retry
-     after a dropped connection produced a **different** key â€” and the
+     after a dropped connection produced a **different** key — and the
      `(booking_id, client_uuid)` dedupe could not recognise it, storing the photo
      twice. The comment above it claimed the opposite. The API's own rule is one
      key per user intent, not per attempt. */

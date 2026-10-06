@@ -90,6 +90,19 @@ export type Booking = {
   scheduledStart: string;
   scheduledEnd: string;
   problemText: string | null;
+  /** What the customer picked to narrow the service, when they picked one. */
+  issueOptionId: number | null;
+  /**
+   * Someone other than the customer will receive the provider.
+   *
+   * This pair is only *who to knock on*. The contact **number is deliberately not
+   * on this row** — every provider-facing endpoint in the booking module returns it,
+   * including the offer list where the professional is still deciding whether to
+   * take the job. The number comes from `GET /bookings/:id/on-behalf-contact`,
+   * masked until the job is accepted. See `OnBehalfContact`.
+   */
+  isOnBehalf: boolean;
+  onBehalfName: string | null;
   /** What the platform priced the booking at. */
   quotedAmountPaisa: number;
   /** What the customer approved. Equal to the quote unless a revision was taken. */

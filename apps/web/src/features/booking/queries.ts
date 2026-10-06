@@ -1,8 +1,8 @@
-﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FRESHNESS, accountKeys, bookingKeys, isNotFoundError, publicRetry } from "@/lib/api/keys";
-import type { Locale } from "@/lib/utils";
-import { accountApi, type CreateAddressInput, type UpdateAddressInput } from "@/features/account/api";
-import { bookingApi, type AddEvidenceInput, type BookingListStatus, type CreateBookingInput, type QuoteInput } from "@/features/booking/api";
+﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FRESHNESS, accountKeys, bookingKeys, isNotFoundError, publicRetry } from '@/lib/api/keys';
+import type { Locale } from '@/lib/utils';
+import { accountApi, type CreateAddressInput, type UpdateAddressInput } from '@/features/account/api';
+import { bookingApi, type AddEvidenceInput, type BookingListStatus, type CreateBookingInput, type QuoteInput } from '@/features/booking/api';
 
 /* Server state for the authenticated account.
 
@@ -29,7 +29,7 @@ export function useAddresses(locale: Locale, enabled = true) {
     enabled,
     staleTime: FRESHNESS.addresses.staleTime,
     gcTime: FRESHNESS.addresses.gcTime,
-    retry: publicRetry,
+    retry: publicRetry
   });
 }
 
@@ -41,7 +41,7 @@ export function useCreateAddress(locale: Locale) {
        whole list is refetched rather than patched â€” otherwise the list would
        show two defaults until something else invalidated it. */
     onSuccess: () => queryClient.invalidateQueries({ queryKey: accountKeys.addresses }),
-    ...noRetry,
+    ...noRetry
   });
 }
 
@@ -50,7 +50,7 @@ export function useUpdateAddress(locale: Locale) {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateAddressInput }) => accountApi.updateAddress(id, input, { locale }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: accountKeys.addresses }),
-    ...noRetry,
+    ...noRetry
   });
 }
 
@@ -59,7 +59,7 @@ export function useArchiveAddress(locale: Locale) {
   return useMutation({
     mutationFn: (addressId: string) => accountApi.archiveAddress(addressId, { locale }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: accountKeys.addresses }),
-    ...noRetry,
+    ...noRetry
   });
 }
 
@@ -69,18 +69,18 @@ export function useMyBookings(status: BookingListStatus | undefined, locale: Loc
     queryFn: ({ signal }) => bookingApi.listMine(status, { signal, locale }),
     staleTime: FRESHNESS.bookingList.staleTime,
     gcTime: FRESHNESS.bookingList.gcTime,
-    retry: publicRetry,
+    retry: publicRetry
   });
 }
 
 export function useBooking(bookingId: string | null, locale: Locale) {
   return useQuery({
-    queryKey: bookingKeys.detail(bookingId ?? ""),
+    queryKey: bookingKeys.detail(bookingId ?? ''),
     queryFn: ({ signal }) => bookingApi.get(bookingId as string, { signal, locale }),
-    enabled: bookingId !== null && bookingId !== "",
+    enabled: bookingId !== null && bookingId !== '',
     staleTime: FRESHNESS.booking.staleTime,
     gcTime: FRESHNESS.booking.gcTime,
-    retry: (failureCount, error) => !isNotFoundError(error) && publicRetry(failureCount, error),
+    retry: (failureCount, error) => !isNotFoundError(error) && publicRetry(failureCount, error)
   });
 }
 
@@ -92,7 +92,7 @@ export function useBooking(bookingId: string | null, locale: Locale) {
 export function useQuote(input: QuoteInput | null, locale: Locale) {
   return useMutation({
     mutationFn: (payload: QuoteInput) => bookingApi.quote(payload, { locale }),
-    ...noRetry,
+    ...noRetry
   });
 }
 
@@ -109,7 +109,7 @@ export function useCreateBooking(locale: Locale) {
   return useMutation({
     mutationFn: (input: CreateBookingInput) => bookingApi.create(input, { locale }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: bookingKeys.all }),
-    ...noRetry,
+    ...noRetry
   });
 }
 
@@ -119,25 +119,21 @@ const useBookingAction = <TInput, TResult>(perform: (input: TInput) => Promise<T
   return useMutation({
     mutationFn: perform,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: bookingKeys.all }),
-    ...noRetry,
+    ...noRetry
   });
 };
 
-export const useCancelBooking = (locale: Locale) =>
-  useBookingAction((input: { id: string; reason?: string }) => bookingApi.cancel(input.id, input.reason, { locale }));
+export const useCancelBooking = (locale: Locale) => useBookingAction((input: { id: string; reason?: string }) => bookingApi.cancel(input.id, input.reason, { locale }));
 
-export const useRescheduleBooking = (locale: Locale) =>
-  useBookingAction((input: { id: string; scheduledStart: string; scheduledEnd: string }) => bookingApi.reschedule(input.id, input, { locale }));
+export const useRescheduleBooking = (locale: Locale) => useBookingAction((input: { id: string; scheduledStart: string; scheduledEnd: string }) => bookingApi.reschedule(input.id, input, { locale }));
 
 export const useApproveRevision = (locale: Locale) => useBookingAction((bookingId: string) => bookingApi.approveRevision(bookingId, { locale }));
 
 export const useRejectRevision = (locale: Locale) => useBookingAction((bookingId: string) => bookingApi.rejectRevision(bookingId, { locale }));
 
-export const useWarrantyClaim = (locale: Locale) =>
-  useBookingAction((input: { id: string; reason: string }) => bookingApi.warrantyClaim(input.id, input.reason, { locale }));
+export const useWarrantyClaim = (locale: Locale) => useBookingAction((input: { id: string; reason: string }) => bookingApi.warrantyClaim(input.id, input.reason, { locale }));
 
-export const useReportNoShow = (locale: Locale) =>
-  useBookingAction((input: { id: string; party: "CUSTOMER" | "PROVIDER" }) => bookingApi.reportNoShow(input.id, input.party, { locale }));
+export const useReportNoShow = (locale: Locale) => useBookingAction((input: { id: string; party: 'CUSTOMER' | 'PROVIDER' }) => bookingApi.reportNoShow(input.id, input.party, { locale }));
 
 /* ---- Provider actions on a booking ---------------------------------------- */
 
@@ -149,63 +145,88 @@ export const useDepartBooking = (locale: Locale) => useBookingAction((id: string
 
 export const useStartBooking = (locale: Locale) =>
   useBookingAction((input: { id: string; code: string; lat?: number; lng?: number; accuracyM?: number }) =>
-    bookingApi.start(input.id, { code: input.code, lat: input.lat, lng: input.lng, accuracyM: input.accuracyM }, { locale }),
+    bookingApi.start(input.id, { code: input.code, lat: input.lat, lng: input.lng, accuracyM: input.accuracyM }, { locale })
   );
 
 export const useCompleteBooking = (locale: Locale) =>
   useBookingAction((input: { id: string; finalAmountPaisa?: number; lat?: number; lng?: number; accuracyM?: number }) =>
-    bookingApi.complete(input.id, { finalAmountPaisa: input.finalAmountPaisa, lat: input.lat, lng: input.lng, accuracyM: input.accuracyM }, { locale }),
+    bookingApi.complete(input.id, { finalAmountPaisa: input.finalAmountPaisa, lat: input.lat, lng: input.lng, accuracyM: input.accuracyM }, { locale })
   );
 
 export const useCashReceived = (locale: Locale) => useBookingAction((id: string) => bookingApi.cashReceived(id, { locale }));
 
 export const useMarkChecklistDone = (locale: Locale) =>
-  useBookingAction((input: { id: string; itemId: number; evidenceId?: string }) =>
-    bookingApi.markChecklistDone(input.id, input.itemId, input.evidenceId, { locale }),
-  );
+  useBookingAction((input: { id: string; itemId: number; evidenceId?: string }) => bookingApi.markChecklistDone(input.id, input.itemId, input.evidenceId, { locale }));
 
 export const useCreateRevision = (locale: Locale) =>
-  useBookingAction((input: { id: string; deltaPaisa: number; reason: string }) =>
-    bookingApi.createRevision(input.id, { deltaPaisa: input.deltaPaisa, reason: input.reason }, { locale }),
-  );
+  useBookingAction((input: { id: string; deltaPaisa: number; reason: string }) => bookingApi.createRevision(input.id, { deltaPaisa: input.deltaPaisa, reason: input.reason }, { locale }));
 
 /* The contact is masked until the provider accepts — this is the customer/provider
    seeing who the job is for, not a public read. */
 export const useOnBehalfContact = (id: string | null, locale: Locale) =>
   useQuery({
-    queryKey: [...bookingKeys.detail(id ?? ""), "on-behalf"],
+    queryKey: [...bookingKeys.detail(id ?? ''), 'on-behalf'],
     queryFn: ({ signal }) => bookingApi.onBehalfContact(id as string, { signal, locale }),
-    enabled: id !== null && id !== "",
+    enabled: id !== null && id !== '',
     staleTime: FRESHNESS.booking.staleTime,
     gcTime: FRESHNESS.booking.gcTime,
-    retry: (failureCount, error) => !isNotFoundError(error) && publicRetry(failureCount, error),
+    retry: (failureCount, error) => !isNotFoundError(error) && publicRetry(failureCount, error)
   });
 
 /** FR-BK-03: at most five problem photos, and only before the job starts. */
 export const MAX_PROBLEM_PHOTOS = 5;
 
-export function useBookingEvidence(locale: Locale) {
+/**
+ * `GET /bookings/:id/evidence` — every photo on the booking, oldest first.
+ *
+ * This is a *reader*. It used to have no reader at all: the hook that shares the
+ * old name was the upload mutation, so nothing in the app could display a photo it
+ * had just uploaded. Evidence is insert-only and the server stamps `receivedAt`,
+ * so the list is also the only authority on whether the before/after pair the
+ * completion gate needs is on file.
+ */
+export function useEvidenceList(bookingId: string | null, locale: Locale) {
+  return useQuery({
+    queryKey: [...bookingKeys.detail(bookingId ?? ''), 'evidence'],
+    queryFn: ({ signal }) => bookingApi.listEvidence(bookingId as string, { signal, locale }),
+    enabled: bookingId !== null && bookingId !== '',
+    staleTime: FRESHNESS.messages.staleTime,
+    gcTime: FRESHNESS.messages.gcTime,
+    /* A booking you cannot see 404s, exactly as the detail does. */
+    retry: (failureCount, error) => !isNotFoundError(error) && publicRetry(failureCount, error)
+  });
+}
+
+/**
+ * `POST /bookings/:id/evidence`.
+ *
+ * Named for what it does. It was `useBookingEvidence`, which read like the reader
+ * above and sent anyone looking for the photo list to a mutation.
+ */
+export function useAddEvidence(locale: Locale) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: { id: string; payload: AddEvidenceInput }) => bookingApi.addEvidence(input.id, input.payload, { locale }),
-    /* The evidence list is not on the booking row, so there is no cached list to
-       patch here. The detail is invalidated because the photo count and the
-       booking's own view of the visit are derived from it elsewhere. */
-    onSuccess: (_result, input) => queryClient.invalidateQueries({ queryKey: bookingKeys.detail(input.id) }),
-    ...noRetry,
+    onSuccess: (_result, input) => {
+      /* Evidence is not on the booking row, so there is no list to patch — but the
+         photo list and the detail are both derived from it and both stale now. */
+      void queryClient.invalidateQueries({ queryKey: [...bookingKeys.detail(input.id), 'evidence'] });
+      void queryClient.invalidateQueries({ queryKey: bookingKeys.detail(input.id) });
+    },
+    ...noRetry
   });
 }
 
 export function useBookingMessages(bookingId: string | null, locale: Locale, enabled = true) {
   return useQuery({
-    queryKey: [...bookingKeys.detail(bookingId ?? ""), "messages"],
+    queryKey: [...bookingKeys.detail(bookingId ?? ''), 'messages'],
     queryFn: ({ signal }) => bookingApi.listMessages(bookingId as string, { signal, locale }),
-    enabled: enabled && bookingId !== null && bookingId !== "",
+    enabled: enabled && bookingId !== null && bookingId !== '',
     /* Reading is a side effect, so this is never served from cache on its own. */
     staleTime: FRESHNESS.messages.staleTime,
     gcTime: FRESHNESS.messages.gcTime,
     refetchOnWindowFocus: FRESHNESS.messages.refetchOnWindowFocus,
-    retry: (failureCount, error) => !isNotFoundError(error) && publicRetry(failureCount, error),
+    retry: (failureCount, error) => !isNotFoundError(error) && publicRetry(failureCount, error)
   });
 }
 
@@ -213,7 +234,7 @@ export const useSendMessage = (locale: Locale) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: { id: string; body: string }) => bookingApi.sendMessage(input.id, input.body, { locale }),
-    onSuccess: (_result, input) => queryClient.invalidateQueries({ queryKey: [...bookingKeys.detail(input.id), "messages"] }),
-    ...noRetry,
+    onSuccess: (_result, input) => queryClient.invalidateQueries({ queryKey: [...bookingKeys.detail(input.id), 'messages'] }),
+    ...noRetry
   });
 };
