@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import { AlertCircle, Clock3, MapPin } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Button, Card, PageHeader } from "@/components/ui";
-import { useAcceptOffer, useDeclineOffer, useProviderOffers } from "@/features/provider/queries";
-import type { ProviderOffer } from "@/features/provider/api";
-import type { Dictionary } from "@/lib/dictionaries";
-import { formatDateTime, formatMoney, type Locale } from "@/lib/utils";
+import { AlertCircle, Clock3, MapPin } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Button, Card, PageHeader } from '@/components/ui';
+import { useAcceptOffer, useDeclineOffer, useProviderOffers } from '@/features/provider/queries';
+import type { ProviderOffer } from '@/features/provider/api';
+import type { Dictionary } from '@/lib/dictionaries';
+import { formatDateTime, formatMoney, type Locale } from '@/lib/utils';
 
 /* Offers offered to **the signed-in professional**, each with a server's
    `expiresAt`. The acceptance countdown is real: it ticks on a one-second
@@ -39,7 +39,7 @@ const isUrgent = (expiresAt: string, now: number): boolean => {
   return remaining > 0 && remaining < 60_000;
 };
 
-type Outcome = "accepted" | "declined" | null;
+type Outcome = 'accepted' | 'declined' | null;
 
 export function ProviderOffersView({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const offers = useProviderOffers(locale);
@@ -48,18 +48,18 @@ export function ProviderOffersView({ locale, dict }: { locale: Locale; dict: Dic
   const now = useNow(1000);
 
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
-  const [localError, setLocalError] = useState("");
+  const [localError, setLocalError] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
 
-  const act = async (offer: ProviderOffer, kind: "accept" | "decline"): Promise<void> => {
-    setLocalError("");
+  const act = async (offer: ProviderOffer, kind: 'accept' | 'decline'): Promise<void> => {
+    setLocalError('');
     setPendingId(offer.id);
     try {
-      if (kind === "accept") await accept.mutateAsync(offer.id);
+      if (kind === 'accept') await accept.mutateAsync(offer.id);
       else await decline.mutateAsync({ offerId: offer.id });
-      setOutcomes((current) => ({ ...current, [offer.id]: kind === "accept" ? "accepted" : "declined" }));
+      setOutcomes((current) => ({ ...current, [offer.id]: kind === 'accept' ? 'accepted' : 'declined' }));
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : kind === "accept" ? dict.portal.acceptFailed : dict.portal.declineFailed);
+      setLocalError(error instanceof Error ? error.message : kind === 'accept' ? dict.portal.acceptFailed : dict.portal.declineFailed);
     } finally {
       setPendingId(null);
     }
@@ -105,7 +105,7 @@ export function ProviderOffersView({ locale, dict }: { locale: Locale; dict: Dic
             const urgent = isUrgent(offer.expiresAt, now);
             return (
               <li key={offer.id}>
-                <Card className={`p-5 ${expired ? "opacity-70" : ""}`}>
+                <Card className={`p-5 ${expired ? 'opacity-70' : ''}`}>
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-muted">
@@ -134,33 +134,28 @@ export function ProviderOffersView({ locale, dict }: { locale: Locale; dict: Dic
                       </div>
                     </div>
 
-                    {outcome === "accepted" ? (
-                      <p role="status" className="text-sm font-semibold text-emerald-700">{dict.portal.offerAccepted}</p>
-                    ) : outcome === "declined" ? (
-                      <p role="status" className="text-sm font-semibold text-rose-700">{dict.portal.offerDeclined}</p>
+                    {outcome === 'accepted' ? (
+                      <p role="status" className="text-sm font-semibold text-emerald-700">
+                        {dict.portal.offerAccepted}
+                      </p>
+                    ) : outcome === 'declined' ? (
+                      <p role="status" className="text-sm font-semibold text-rose-700">
+                        {dict.portal.offerDeclined}
+                      </p>
                     ) : expired ? (
-                      <p role="status" className="text-sm font-semibold text-muted">{dict.portal.offerExpired}</p>
+                      <p role="status" className="text-sm font-semibold text-muted">
+                        {dict.portal.offerExpired}
+                      </p>
                     ) : (
                       <div className="flex shrink-0 flex-col items-start gap-3 lg:items-end">
-                        <p
-                          aria-live="polite"
-                          className={`text-sm font-semibold ${urgent ? "text-rose-700" : "text-amber-700"}`}
-                        >
-                          {urgent && remaining !== null && remaining.endsWith("s") && !remaining.includes("m")
-                            ? dict.portal.expiresSoon
-                            : dict.portal.expiresIn.replace("{time}", remaining ?? "")}
+                        <p aria-live="polite" className={`text-sm font-semibold ${urgent ? 'text-rose-700' : 'text-amber-700'}`}>
+                          {urgent && remaining !== null && remaining.endsWith('s') && !remaining.includes('m') ? dict.portal.expiresSoon : dict.portal.expiresIn.replace('{time}', remaining ?? '')}
                         </p>
                         <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            disabled={pendingId === offer.id}
-                            onClick={() => void act(offer, "decline")}
-                          >
+                          <Button type="button" variant="secondary" size="sm" disabled={pendingId === offer.id} onClick={() => void act(offer, 'decline')}>
                             {dict.portal.decline}
                           </Button>
-                          <Button type="button" size="sm" disabled={pendingId === offer.id} onClick={() => void act(offer, "accept")}>
+                          <Button type="button" size="sm" disabled={pendingId === offer.id} onClick={() => void act(offer, 'accept')}>
                             {dict.portal.accept}
                           </Button>
                         </div>
@@ -174,8 +169,10 @@ export function ProviderOffersView({ locale, dict }: { locale: Locale; dict: Dic
         </ul>
       )}
 
-      {localError !== "" ? (
-        <p role="alert" className="mt-4 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">{localError}</p>
+      {localError !== '' ? (
+        <p role="alert" className="mt-4 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">
+          {localError}
+        </p>
       ) : null}
     </div>
   );

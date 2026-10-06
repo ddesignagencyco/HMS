@@ -40,9 +40,10 @@ Public pages, auth, provider onboarding, admin approval
 ### Provider (onboarding slice)
 
 - [ ] Documents screen: CNIC / trade certificate / optional character certificate upload, approval status shown — ⬜ **no backend at all** (BACKEND_REQUIREMENTS §6.1)
-- [ ] Service & price list: pick catalogue services, set price within admin band — ⬜ screen not built; `features/provider/api.ts` now types `GET`/`PUT`/`DELETE /provider/services`, which already returns each service's own price and approval status
-- [ ] Availability calendar: weekly slots + leave days — ⬜ screen not built. The endpoint is **recurring weekly blocks + leave**, not a per-day booked/free grid, so the view must be redesigned against `AvailabilityBlock`; typed in `features/provider/api.ts`
+- [x] Service & price list: pick catalogue services, set price within admin band — ✅ `GET`/`PUT`/`DELETE /provider/services`. The row carries no band, so the screen joins the catalogue for min/max, the Urdu name and the duration; the server refuses a price outside the band regardless
+- [ ] Availability calendar: weekly slots + leave days — ⬜ typed against the real schemas. The endpoint is `{ items: [{ weekday, startTime, endTime }] }` — recurring blocks, not a booked/free grid — so the view has to be rebuilt
 - [x] Profile — ✅ `GET`/`PATCH /provider/profile` + `GET /provider/service-areas`. No provider id is in the route — the API reads the caller from the access token, which is what replaced the hardcoded `providers[0]` every professional used to see
+- [x] Service areas — ✅ `GET`/`PUT /provider/service-areas` + the places API. The endpoint returns bare `areaId`s, so the picker is built from `/places/cities` → `/areas`. Save stays disabled until something changes, because PUT deletes and re-inserts
 
 ### Admin
 
@@ -75,7 +76,7 @@ Search, booking flow, provider job execution
 ### Provider
 
 - [ ] Dashboard: today's jobs — ⬜ every provider screen hardcodes `providers[0]` as "me"
-- [ ] Job offer screen with acceptance countdown — ⬜ typed in `features/provider/api.ts` (`useProviderOffers`, `liveOffers`, `acceptOffer`, `declineOffer`); screen not built
+- [x] Job offer screen with acceptance countdown — ✅ `GET /provider/offers`, one-second countdown against the server's `expiresAt`, accept/decline. An expired row keeps its data but loses the accept control
 - [ ] Job detail screen — ⬜ all actions are now typed in `bookingApi` (`accept`/`decline`/`depart`/`start`/`checklist`/`complete`/`cash-received`/`revisions`); screen not built
 - [ ] Start-work OTP entry — ⬜ code is compared against a literal
 - [ ] Checklist + photograph capture (before/after, geofenced check-in/out handled silently in the background) — ⬜ photos are hardcoded Unsplash URLs
@@ -116,7 +117,7 @@ Agent console, finance screens, customer/provider money views
 
 ### Provider
 
-- [ ] Earnings dashboard: held / releasable / paid, commission deducted, weekly/monthly totals — ⬜ `/provider/earnings` exists and is unused
+- [ ] Earnings dashboard: held / releasable / paid, commission deducted, weekly/monthly totals — ✅ `GET /provider/earnings` + `GET /provider/wallet`. `commissionPaisa` is read from the API, never computed as a browser-side percentage
 - [ ] Payout request screen — ⬜ `/provider/payouts` exists and is unused
 - [ ] Ratings & remarks view (read-only, published-from-verified-call only) — ⬜
 - [ ] Reply to a remark (one reply, not editable after posting) — ⬜ `POST /provider/remarks/:id/reply` exists and is unused

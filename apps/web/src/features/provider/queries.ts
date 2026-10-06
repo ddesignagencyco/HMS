@@ -17,6 +17,7 @@ import {
   type ProviderRatings,
   type ProviderService,
   type ProviderServiceArea,
+  type PayoutAccountInput,
   type SetProviderServiceInput,
   type TimeOffInput,
   type Wallet
@@ -114,7 +115,7 @@ export const useProviderServiceAreas = (locale: Locale) =>
 export const useSetServiceAreas = (locale: Locale) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (areaIds: number[]) => providerApi.setServiceAreas({ areaIds }, { locale }),
+    mutationFn: (areaIds: number[]) => providerApi.setServiceAreas(areaIds, { locale }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: providerKeys.serviceAreas }),
     ...noRetry
   });
@@ -231,7 +232,7 @@ export const usePayoutAccounts = (locale: Locale) =>
 export const useAddPayoutAccount = (locale: Locale) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { bankTitle: string; iban: string }) => providerApi.addPayoutAccount(input, { locale }),
+    mutationFn: (input: PayoutAccountInput) => providerApi.addPayoutAccount(input, { locale }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: providerKeys.payoutAccounts }),
     ...noRetry
   });

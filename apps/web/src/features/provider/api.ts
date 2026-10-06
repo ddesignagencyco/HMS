@@ -50,11 +50,14 @@ export type ProviderProfile = {
 
 export type ProviderProfileInput = {
   bio?: string;
+  /** 0–60. `profileUpdateSchema`. */
   experienceYears?: number;
   qualification?: string;
+  cityId?: number;
   baseAddressText?: string;
   lat?: number;
   lng?: number;
+  /** Metres, 500–50 000. `profileUpdateSchema` — not a kilometre figure. */
   radiusM?: number;
 };
 
@@ -64,58 +67,77 @@ export type ProviderProfileInput = {
 
 export type ProviderServiceApproval = 'PENDING' | 'APPROVED' | 'REJECTED';
 
+/**
+ * One row of `GET /provider/services`, exactly as
+ * `ProviderServicesService.listMine` selects it.
+ *
+ * Note what is **not** here: no price band, no duration, no warranty, and no
+ * `nameUr`. The band lives on the catalogue service, so the screen has to join
+ * `serviceId` against `GET /catalogue/categories/:slug/services` to know whether
+ * the price it is about to set is even allowed. The server enforces the band
+ * regardless — a price outside it is a 400, not a silent clamp.
+ */
 export type ProviderService = {
+  providerId: string;
   serviceId: number;
-  slug: string;
-  nameEn: string;
-  nameUr: string;
-  description: string;
-  /** The catalogue guide price. The provider's own rate is `pricePaisa`. */
-  basePricePaisa: number;
-  minPricePaisa: number;
-  maxPricePaisa: number;
-  /** This provider's rate for this service. Null while unpriced. */
-  pricePaisa: number | null;
-  approvalStatus: ProviderServiceApproval;
-  warrantyDays: number;
-  expectedDurationMin: number;
-  isEmergencyEligible: boolean;
+  serviceSlug: string;
+  /** English only — see BACKEND_REQUIREMENTS "Known gaps". */
+  serviceNameEn: string;
+  /** This provider's rate for this service. */
+  pricePaisa: number;
+  status: ProviderServiceApproval;
+  createdAt: string;
 };
 
 export type SetProviderServiceInput = { pricePaisa: number };
 
-/* ---- Service areas ------------------------------------------------------- */
+/* ---- Service areas -------------------------------------------------------
+   `GET /provider/service-areas` selects exactly one column — `area_id`. There is
+   no name and no city, so the screen has to resolve each id against the places
+   API. It already has that map for the address book; the two share it. */
 
-export type ProviderServiceArea = {
-  areaId: number;
-  name: string;
-  cityId: number;
-};
+export type ProviderServiceArea = { areaId: number };
 
 export type SetServiceAreasInput = { areaIds: number[] };
+
+/** `serviceAreasReplaceSchema` caps the list at 50. */
+export const MAX_SERVICE_AREAS = 50;
 
 /* ---- Availability --------------------------------------------------------
    **Recurring weekly blocks, not a per-day booked/free grid.** The previous
    screen drew a month calendar with "booked" and "free" cells, which is a view of
-   bookings, not of availability — and availability is what this endpoint owns. */
+   bookings, not of availability — and availability is what this endpoint owns.
 
-export type AvailabilityBlock = { weekday: number; startTime: string; endTime: string };
+   `GET /provider/availability` answers `{ items }` and `PUT` takes `{ items }`;
+   there is no `travelBufferMinutes` field, so the buffer note cannot be sourced
+   from here. Both request and response use the same envelope. */
 
-export type Availability = {
-  blocks: AvailabilityBlock[];
-  /** Travel buffer already excluded from every slot the search publishes. */
-  travelBufferMinutes: number;
+export type AvailabilityBlock = {
+  /** 0 = Sunday … 6 = Saturday. `availabilityReplaceSchema`. */
+  weekday: number;
+  /** Local wall-clock `HH:MM`, not an instant. The one place local time is right. */
+  startTime: string;
+  endTime: string;
 };
+
+/** `availabilityReplaceSchema` caps the list at 21 blocks. See `limits.ts`. */
+export { MAX_AVAILABILITY_BLOCKS } from './limits';
+
+export type Availability = { items: AvailabilityBlock[] };
+
+/* ---- Leave ---------------------------------------------------------------
+   `timeOffCreateSchema` takes `{ start, end }` as **ISO datetimes**, not dates —
+   an earlier draft of this file typed them as `fromDate`/`toDate`, which would
+   have been a 422 on every leave request. */
 
 export type TimeOff = {
   id: string;
-  /** An ISO date, or an inclusive range when `toDate` is set. */
-  fromDate: string;
-  toDate: string | null;
+  start: string;
+  end: string;
   reason: string | null;
 };
 
-export type TimeOffInput = { fromDate: string; toDate?: string; reason?: string };
+export type TimeOffInput = { start: string; end: string; reason?: string };
 
 /* ---- Offers -------------------------------------------------------------
    Already joined server-side: `serviceName` and `areaName` arrive resolved, so
@@ -160,27 +182,51 @@ export type Wallet = {
 
 export type PayoutStatus = 'REQUESTED' | 'APPROVED' | 'PROCESSING' | 'PAID' | 'REJECTED';
 
+/** One row of `GET /provider/payouts` (`listForProvider`), with the destination
+    account already joined in. */
 export type Payout = {
   id: string;
+  providerId: string;
   amountPaisa: number;
   status: PayoutStatus;
-  /** The account it goes to, masked by the API. */
-  accountLabel: string;
   requestedAt: string;
-  processedAt: string | null;
+  paidAt: string | null;
+  /** Why the bank refused it, when it did. */
+  failureReason: string | null;
+  /** Which batch settled it, once one has. */
+  batchId: string | null;
+  accountTitle: string;
+  institution: string;
+  /** The last four digits only — the full number is never returned. */
+  accountLast4: string;
 };
 
+/** `POST /provider/payouts` answers 201 with the new request. */
+export type PayoutRequestResult = { id: string; amountPaisa: number; status: PayoutStatus };
+
+/** `payoutSchema`: amount must be a positive integer, at least
+    `payout.min_amount_paisa`, and no more than the releasable balance. */
 export type PayoutRequestInput = { amountPaisa: number; payoutAccountId: string };
 
+/** `GET /provider/payout-accounts`. `accountLast4` is the only part of the
+    number the API will ever hand back. */
 export type PayoutAccount = {
   id: string;
-  /** Masked by the API, e.g. "•••• 4471". The full number is never returned. */
-  bankTitle: string;
-  maskedAccount: string;
+  kind: 'BANK' | 'WALLET';
+  accountTitle: string;
+  institution: string;
+  accountLast4: string;
   isDefault: boolean;
 };
 
-export type PayoutAccountInput = { bankTitle: string; iban: string };
+/** `accountSchema` in provider-payouts.controller.ts — `.strict()`. */
+export type PayoutAccountInput = {
+  kind: 'BANK' | 'WALLET';
+  accountTitle: string;
+  institution: string;
+  accountNumber: string;
+  isDefault?: boolean;
+};
 
 /* ---- Reputation and conduct ---------------------------------------------- */
 
@@ -333,14 +379,15 @@ export const providerApi = {
 
   /* ---- Areas ---- */
   serviceAreas: (options?: ProviderOptions) => call<{ items: ProviderServiceArea[] }>('/provider/service-areas', {}, options),
-  setServiceAreas: (input: SetServiceAreasInput, options?: ProviderOptions) => call<{ items: ProviderServiceArea[] }>('/provider/service-areas', { method: 'PUT', body: compact(input) }, options),
+  setServiceAreas: (areaIds: number[], options?: ProviderOptions) => call<{ items: ProviderServiceArea[] }>('/provider/service-areas', { method: 'PUT', body: { areaIds } }, options),
 
   /* ---- Availability ---- */
   availability: (options?: ProviderOptions) => call<Availability>('/provider/availability', {}, options),
-  setAvailability: (blocks: AvailabilityBlock[], options?: ProviderOptions) => call<Availability>('/provider/availability', { method: 'PUT', body: { blocks } }, options),
+  setAvailability: (blocks: AvailabilityBlock[], options?: ProviderOptions) => call<Availability>('/provider/availability', { method: 'PUT', body: { items: blocks } }, options),
 
   timeOff: (options?: ProviderOptions) => call<{ items: TimeOff[] }>('/provider/time-off', {}, options),
-  addTimeOff: (input: TimeOffInput, options?: ProviderOptions) => call<TimeOff>('/provider/time-off', { method: 'POST', body: compact(input) }, options),
+  addTimeOff: (input: TimeOffInput, options?: ProviderOptions) =>
+    call<{ id: string; start: string; end: string; reason: string | null }>('/provider/time-off', { method: 'POST', body: compact(input) }, options),
   removeTimeOff: (id: string, options?: ProviderOptions) => call<undefined>(`/provider/time-off/${encodeURIComponent(id)}`, { method: 'DELETE' }, options),
 
   /* ---- Offers ---- */
@@ -353,10 +400,14 @@ export const providerApi = {
   earnings: (options?: ProviderOptions) => call<Earnings>('/provider/earnings', {}, options),
   wallet: (options?: ProviderOptions) => call<Wallet>('/provider/wallet', {}, options),
   payouts: (options?: ProviderOptions) => call<{ items: Payout[] }>('/provider/payouts', {}, options),
-  requestPayout: (input: PayoutRequestInput, options?: ProviderOptions) => call<Payout>('/provider/payouts', { method: 'POST', body: compact(input) }, options),
+  requestPayout: (input: PayoutRequestInput, options?: ProviderOptions) => call<PayoutRequestResult>('/provider/payouts', { method: 'POST', body: compact(input) }, options),
   payoutAccounts: (options?: ProviderOptions) => call<{ items: PayoutAccount[] }>('/provider/payout-accounts', {}, options),
   addPayoutAccount: (input: PayoutAccountInput, options?: ProviderOptions) => call<PayoutAccount>('/provider/payout-accounts', { method: 'POST', body: compact(input) }, options),
-  payDebt: (amountPaisa: number, options?: ProviderOptions) => call<Wallet>('/provider/debt/pay', { method: 'POST', body: { amountPaisa } }, options),
+  /** `payDebtSchema` takes an optional amount — omitting it pays the whole debt.
+    It starts an online payment and answers with where to send the browser, so it
+    is not a `Wallet` and the caller has to follow the redirect. */
+  payDebt: (amountPaisa: number | undefined, options?: ProviderOptions) =>
+    call<{ paymentId?: string; redirectUrl: string }>('/provider/debt/pay', { method: 'POST', body: compact({ amountPaisa }) }, options),
 
   /* ---- Documents ---- */
   documents: (options?: ProviderOptions) => call<{ items: ProviderDocument[] }>('/provider/documents', {}, options),

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Button, Card, Input, Label, PageHeader, Textarea } from '@/components/ui';
 import { useProviderProfile, useProviderServiceAreas, useUpdateProviderProfile } from '@/features/provider/queries';
+import { MAX_EXPERIENCE_YEARS, MAX_RADIUS_M, MIN_RADIUS_M } from '@/features/provider/limits';
 import type { Dictionary } from '@/lib/dictionaries';
 import { formatNumber, type Locale } from '@/lib/utils';
 
@@ -73,12 +74,16 @@ export function ProviderProfileScreen({ locale, dict }: { locale: Locale; dict: 
   const save = async (): Promise<void> => {
     setLocalError('');
     const years = experienceYears?.trim() === '' ? null : Number(experienceYears);
-    if (years !== null && (!Number.isInteger(years) || years < 0 || years > 70)) {
+    /* `profileUpdateSchema`: experienceYears is 0–60. */
+    if (years !== null && (!Number.isInteger(years) || years < 0 || years > MAX_EXPERIENCE_YEARS)) {
       setLocalError(dict.portal.experienceInvalid);
       return;
     }
     const radius = Number(radiusKm);
-    if (!Number.isFinite(radius) || radius < 1 || radius > 100) {
+    /* `profileUpdateSchema`: radiusM is 500–50 000 **metres**. The field is in
+       kilometres, so the bounds are 0.5–50 — an earlier version of this form
+       accepted 1–100 and every value above 50 would have been a 422. */
+    if (!Number.isFinite(radius) || radius * 1000 < MIN_RADIUS_M || radius * 1000 > MAX_RADIUS_M) {
       setLocalError(dict.portal.radiusInvalid);
       return;
     }
@@ -95,7 +100,7 @@ export function ProviderProfileScreen({ locale, dict }: { locale: Locale; dict: 
     }
   };
 
-  const areaNames = (areas.data?.items ?? []).map((area) => area.name);
+  const selectedAreaCount = areas.data?.items.length ?? 0;
 
   return (
     <div>
@@ -169,7 +174,7 @@ export function ProviderProfileScreen({ locale, dict }: { locale: Locale; dict: 
               </div>
               <div className="flex justify-between gap-4 border-b border-line pb-3">
                 <dt className="text-muted">{dict.providers.areasServed}</dt>
-                <dd className="text-end font-medium text-navy">{areas.isPending ? '…' : formatNumber(areaNames.length, locale)}</dd>
+                <dd className="text-end font-medium text-navy">{areas.isPending ? '…' : formatNumber(selectedAreaCount, locale)}</dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted">{dict.portal.approvalStatus}</dt>
@@ -187,16 +192,13 @@ export function ProviderProfileScreen({ locale, dict }: { locale: Locale; dict: 
             <p role="alert" className="mt-3 text-sm text-rose-700">
               {dict.portal.areasLoadError}
             </p>
-          ) : areaNames.length === 0 ? (
+          ) : selectedAreaCount === 0 ? (
             <p className="mt-3 text-sm leading-6 text-secondary">{dict.portal.noAreasYet}</p>
           ) : (
-            <ul className="mt-4 flex flex-wrap gap-2">
-              {areaNames.map((name) => (
-                <li key={name} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-primary-strong">
-                  {name}
-                </li>
-              ))}
-            </ul>
+            /* The endpoint returns bare `areaId`s, so there is nothing to print
+               here without a second fetch. The count and a link to the picker
+               carry the same information honestly — a list of ids would not. */
+            <p className="mt-3 text-sm leading-6 text-secondary">{dict.portal.areasSaved.replace('{count}', formatNumber(selectedAreaCount, locale))}</p>
           )}
           <p className="mt-5 text-xs leading-5 text-muted">{dict.portal.areasLinkNote}</p>
         </Card>
