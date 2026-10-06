@@ -109,9 +109,17 @@ jobs:
       DIRECT_URL: postgresql://smart_home:smart_home@localhost:5432/smart_home?schema=public
     steps:
       - uses: actions/checkout@v4
+      - name: install a postgresql client matching the server
+        # Installed explicitly rather than trusting the runner image, which ships
+        # whichever version Ubuntu happens to carry: a client older than the server
+        # refuses to read it, and the check compares two live databases.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+          psql --version
       - name: assert the migrations build exactly the canonical schema
         # Builds the schema twice -- once by replaying every migration, once by
-        # applying docs-final/schema.sql -- and compares pg_dump of the two. The
-        # previous check compared the doc's text with 0001_init.sql, which could
+        # applying docs-final/schema.sql -- and compares the two resulting catalogues.
+        # The previous check compared the doc's text with 0001_init.sql, which could
         # only ever hold while there was a single migration.
         run: npm run db:check-schema --workspace @smart-home/db
