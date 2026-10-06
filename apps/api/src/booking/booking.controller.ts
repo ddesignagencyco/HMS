@@ -69,6 +69,17 @@ export class BookingController {
     return this.bookings.getOwned(id, principal.userId);
   }
 
+  @Get(':id/on-behalf-contact')
+  @PolicyDecorator({ roles: ['CUSTOMER', 'PROVIDER'] })
+  @ApiOperation({
+    summary: 'Who will receive the provider, when the booking is for someone else',
+    description:
+      "Present only when the booking was made for someone who is not the customer: the person's name and the number to call. The number is masked for anyone who has not accepted the job — so a provider reading the offer list sees who is at the door without collecting contact details for jobs they may decline — and shown in full to the customer who entered it and to the provider the booking belongs to. Returns null for an ordinary booking; 404 for anyone who is neither party."
+  })
+  async onBehalfContact(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return { contact: await this.bookings.onBehalfContact(id, principal.userId) };
+  }
+
   @Post(':id/accept')
   @HttpCode(200)
   @PolicyDecorator({ roles: ['PROVIDER'] })

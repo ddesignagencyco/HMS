@@ -50,7 +50,14 @@ export const RULES: Readonly<Record<string, readonly Rule[]>> = {
     { recipient: 'provider', eventKey: 'booking.reminder_2h', channels: ['SMS'] }
   ],
   // -- verification and money (M7/M8)
-  'booking.handToVerification': [{ recipient: 'customer', eventKey: 'booking.awaiting_verification', channels: IN_APP }],
+  /**
+ * The provider has finished. This is the one notification in the product a customer
+ * has to act on before their money moves, so it goes by SMS as well as in-app: an
+ * in-app-only row is invisible to anyone who does not open the app, and a Tier B
+ * job whose money is released on the customer's answer would simply release itself
+ * after 72 hours with the customer never told there was anything to confirm.
+ */
+'booking.handToVerification': [{ recipient: 'customer', eventKey: 'booking.awaiting_verification', channels: BOTH }],
   'booking.release': [
     { recipient: 'customer', eventKey: 'payment.released', channels: IN_APP },
     { recipient: 'provider', eventKey: 'payment.released_provider', channels: IN_APP }

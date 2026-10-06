@@ -165,6 +165,15 @@
       ]
     },
     {
+      "method": "PUT",
+      "path": "/api/v1/admin/catalogue/services/{id}/issue-options",
+      "operationId": "CatalogueAdminController_replaceIssueOptions",
+      "summary": "Replace a service's common-faults list",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
       "method": "GET",
       "path": "/api/v1/admin/complaints",
       "operationId": "ComplaintsController_queue",
@@ -234,6 +243,24 @@
       "summary": "Rule on a dispute",
       "tags": [
         "disputes"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/documents/{documentId}/review",
+      "operationId": "ProviderDocumentsAdminController_review",
+      "summary": "Verify or reject a document",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/documents/{documentId}/url",
+      "operationId": "ProviderDocumentsAdminController_documentUrl",
+      "summary": "Get a short-lived link to a document",
+      "tags": [
+        "provider"
       ]
     },
     {
@@ -322,6 +349,15 @@
       "path": "/api/v1/admin/providers/{providerId}/approve",
       "operationId": "ProviderApprovalAdminController_approve",
       "summary": "Approve a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/providers/{providerId}/documents",
+      "operationId": "ProviderDocumentsAdminController_listForProvider",
+      "summary": "List a provider's documents for review",
       "tags": [
         "provider"
       ]
@@ -750,6 +786,15 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/on-behalf-contact",
+      "operationId": "BookingController_onBehalfContact",
+      "summary": "Who will receive the provider, when the booking is for someone else",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
       "method": "POST",
       "path": "/api/v1/bookings/{id}/reschedule",
       "operationId": "BookingController_reschedule",
@@ -844,6 +889,15 @@
       "path": "/api/v1/catalogue/services/{slug}",
       "operationId": "CatalogueController_serviceDetail",
       "summary": "Get one service, including its checklist",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/catalogue/services/{slug}/issue-options",
+      "operationId": "CatalogueController_issueOptions",
+      "summary": "The common faults a customer can pick from when booking this service",
       "tags": [
         "catalogue"
       ]
@@ -1219,6 +1273,24 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/provider/documents",
+      "operationId": "ProviderDocumentsController_list",
+      "summary": "List my uploaded documents",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/documents",
+      "operationId": "ProviderDocumentsController_submit",
+      "summary": "Submit an identity document",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/provider/earnings",
       "operationId": "ProviderPayoutsController_earnings",
       "summary": "See my earnings",
@@ -1462,6 +1534,15 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/search/providers/{providerId}/next-slots",
+      "operationId": "SearchController_nextSlots",
+      "summary": "When is this provider next free?",
+      "tags": [
+        "search"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/search/providers/{providerId}/remarks",
       "operationId": "ReputationController_remarks",
       "summary": "A provider’s published remarks",
@@ -1485,6 +1566,15 @@
       "summary": "List the times a provider can be booked on a day",
       "tags": [
         "search"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/uploads/presign",
+      "operationId": "UploadsController_presign",
+      "summary": "Get an upload target for a document",
+      "tags": [
+        "provider"
       ]
     },
     {

@@ -1,11 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { generateSlots, instantFromWallTime } from '@smart-home/domain';
+import { daySpan, earliestStart, generateSlots, instantFromWallTime, localDateOf, localMidnightOf } from '@smart-home/domain';
 import { badRequest, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { AppClock } from '../platform/app-clock.js';
 import { ReputationService, type Reputation } from '../reputation/reputation.service.js';
 import { SettingsService } from '../platform/settings.service.js';
-import type { ProviderSearchQuery, SlotsQuery } from './search.schemas.js';
+import type { NextSlotsQuery, ProviderSearchQuery, SlotsQuery } from './search.schemas.js';
 
 export type ProviderSearchResultRow = { providerId: string; bio: string | null; experienceYears: number | null; qualification: string | null; pricePaisa: number; distanceM: number; ratingScore: number; ratingCount: number; badge: string | null };
 
@@ -28,16 +29,31 @@ export type ProviderDetailAreaRow = { areaId: number; name: string };
 
 export type ProviderDetail = ProviderDetailRow & { services: ProviderDetailServiceRow[]; areas: ProviderDetailAreaRow[]; reputation: Reputation };
 
-/** A customer cannot book a start time that is about to happen. */
-const MIN_NOTICE_MIN = 60;
+/**
+ * The step slots start on. Half-hourly is what the slot picker has always offered;
+ * a same-day customer is usually choosing "the soonest one", not a precise time,
+ * and the resolver below narrows the choice to the soonest handful.
+ */
+const SLOT_STEP_MIN = 30;
 
 @Injectable()
 export class SearchService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(SettingsService) private readonly settings: SettingsService,
-    @Inject(ReputationService) private readonly reputation: ReputationService
+    @Inject(ReputationService) private readonly reputation: ReputationService,
+    @Inject(AppClock) private readonly clock: AppClock
   ) {}
+
+  /**
+   * The same lead time checkout enforces (`BookingService.refuseWindow`), read from
+   * the same setting. The listing used to hardcode 60 minutes while checkout only
+   * required the start to be in the future, so a start time could be offered and
+   * then refused — or worse, accepted when the listing said it was unavailable.
+   */
+  private async earliestBookableStart(): Promise<Date> {
+    return earliestStart(this.clock.now(), await this.settings.getNumber('booking.min_notice_min'));
+  }
 
   /**
    * FR-SR / SHM-025: the start times a customer can book with one provider on one local day: the provider's declared
@@ -78,11 +94,80 @@ export class SearchService {
       blocked: leave,
       bookings,
       durationMin: service.durationMin,
-      stepMin: 30,
+      stepMin: SLOT_STEP_MIN,
       bufferMin,
-      earliest: new Date(Date.now() + MIN_NOTICE_MIN * 60_000)
+      earliest: await this.earliestBookableStart()
     });
     return { date: query.date, durationMin: service.durationMin, items: slots.map(slot => ({ start: slot.start.toISOString(), end: slot.end.toISOString() })) };
+  }
+
+  /**
+   * Same-day / next-hour booking: "when is this provider next free?" — the answer
+   * a customer asking "can I book for the next hour?" actually needs.
+   *
+   * `listSlots` answers "what can I book on *this* date?", which is the wrong
+   * question at 21:00 on a Tuesday: the customer does not have a date in mind,
+   * they want the soonest start. This walks forward from today across
+   * `booking.next_slot_days` local days, generating each day's real slots and
+   * returning the soonest `limit` of them, so the first entry is the earliest
+   * time this provider can be at the door.
+   *
+   * The lead time and day-span rules are the same ones checkout applies, so a slot
+   * returned here is one checkout will accept; the database's exclusion constraint
+   * still has the last word, so a slot can lose a race and become a 409.
+   */
+  async listNextSlots(providerId: string, query: NextSlotsQuery): Promise<{ durationMin: number; items: { start: string; end: string }[] }> {
+    const services = await this.prisma.$queryRaw<{ durationMin: number }[]>(
+      Prisma.sql`SELECT s.expected_duration_min as "durationMin" FROM provider_services ps JOIN providers p ON p.user_id = ps.provider_id JOIN services s ON s.id = ps.service_id
+        WHERE ps.provider_id = ${providerId}::uuid AND ps.service_id = ${query.serviceId} AND ps.status = 'APPROVED' AND p.status = 'APPROVED' AND s.is_active = true`
+    );
+    const service = services[0];
+    if (service === undefined) throw notFound('Provider');
+
+    const bufferMin = await this.settings.getNumber('booking.travel_buffer_min');
+    const earliest = await this.earliestBookableStart();
+    const days = await this.settings.getNumber('booking.next_slot_days');
+    const maxDaySpan = await this.settings.getNumber('booking.max_day_span');
+
+    const now = this.clock.now();
+    // The calendar the resolver can see: local midnight today through `next_slot_days` later.
+    const today = localMidnightOf(now);
+    const horizon = new Date(today.getTime() + days * 86_400_000);
+    const blockers = await this.prisma.$queryRaw<{ start: Date; end: Date }[]>(
+      Prisma.sql`SELECT lower(period) as start, upper(period) as end FROM provider_time_off WHERE provider_id = ${providerId}::uuid AND period && tstzrange(${now.toISOString()}::timestamptz, ${horizon.toISOString()}::timestamptz, '[)')
+        UNION ALL
+        SELECT scheduled_start as start, scheduled_end as end FROM bookings
+          WHERE provider_id = ${providerId}::uuid AND slot && tstzrange(${now.toISOString()}::timestamptz, ${horizon.toISOString()}::timestamptz, '[)')
+            AND status IN ('PENDING_PAYMENT','REQUESTED','ACCEPTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION')`
+    );
+    const leave = blockers.filter(blocker => blocker.start.getTime() <= now.getTime() && blocker.end.getTime() > now.getTime());
+    const booked = blockers.filter(blocker => blocker.start.getTime() > now.getTime());
+
+    const found: { start: string; end: string }[] = [];
+    for (let offset = 0; offset < days && found.length < query.limit; offset += 1) {
+      const date = localDateOf(new Date(today.getTime() + offset * 86_400_000));
+      const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+      const windows = await this.prisma.$queryRaw<{ start: string; end: string }[]>(
+        Prisma.sql`SELECT to_char(start_time, 'HH24:MI') as start, to_char(end_time, 'HH24:MI') as end FROM provider_availability WHERE provider_id = ${providerId}::uuid AND weekday = ${weekday} ORDER BY start_time`
+      );
+      if (windows.length === 0) continue;
+      const slots = generateSlots({
+        date,
+        windows,
+        blocked: leave,
+        bookings: booked,
+        durationMin: service.durationMin,
+        stepMin: SLOT_STEP_MIN,
+        bufferMin,
+        earliest
+      });
+      for (const slot of slots) {
+        if (daySpan(slot.start, slot.end) > maxDaySpan) continue;
+        found.push({ start: slot.start.toISOString(), end: slot.end.toISOString() });
+        if (found.length >= query.limit) break;
+      }
+    }
+    return { durationMin: service.durationMin, items: found };
   }
 
   /**

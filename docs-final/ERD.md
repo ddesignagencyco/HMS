@@ -118,6 +118,7 @@ erDiagram
 erDiagram
   categories ||--o{ services : groups
   services ||--o{ service_checklist_items : "defines steps"
+  services ||--o{ service_issue_options : "common faults"
   categories ||--o{ commission_rules : "category rate"
   providers ||--o{ commission_rules : "provider rate"
   plans ||--o{ plan_services : includes
@@ -147,6 +148,13 @@ erDiagram
     int service_id FK
     int position
     bool requires_photo
+  }
+  service_issue_options {
+    int id PK
+    int service_id FK
+    text slug UK "unique per service"
+    int position "UK per service"
+    bool is_active
   }
   commission_rules {
     uuid id PK
@@ -193,6 +201,7 @@ erDiagram
   quote_revisions |o--o{ booking_items : adds
   bookings ||--o| invoices : "billed by"
   bookings ||--o| coupon_redemptions : redeems
+  service_issue_options |o--o{ bookings : "reported as"
 
   bookings {
     uuid id PK
@@ -203,6 +212,10 @@ erDiagram
     payment_mode payment_mode
     booking_payment_status payment_status
     tstzrange slot "EXCLUDE per provider"
+    bool is_on_behalf "booked for a third party"
+    text on_behalf_name "who receives the provider"
+    text on_behalf_phone_e164 "masked unless accepted"
+    int issue_option_id FK "optional common fault"
     bigint quoted_amount_paisa
     bigint approved_total_paisa
     bigint final_amount_paisa "<= approved_total"
@@ -504,6 +517,7 @@ Legend: **PK** primary key · **FK** foreign key · **UK** unique · 🔒 insert
 | `cities`, `areas` | Structured location (FR-SR-04). | Launch = one city; schema multi-city ready. |
 | `categories`, `services` | Catalogue (M1). | Price band check; `TIME_BASED` ⇔ `time_unit`; inspection-first ⇒ visit fee > 0. |
 | `service_checklist_items` | Ordered completion steps (FR-EX-08). | `requires_photo` enforces evidence. |
+| `service_issue_options` | Common faults a customer picks from at booking, per service, EN/UR. | Optional convenience only: a booking may carry an option, free text, both or neither. Slug and position unique per service. |
 | `commission_rules` | Global/category/provider rates in basis points. | Scope-consistency check; resolution done in code; snapshot on booking. |
 
 ### Customers & Providers
@@ -521,7 +535,7 @@ Legend: **PK** primary key · **FK** foreign key · **UK** unique · 🔒 insert
 ### Bookings & Execution
 | Table | Purpose | Key rules |
 |---|---|---|
-| `bookings` ⛔ | The job and its state. | Status changes only via service (trigger); exclusion constraint prevents double booking; `final ≤ approved_total`; post-start states require OTP; release requires verification or dispute resolution (trigger). |
+| `bookings` ⛔ | The job and its state. | Status changes only via service (trigger); exclusion constraint prevents double booking; `final ≤ approved_total`; post-start states require OTP; release requires verification or dispute resolution (trigger); on-behalf columns are all-or-nothing and the phone is E.164 (check constraints), and are deliberately not exposed on provider-facing reads. |
 | `booking_offers` | Offer cascade / auto-assign (CL-05). | One pending offer per booking. |
 | `booking_status_history` 🔒 | Full transition log (FR-BK-08). | One row per transition. |
 | `messages` | Masked in-app chat (FR-BK-07). | No phone numbers exposed. |

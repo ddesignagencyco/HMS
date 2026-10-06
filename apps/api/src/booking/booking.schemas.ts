@@ -10,9 +10,20 @@ export const bookingCreateSchema = z
     scheduledStart: z.string().datetime(),
     scheduledEnd: z.string().datetime(),
     problemText: z.string().trim().min(1).max(2000).optional(),
+    /** One of the service's common faults, from the list the booking screen offers. */
+    issueOptionId: z.number().int().positive().optional(),
     paymentMode: z.enum(['CASH', 'ONLINE']).default('CASH'),
     isEmergency: z.boolean().default(false),
-    couponCode: z.string().trim().min(1).max(40).optional()
+    couponCode: z.string().trim().min(1).max(40).optional(),
+    /** Booking for someone who is not the customer. Requires the contact below. */
+    onBehalfOf: z
+      .object({
+        name: z.string().trim().min(1).max(120),
+        /** E.164, e.g. +923001234567. */
+        phoneE164: z.string().trim().regex(/^\+[1-9][0-9]{7,14}$/, 'phoneE164 must be an E.164 number, e.g. +923001234567')
+      })
+      .strict()
+      .optional()
   })
   .strict()
   .refine(input => new Date(input.scheduledEnd).getTime() > new Date(input.scheduledStart).getTime(), { message: 'scheduledEnd must be after scheduledStart', path: ['scheduledEnd'] });

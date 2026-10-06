@@ -19,3 +19,13 @@ export const slotsQuerySchema = z
   .strict();
 
 export type SlotsQuery = z.infer<typeof slotsQuerySchema>;
+
+export const nextSlotsQuerySchema = z
+  .object({
+    serviceId: z.coerce.number().int().positive(),
+    /** How many soonest start times to return. The first is the provider's earliest availability. */
+    limit: z.coerce.number().int().min(1).max(20).default(5)
+  })
+  .strict();
+
+export type NextSlotsQuery = z.infer<typeof nextSlotsQuerySchema>;

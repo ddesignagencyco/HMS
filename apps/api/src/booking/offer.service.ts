@@ -1,6 +1,7 @@
 // apps/api/src/booking/offer.service.ts
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { splitAtLocalMidnight } from '@smart-home/domain';
 import { DomainError, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { PaymentsService } from '../payment/payments.service.js';
@@ -9,6 +10,7 @@ import { appendOutboxEvent } from '../platform/audit.service.js';
 import { applySystemEvent } from './booking-state.js';
 import { BookingStateService } from './booking-state.service.js';
 import { toBookingRow, BOOKING_COLUMNS, type BookingRow, type BookingRowRaw } from './booking.row.js';
+import { contactFor, maySeeFullContact, type OnBehalfContact } from './on-behalf.js';
 import { localTimeOfDay, localWeekday } from './slot-time.js';
 
 const EXCLUSION_VIOLATION = '23P01';
@@ -24,6 +26,14 @@ export type ProviderOffer = {
   quotedAmountPaisa: number;
   isEmergency: boolean;
   problemText: string | null;
+  /** The fault the customer picked from the service's common-faults list, if any. */
+  issueLabel: string | null;
+  /**
+   * Who is at the door when the booking is for someone else, with the number
+   * masked: an offer is not yet a commitment, so a provider deciding whether to
+   * take the job does not get the contact details of a job they may decline.
+   */
+  onBehalfContact: OnBehalfContact | null;
   expiresAt: Date;
 };
 
@@ -66,22 +76,32 @@ export class OfferService {
   }
 
   async listForProvider(providerId: string): Promise<ProviderOffer[]> {
-    const rows = await this.prisma.$queryRaw<(Omit<ProviderOffer, 'quotedAmountPaisa'> & { quotedAmountPaisa: bigint })[]>(
+    const rows = await this.prisma.$queryRaw<(Omit<ProviderOffer, 'quotedAmountPaisa' | 'onBehalfContact'> & { quotedAmountPaisa: bigint; isOnBehalf: boolean; onBehalfName: string | null; onBehalfPhoneE164: string | null })[]>(
       Prisma.sql`SELECT o.id, b.id as "bookingId", b.code as "bookingCode", s.name_en as "serviceName", a.name as "areaName", b.scheduled_start as "scheduledStart",
-          b.scheduled_end as "scheduledEnd", b.quoted_amount_paisa as "quotedAmountPaisa", b.is_emergency as "isEmergency", b.problem_text as "problemText", o.expires_at as "expiresAt"
+          b.scheduled_end as "scheduledEnd", b.quoted_amount_paisa as "quotedAmountPaisa", b.is_emergency as "isEmergency", b.problem_text as "problemText",
+          b.is_on_behalf as "isOnBehalf", b.on_behalf_name as "onBehalfName", b.on_behalf_phone_e164 as "onBehalfPhoneE164",
+          io.label_en as "issueLabel", o.expires_at as "expiresAt"
         FROM booking_offers o JOIN bookings b ON b.id = o.booking_id JOIN services s ON s.id = b.service_id
           JOIN addresses ad ON ad.id = b.address_id JOIN areas a ON a.id = ad.area_id
+          LEFT JOIN service_issue_options io ON io.id = b.issue_option_id
         WHERE o.provider_id = ${providerId}::uuid AND o.status = 'PENDING' AND o.expires_at > now() AND b.status = 'REQUESTED'
           AND NOT EXISTS (SELECT 1 FROM providers blocked WHERE blocked.user_id = o.provider_id AND blocked.offer_blocked_reason IS NOT NULL)
         ORDER BY o.expires_at`
     );
-    return rows.map(row => ({ ...row, quotedAmountPaisa: Number(row.quotedAmountPaisa) }));
+    return rows.map(({ onBehalfName, onBehalfPhoneE164, isOnBehalf, ...row }) => ({
+      ...row,
+      quotedAmountPaisa: Number(row.quotedAmountPaisa),
+      // Masked: an offer is still a choice, so the provider does not get the contact
+      // details of a job they are free to decline.
+      onBehalfContact:
+        isOnBehalf && onBehalfName !== null && onBehalfPhoneE164 !== null ? contactFor({ name: onBehalfName, phone: onBehalfPhoneE164 }, false) : null
+    }));
   }
 
   /** The provider says yes. Returns the booking, now SCHEDULED to them; the caller issues the start code. */
-  async accept(offerId: string, providerId: string): Promise<BookingRow> {
+  async accept(offerId: string, providerId: string): Promise<BookingRow & { onBehalfContact: OnBehalfContact | null }> {
     try {
-      return await this.prisma.$transaction(async tx => {
+      const booking = await this.prisma.$transaction(async tx => {
         const offer = await this.lockPendingOffer(tx, offerId, providerId);
         const bookings = await tx.$queryRaw<BookingRowRaw[]>(Prisma.sql`SELECT ${BOOKING_COLUMNS} FROM bookings WHERE id = ${offer.bookingId}::uuid FOR UPDATE`);
         const booking = bookings[0];
@@ -94,11 +114,25 @@ export class OfferService {
         const { booking: accepted } = await this.state.applyInTx(tx, offer.bookingId, 'accept', providerId);
         return accepted;
       });
+      // Accepting is the reveal point: the job is now this provider's, so a third party's
+      // number is theirs to have.
+      return { ...booking, onBehalfContact: await this.contactForProvider(booking, providerId) };
     } catch (error) {
       const meta = error instanceof Prisma.PrismaClientKnownRequestError ? (error.meta as { code?: unknown } | undefined) : undefined;
       if (meta?.code === EXCLUSION_VIOLATION) throw new DomainError('SLOT_TAKEN', 'You are no longer free at this time');
       throw error;
     }
+  }
+
+  /** The masked-or-full third-party contact, per the same rule `BookingService.onBehalfContact` applies. */
+  private async contactForProvider(booking: BookingRow, providerId: string): Promise<OnBehalfContact | null> {
+    const rows = await this.prisma.$queryRaw<{ onBehalfName: string | null; onBehalfPhoneE164: string | null }[]>(
+      Prisma.sql`SELECT on_behalf_name as "onBehalfName", on_behalf_phone_e164 as "onBehalfPhoneE164" FROM bookings WHERE id = ${booking.id}::uuid`
+    );
+    const row = rows[0];
+    if (row === undefined || !booking.isOnBehalf || row.onBehalfName === null || row.onBehalfPhoneE164 === null) return null;
+    const revealed = maySeeFullContact({ userId: providerId, isCustomer: false, isProvider: booking.providerId === providerId }, booking);
+    return contactFor({ name: row.onBehalfName, phone: row.onBehalfPhoneE164 }, revealed);
   }
 
   /** The provider says no. An auto-assign booking moves on to the next candidate; a direct request has nobody else to ask and is UNFULFILLED. */
@@ -177,7 +211,18 @@ export class OfferService {
     const windowMin = await this.settings.getNumber('booking.max_offer_window_min');
     if (Number(booking.offered) >= maxOffers || Number(booking.slotAgeMin) >= windowMin) return this.exhaust(tx, bookingId, context);
 
-    const weekday = localWeekday(booking.scheduledStart);
+    // Availability is a wall-clock range inside one local day, so a window crossing
+    // local midnight has to be matched one piece per local day — the same split
+    // `BookingService.assertWindowIsBookable` applies when a provider is named.
+    // Without it, a next-hour booking that ends just after midnight would find no
+    // candidate at all and fall straight through to UNFULFILLED.
+    const availabilityMatch = splitAtLocalMidnight(booking.scheduledStart, booking.scheduledEnd)
+      .map(
+        piece =>
+          Prisma.sql`(EXISTS (SELECT 1 FROM provider_availability av WHERE av.provider_id = p.user_id AND av.weekday = ${localWeekday(piece.start)}
+                        AND av.start_time <= ${localTimeOfDay(piece.start)}::time AND av.end_time >= ${localTimeOfDay(piece.end)}::time))`
+      )
+      .reduce((left, right) => Prisma.sql`(${left} OR ${right})`);
     const candidates = await tx.$queryRaw<{ providerId: string }[]>(
       Prisma.sql`SELECT p.user_id as "providerId"
         FROM providers p
@@ -185,8 +230,7 @@ export class OfferService {
         JOIN addresses ad ON ad.id = ${booking.addressId}::uuid
         WHERE p.status = 'APPROVED' AND p.offer_blocked_reason IS NULL AND p.base_location IS NOT NULL AND ST_DWithin(p.base_location, ad.location, p.radius_m)
           AND NOT EXISTS (SELECT 1 FROM booking_offers o WHERE o.booking_id = ${bookingId}::uuid AND o.provider_id = p.user_id)
-          AND EXISTS (SELECT 1 FROM provider_availability av WHERE av.provider_id = p.user_id AND av.weekday = ${weekday}
-                        AND av.start_time <= ${localTimeOfDay(booking.scheduledStart)}::time AND av.end_time >= ${localTimeOfDay(booking.scheduledEnd)}::time)
+          AND ${availabilityMatch}
           AND NOT EXISTS (SELECT 1 FROM provider_time_off t WHERE t.provider_id = p.user_id AND t.period && tstzrange(${booking.scheduledStart.toISOString()}::timestamptz, ${booking.scheduledEnd.toISOString()}::timestamptz, '[)'))
           AND NOT EXISTS (SELECT 1 FROM bookings x WHERE x.provider_id = p.user_id AND x.slot && (SELECT slot FROM bookings WHERE id = ${bookingId}::uuid)
                             AND x.status IN ('PENDING_PAYMENT','REQUESTED','ACCEPTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION'))

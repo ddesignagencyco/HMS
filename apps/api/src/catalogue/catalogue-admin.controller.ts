@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
-import { categoryCreateSchema, categoryUpdateSchema, checklistReplaceSchema, commissionRuleCreateSchema, commissionRuleListQuerySchema, serviceCreateSchema, serviceUpdateSchema } from './catalogue.schemas.js';
+import { categoryCreateSchema, categoryUpdateSchema, checklistReplaceSchema, commissionRuleCreateSchema, commissionRuleListQuerySchema, issueOptionsReplaceSchema, serviceCreateSchema, serviceUpdateSchema } from './catalogue.schemas.js';
 import { CatalogueService } from './catalogue.service.js';
 
 @ApiTags('catalogue')
@@ -78,6 +78,29 @@ export class CatalogueAdminController {
   async replaceChecklist(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
     const { items } = parseWith(checklistReplaceSchema, body);
     return { items: await this.catalogue.replaceChecklist(id, items) };
+  }
+
+  @Put('services/:id/issue-options')
+  @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
+  @ApiOperation({
+    summary: "Replace a service's common-faults list",
+    description:
+      'Admin only. Replaces the full ordered dropdown the booking screen offers for this service. Bookings that already recorded an option keep the label they were shown, but the ids change, so an option id from before this call will no longer resolve.'
+  })
+  @ApiZodBody(issueOptionsReplaceSchema, {
+    default: {
+      summary: 'Two common faults',
+      value: {
+        items: [
+          { slug: 'not-cooling', labelEn: 'Runs but does not cool', labelUr: 'چلتا ہے لیکن ٹھنڈا نہیں کرتا' },
+          { slug: 'not-powering-on', labelEn: 'Does not switch on at all', labelUr: 'بالکل آن نہیں ہوتا' }
+        ]
+      }
+    }
+  })
+  async replaceIssueOptions(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
+    const { items } = parseWith(issueOptionsReplaceSchema, body);
+    return { items: await this.catalogue.replaceIssueOptions(id, items) };
   }
 
   @Get('commission-rules')

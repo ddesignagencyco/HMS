@@ -49,6 +49,7 @@ export const notificationTemplates: readonly TemplateSeed[] = [
   t('booking.on_the_way', 'IN_APP', 'Provider on the way', '{{providerName}} has left for your address.', '{{providerName}} آپ کے پتے کے لیے روانہ ہو گیا ہے۔'),
   t('booking.quote_revision', 'IN_APP', 'Revised quote awaiting approval', '{{providerName}} submitted a revised total of {{total}}. Please approve or reject.', '{{providerName}} نے نیا رقم {{total}} بھیجا ہے۔ منظور یا مسترد کریں۔'),
   t('booking.awaiting_verification', 'IN_APP', 'Work completed', 'Your job is complete and payment is being verified.', 'آپ کا کام مکمل ہے اور ادائیگی کی تصدیق جاری ہے۔'),
+  t('booking.awaiting_verification', 'SMS', null, 'Smart Home: your {{serviceName}} job ({{bookingRef}}) is complete. Please confirm you are happy so {{amount}} can be released: {{problemLink}}', 'سمارٹ ہوم: آپ کا {{serviceName}} کام ({{bookingRef}}) مکمل ہے۔ خوشی ہے تو تصدیق کریں تاکہ {{amount}} جاری کی جا سکے: {{problemLink}}'),
   t('booking.no_show_reported', 'IN_APP', 'No-show reported', 'A no-show was recorded for booking {{bookingRef}}.', 'بکنگ {{bookingRef}} کے لیے حاضری نہیں کی گئی۔'),
   t('verification.link', 'SMS', null, 'Confirm your booking {{bookingRef}} at {{link}} using code {{otp}}.', 'کوڈ {{otp}} استعمال کر کے {{link}} پر بکنگ {{bookingRef}} کی تصدیق کریں۔'),
   t('payment.released', 'IN_APP', 'Payment released', '{{amount}} has been released to your provider.', '{{amount}} آپ کے پیشہ کار کو جاری کر دی گئی ہے۔'),
