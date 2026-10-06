@@ -1,21 +1,13 @@
-﻿"use client";
+﻿'use client';
 
-import { AlertTriangle, CalendarDays, CheckCircle2, Image as ImageIcon, Info, ShieldCheck, XCircle } from "lucide-react";
-import { useState } from "react";
-import type { Dictionary } from "@/lib/dictionaries";
-import { cn, formatDateTime, localizedPath, type Locale } from "@/lib/utils";
-import { Button, ButtonLink, Card, Label, PageHeader, Textarea } from "@/components/ui";
-import { money } from "@/features/catalogue/pricing";
-import { InlineError, NotFoundState } from "@/features/discovery/states";
-import {
-  bookingTotalPaisa,
-  canCancel,
-  canReschedule,
-  hasPendingRevision,
-  isAwaitingProvider,
-  isHeldPayment,
-  rescheduleBlockReason,
-} from "@/features/booking/status";
+import { AlertTriangle, CalendarDays, CheckCircle2, Image as ImageIcon, Info, ShieldCheck, XCircle } from 'lucide-react';
+import { useState } from 'react';
+import type { Dictionary } from '@/lib/dictionaries';
+import { cn, formatDateTime, localizedPath, type Locale } from '@/lib/utils';
+import { Button, ButtonLink, Card, Label, PageHeader, Textarea } from '@/components/ui';
+import { money } from '@/features/catalogue/pricing';
+import { InlineError, NotFoundState } from '@/features/discovery/states';
+import { bookingTotalPaisa, canCancel, canReschedule, hasPendingRevision, isAwaitingProvider, isHeldPayment, rescheduleBlockReason } from '@/features/booking/status';
 import {
   MAX_PROBLEM_PHOTOS,
   useApproveRevision,
@@ -25,15 +17,16 @@ import {
   useRejectRevision,
   useReportNoShow,
   useRescheduleBooking,
-  useWarrantyClaim,
-} from "@/features/booking/queries";
-import { useServiceNames } from "@/features/booking/service-names";
-import type { Booking } from "@/features/booking/api";
-import { BookingChat } from "@/features/booking/booking-chat";
-import { isNotFoundError } from "@/lib/api/keys";
-import { useProviderSlots } from "@/features/search/queries";
-import { formatSlotTime } from "@/features/search/location";
-import { addDays, SLOT_WINDOW_DAYS, toApiDate } from "@/features/search/types";
+  useWarrantyClaim
+} from '@/features/booking/queries';
+import { useServiceNames } from '@/features/booking/service-names';
+import type { Booking } from '@/features/booking/api';
+import { BookingChat } from '@/features/booking/booking-chat';
+import { isNotFoundError } from '@/lib/api/keys';
+import { useProviderSlots } from '@/features/search/queries';
+import { formatSlotTime } from '@/features/search/location';
+import { addDays, SLOT_WINDOW_DAYS, toApiDate } from '@/features/search/types';
+import { prepareEvidenceImage } from '@/features/uploads/image';
 
 /* `GET /bookings/:id` — one booking, its live state, and everything the
    customer can do about it.
@@ -79,7 +72,7 @@ export function BookingDetail({ locale, dict, bookingId }: { locale: Locale; dic
           title={dict.portal.bookingNotFoundTitle}
           body={dict.portal.bookingNotFoundBody}
           action={
-            <ButtonLink href={localizedPath(locale, "/account/bookings")} variant="secondary">
+            <ButtonLink href={localizedPath(locale, '/account/bookings')} variant="secondary">
               {dict.portal.bookings}
             </ButtonLink>
           }
@@ -94,12 +87,7 @@ export function BookingDetail({ locale, dict, bookingId }: { locale: Locale; dic
 
   return (
     <div>
-      <PageHeader
-        eyebrow={record.code}
-        title={serviceName}
-        description={record.problemText ?? undefined}
-        action={<StatusPill dict={dict} status={record.status} />}
-      />
+      <PageHeader eyebrow={record.code} title={serviceName} description={record.problemText ?? undefined} action={<StatusPill dict={dict} status={record.status} />} />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-6">
@@ -114,11 +102,9 @@ export function BookingDetail({ locale, dict, bookingId }: { locale: Locale; dic
           <Card className="p-5">
             <h2 className="font-semibold text-navy">{dict.booking.detailsSummaryTitle}</h2>
             <dl className="mt-4 grid gap-3 text-sm">
-              <Row label={dict.booking.professional}>
-                {isAwaitingProvider(record) ? dict.booking.awaitingAssignment : dict.booking.assignedProfessional}
-              </Row>
+              <Row label={dict.booking.professional}>{isAwaitingProvider(record) ? dict.booking.awaitingAssignment : dict.booking.assignedProfessional}</Row>
               <Row label={dict.booking.slot}>{formatDateTime(record.scheduledStart, locale)}</Row>
-              <Row label={dict.booking.paymentMode}>{record.paymentMode === "ONLINE" ? dict.booking.online : dict.booking.cash}</Row>
+              <Row label={dict.booking.paymentMode}>{record.paymentMode === 'ONLINE' ? dict.booking.online : dict.booking.cash}</Row>
               <Row label={dict.booking.total}>
                 <span className="font-semibold tabular-nums">{money(bookingTotalPaisa(record), locale)}</span>
               </Row>
@@ -164,18 +150,18 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function StatusPill({ dict, status }: { dict: Dictionary; status: Booking["status"] }) {
+function StatusPill({ dict, status }: { dict: Dictionary; status: Booking['status'] }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-        status === "VERIFIED" || status === "AUTO_RELEASED" || status === "PAYMENT_RELEASED" || status === "CLOSED"
-          ? "bg-emerald-50 text-emerald-700"
-          : status === "DISPUTED" || status === "CANCELLED_CUSTOMER" || status === "CANCELLED_PROVIDER" || status === "NO_SHOW"
-            ? "bg-rose-50 text-rose-700"
-            : status === "AWAITING_VERIFICATION" || status === "REWORK_REQUIRED"
-              ? "bg-amber-50 text-amber-800"
-              : "bg-blue-50 text-blue-700",
+        'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold',
+        status === 'VERIFIED' || status === 'AUTO_RELEASED' || status === 'PAYMENT_RELEASED' || status === 'CLOSED'
+          ? 'bg-emerald-50 text-emerald-700'
+          : status === 'DISPUTED' || status === 'CANCELLED_CUSTOMER' || status === 'CANCELLED_PROVIDER' || status === 'NO_SHOW'
+            ? 'bg-rose-50 text-rose-700'
+            : status === 'AWAITING_VERIFICATION' || status === 'REWORK_REQUIRED'
+              ? 'bg-amber-50 text-amber-800'
+              : 'bg-blue-50 text-blue-700'
       )}
     >
       <span className="size-1.5 rounded-full bg-current" />
@@ -195,23 +181,15 @@ function StatusPill({ dict, status }: { dict: Dictionary; status: Booking["statu
 function StageTimeline({ dict, booking }: { dict: Dictionary; booking: Booking }) {
   /* Typed against the notes object itself, so a stage added to the ladder
      without copy fails typecheck rather than rendering an empty line. */
-  type Stage = keyof Dictionary["booking"]["bookingStageNotes"];
+  type Stage = keyof Dictionary['booking']['bookingStageNotes'];
 
-  const order: Stage[] = [
-    "REQUESTED",
-    "SCHEDULED",
-    "EN_ROUTE",
-    "IN_PROGRESS",
-    "WORK_COMPLETED",
-    "AWAITING_VERIFICATION",
-    "PAYMENT_RELEASED",
-  ];
+  const order: Stage[] = ['REQUESTED', 'SCHEDULED', 'EN_ROUTE', 'IN_PROGRESS', 'WORK_COMPLETED', 'AWAITING_VERIFICATION', 'PAYMENT_RELEASED'];
 
-  const isCancelled = booking.status === "CANCELLED_CUSTOMER" || booking.status === "CANCELLED_PROVIDER";
-  const isVoid = isCancelled || booking.status === "NO_SHOW" || booking.status === "UNFULFILLED" || booking.status === "ABANDONED";
+  const isCancelled = booking.status === 'CANCELLED_CUSTOMER' || booking.status === 'CANCELLED_PROVIDER';
+  const isVoid = isCancelled || booking.status === 'NO_SHOW' || booking.status === 'UNFULFILLED' || booking.status === 'ABANDONED';
 
   const reached = (status: Stage): boolean => {
-    if (isVoid) return status === "REQUESTED";
+    if (isVoid) return status === 'REQUESTED';
     const now = order.indexOf(booking.status as Stage);
     /* A status outside the ladder (REWORK_REQUIRED, DISPUTED, CLOSED) is
        reported on its own rather than being forced into a position. */
@@ -220,7 +198,7 @@ function StageTimeline({ dict, booking }: { dict: Dictionary; booking: Booking }
   };
 
   const steps = order.filter((status) => reached(status));
-  const current = isVoid ? null : dict.bookingStatus[booking.status] ?? booking.status;
+  const current = isVoid ? null : (dict.bookingStatus[booking.status] ?? booking.status);
 
   return (
     <Card className="p-5">
@@ -229,16 +207,13 @@ function StageTimeline({ dict, booking }: { dict: Dictionary; booking: Booking }
         {steps.map((status, index) => (
           <li key={status} className="flex items-start gap-3 text-sm">
             <span
-              className={cn(
-                "grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold",
-                index === steps.length - 1 ? "bg-blue-50 text-primary-strong" : "bg-emerald-50 text-emerald-700",
-              )}
+              className={cn('grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold', index === steps.length - 1 ? 'bg-blue-50 text-primary-strong' : 'bg-emerald-50 text-emerald-700')}
             >
               {index === steps.length - 1 && !isVoid ? <CheckCircle2 className="size-4" aria-hidden="true" /> : index + 1}
             </span>
             <div>
               <span className="font-medium text-navy">{dict.bookingStatus[status] ?? status}</span>
-              <p className="text-xs text-muted">{dict.booking.bookingStageNotes[status] ?? ""}</p>
+              <p className="text-xs text-muted">{dict.booking.bookingStageNotes[status] ?? ''}</p>
             </div>
           </li>
         ))}
@@ -263,19 +238,16 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
   const cancel = useCancelBooking(locale);
   const reschedule = useRescheduleBooking(locale);
   const noShow = useReportNoShow(locale);
-  const [cancelReason, setCancelReason] = useState("");
+  const [cancelReason, setCancelReason] = useState('');
   const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const cancelAllowed = canCancel(booking);
   const rescheduleReason = rescheduleBlockReason(booking);
   const rescheduleAllowed = canReschedule(booking);
-  const noShowAllowed = booking.status === "EN_ROUTE";
+  const noShowAllowed = booking.status === 'EN_ROUTE';
   const nothingToDo = !cancelAllowed && !rescheduleAllowed && !hasPendingRevision(booking) && !noShowAllowed;
 
-  const errorText =
-    (cancel.isError ? dict.booking.actionFailed : null) ??
-    (reschedule.isError ? dict.booking.actionFailed : null) ??
-    (noShow.isError ? dict.booking.actionFailed : null);
+  const errorText = (cancel.isError ? dict.booking.actionFailed : null) ?? (reschedule.isError ? dict.booking.actionFailed : null) ?? (noShow.isError ? dict.booking.actionFailed : null);
 
   return (
     <Card className="p-5">
@@ -295,12 +267,7 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
                 <div className="mt-3 grid gap-3">
                   <div className="grid gap-2">
                     <Label htmlFor="cancel-reason">{dict.booking.cancelReasonLabel}</Label>
-                    <Textarea
-                      id="cancel-reason"
-                      value={cancelReason}
-                      onChange={(event) => setCancelReason(event.target.value)}
-                      placeholder={dict.booking.cancelReasonPlaceholder}
-                    />
+                    <Textarea id="cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder={dict.booking.cancelReasonPlaceholder} />
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -308,9 +275,7 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
                       variant="secondary"
                       size="sm"
                       disabled={cancel.isPending}
-                      onClick={() =>
-                        void cancel.mutateAsync({ id: booking.id, ...(cancelReason.trim() === "" ? {} : { reason: cancelReason.trim() }) }).catch(reportFailure)
-                      }
+                      onClick={() => void cancel.mutateAsync({ id: booking.id, ...(cancelReason.trim() === '' ? {} : { reason: cancelReason.trim() }) }).catch(reportFailure)}
                     >
                       {cancel.isPending ? dict.booking.working : dict.booking.confirmCancel}
                     </Button>
@@ -330,11 +295,7 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
 
           {rescheduleReason !== null ? (
             <p className="rounded-[9px] bg-surface-2 p-3.5 text-sm leading-6 text-secondary">
-              {rescheduleReason === "status"
-                ? dict.booking.rescheduleWrongStatus
-                : rescheduleReason === "used"
-                  ? dict.booking.rescheduleAlreadyUsed
-                  : dict.booking.rescheduleTooLate}
+              {rescheduleReason === 'status' ? dict.booking.rescheduleWrongStatus : rescheduleReason === 'used' ? dict.booking.rescheduleAlreadyUsed : dict.booking.rescheduleTooLate}
             </p>
           ) : (
             <ReschedulePanel locale={locale} dict={dict} booking={booking} reschedule={reschedule} />
@@ -350,7 +311,7 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
                 size="sm"
                 className="mt-3"
                 disabled={noShow.isPending}
-                onClick={() => void noShow.mutateAsync({ id: booking.id, party: "PROVIDER" }).catch(reportFailure)}
+                onClick={() => void noShow.mutateAsync({ id: booking.id, party: 'PROVIDER' }).catch(reportFailure)}
               >
                 <AlertTriangle className="size-4" aria-hidden="true" />
                 {dict.booking.noShowAction}
@@ -360,7 +321,11 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
         </div>
       )}
 
-      {errorText !== null ? <p role="alert" className="mt-4 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">{errorText}</p> : null}
+      {errorText !== null ? (
+        <p role="alert" className="mt-4 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">
+          {errorText}
+        </p>
+      ) : null}
     </Card>
   );
 }
@@ -375,28 +340,18 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
  * time field, because the API would reject it and the customer would be the one
  * explaining why.
  */
-function ReschedulePanel({
-  locale,
-  dict,
-  booking,
-  reschedule,
-}: {
-  locale: Locale;
-  dict: Dictionary;
-  booking: Booking;
-  reschedule: ReturnType<typeof useRescheduleBooking>;
-}) {
+function ReschedulePanel({ locale, dict, booking, reschedule }: { locale: Locale; dict: Dictionary; booking: Booking; reschedule: ReturnType<typeof useRescheduleBooking> }) {
   const [date, setDate] = useState(() => toApiDate(new Date()));
   const [picked, setPicked] = useState<{ start: string; end: string } | null>(null);
   /* An auto-assign booking that a provider later took has a provider; one that
      nobody took cannot be rescheduled at all, which `rescheduleBlockReason`
      has already accounted for by the SCHEDULED requirement. */
   const slots = useProviderSlots(booking.providerId, booking.serviceId, booking.providerId === null ? null : date, locale);
-  const tag = locale === "ur" ? "ur-PK" : "en-PK";
+  const tag = locale === 'ur' ? 'ur-PK' : 'en-PK';
 
   const days = Array.from({ length: SLOT_WINDOW_DAYS }, (_, index) => {
     const value = addDays(new Date(), index);
-    return { value: toApiDate(value), label: new Intl.DateTimeFormat(tag, { weekday: "short", day: "numeric", month: "short" }).format(value) };
+    return { value: toApiDate(value), label: new Intl.DateTimeFormat(tag, { weekday: 'short', day: 'numeric', month: 'short' }).format(value) };
   });
 
   return (
@@ -415,8 +370,8 @@ function ReschedulePanel({
               setPicked(null);
             }}
             className={cn(
-              "min-h-10 shrink-0 rounded-[9px] border px-3 text-xs font-semibold transition-colors",
-              day.value === date ? "border-primary bg-blue-50 text-primary-strong" : "border-line bg-white text-secondary hover:bg-slate-50",
+              'min-h-10 shrink-0 rounded-[9px] border px-3 text-xs font-semibold transition-colors',
+              day.value === date ? 'border-primary bg-blue-50 text-primary-strong' : 'border-line bg-white text-secondary hover:bg-slate-50'
             )}
           >
             {day.label}
@@ -425,9 +380,13 @@ function ReschedulePanel({
       </div>
 
       {slots.isPending ? (
-        <p className="mt-3 text-sm text-secondary" aria-busy="true">{dict.booking.slotsLoading}</p>
+        <p className="mt-3 text-sm text-secondary" aria-busy="true">
+          {dict.booking.slotsLoading}
+        </p>
       ) : slots.isError ? (
-        <p role="alert" className="mt-3 text-sm text-rose-700">{dict.booking.slotsError}</p>
+        <p role="alert" className="mt-3 text-sm text-rose-700">
+          {dict.booking.slotsError}
+        </p>
       ) : slots.data.items.length === 0 ? (
         <p className="mt-3 rounded-[9px] border border-line bg-surface-2 p-3.5 text-sm leading-6 text-secondary">{dict.booking.slotsNone}</p>
       ) : (
@@ -439,8 +398,8 @@ function ReschedulePanel({
               aria-pressed={picked?.start === slot.start}
               onClick={() => setPicked(slot)}
               className={cn(
-                "min-h-10 whitespace-nowrap rounded-[9px] border px-2 text-sm font-semibold tabular-nums transition-colors",
-                picked?.start === slot.start ? "border-primary bg-blue-50 text-primary-strong" : "border-line bg-white text-navy hover:bg-slate-50",
+                'min-h-10 whitespace-nowrap rounded-[9px] border px-2 text-sm font-semibold tabular-nums transition-colors',
+                picked?.start === slot.start ? 'border-primary bg-blue-50 text-primary-strong' : 'border-line bg-white text-navy hover:bg-slate-50'
               )}
             >
               {formatSlotTime(slot.start, tag)}
@@ -481,17 +440,15 @@ function RevisionCard({ locale, dict, booking }: { locale: Locale; dict: Diction
         <Button type="button" size="sm" disabled={approve.isPending || reject.isPending} onClick={() => void approve.mutateAsync(booking.id).catch(reportFailure)}>
           {dict.booking.revisionApprove}
         </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={approve.isPending || reject.isPending}
-          onClick={() => void reject.mutateAsync(booking.id).catch(reportFailure)}
-        >
+        <Button type="button" variant="secondary" size="sm" disabled={approve.isPending || reject.isPending} onClick={() => void reject.mutateAsync(booking.id).catch(reportFailure)}>
           {dict.booking.revisionReject}
         </Button>
       </div>
-      {failed ? <p role="alert" className="mt-3 text-sm text-rose-700">{dict.booking.actionFailed}</p> : null}
+      {failed ? (
+        <p role="alert" className="mt-3 text-sm text-rose-700">
+          {dict.booking.actionFailed}
+        </p>
+      ) : null}
     </Card>
   );
 }
@@ -504,12 +461,12 @@ function RevisionCard({ locale, dict, booking }: { locale: Locale; dict: Diction
  */
 function WarrantyCard({ locale, dict, booking }: { locale: Locale; dict: Dictionary; booking: Booking }) {
   const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState('');
   const claim = useWarrantyClaim(locale);
 
   /* FR-EX-07 only reopens a *released* job. Offering it earlier would produce a
      409 the customer cannot act on. */
-  const released = booking.status === "PAYMENT_RELEASED" || booking.status === "PARTIALLY_REFUNDED" || booking.status === "REFUNDED";
+  const released = booking.status === 'PAYMENT_RELEASED' || booking.status === 'PARTIALLY_REFUNDED' || booking.status === 'REFUNDED';
   if (!released) return null;
 
   return (
@@ -521,20 +478,10 @@ function WarrantyCard({ locale, dict, booking }: { locale: Locale; dict: Diction
         <div className="mt-3 grid gap-3">
           <div className="grid gap-2">
             <Label htmlFor="warranty-reason">{dict.booking.warrantyReasonLabel}</Label>
-            <Textarea
-              id="warranty-reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder={dict.booking.warrantyReasonPlaceholder}
-            />
+            <Textarea id="warranty-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder={dict.booking.warrantyReasonPlaceholder} />
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              disabled={reason.trim() === "" || claim.isPending}
-              onClick={() => void claim.mutateAsync({ id: booking.id, reason: reason.trim() }).catch(reportFailure)}
-            >
+            <Button type="button" size="sm" disabled={reason.trim() === '' || claim.isPending} onClick={() => void claim.mutateAsync({ id: booking.id, reason: reason.trim() }).catch(reportFailure)}>
               {claim.isPending ? dict.booking.working : dict.booking.warrantySubmit}
             </Button>
             <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(false)} disabled={claim.isPending}>
@@ -547,7 +494,11 @@ function WarrantyCard({ locale, dict, booking }: { locale: Locale; dict: Diction
           {dict.booking.warrantyAction}
         </Button>
       )}
-      {claim.isError ? <p role="alert" className="mt-3 text-sm text-rose-700">{dict.booking.actionFailed}</p> : null}
+      {claim.isError ? (
+        <p role="alert" className="mt-3 text-sm text-rose-700">
+          {dict.booking.actionFailed}
+        </p>
+      ) : null}
     </Card>
   );
 }
@@ -563,44 +514,47 @@ function WarrantyCard({ locale, dict, booking }: { locale: Locale; dict: Diction
  * they are refused. The card is not rendered at all outside those states, so the
  * five-photo limit and the upload button never appear where they would 409.
  */
-const canAttachProblemPhotos = (booking: Pick<Booking, "status">): boolean =>
-  booking.status === "PENDING_PAYMENT" || booking.status === "REQUESTED" || booking.status === "SCHEDULED";
+const canAttachProblemPhotos = (booking: Pick<Booking, 'status'>): boolean => booking.status === 'PENDING_PAYMENT' || booking.status === 'REQUESTED' || booking.status === 'SCHEDULED';
 
-function ProblemPhotos({
-  locale,
-  dict,
-  bookingId,
-  canUpload,
-}: {
-  locale: Locale;
-  dict: Dictionary;
-  bookingId: string;
-  canUpload: boolean;
-}) {
+function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: Locale; dict: Dictionary; bookingId: string; canUpload: boolean }) {
   const upload = useBookingEvidence(locale);
   const [files, setFiles] = useState<File[]>([]);
   const [results, setResults] = useState<{ url: string }[]>([]);
-  const [failed, setFailed] = useState("");
+  const [failed, setFailed] = useState('');
+  /* One uuid per *chosen file*, generated when the file is picked and reused for
+     every attempt at uploading it.
+
+     The previous version called `crypto.randomUUID()` inside the loop, so a retry
+     after a dropped connection produced a **different** key — and the
+     `(booking_id, client_uuid)` dedupe could not recognise it, storing the photo
+     twice. The comment above it claimed the opposite. The API's own rule is one
+     key per user intent, not per attempt. */
+  const [intent, setIntent] = useState<Record<string, string>>({});
 
   if (!canUpload) return null;
 
   const send = async (): Promise<void> => {
-    setFailed("");
+    setFailed('');
     const stored: { url: string }[] = [];
     for (const file of files.slice(0, MAX_PROBLEM_PHOTOS)) {
       try {
-        const contentType = file.type === "image/png" ? "image/png" : file.type === "image/webp" ? "image/webp" : "image/jpeg";
-        const base64 = await toBase64(file);
+        /* The API caps evidence at `evidence.photo_max_bytes` (5 MB) and
+           `evidence.photo_max_edge_px` (1600px). Compressing here rather than
+           rejecting the file means a 12 MB phone photo actually uploads on a
+           rural 3G connection. */
+        const prepared = await prepareEvidenceImage(file);
+        if (prepared.rejected !== undefined) {
+          setFailed(prepared.rejected);
+          break;
+        }
         const result = await upload.mutateAsync({
           id: bookingId,
           payload: {
-            /* Generated per attempt, so a retried upload after a flaky
-               connection stores once rather than twice (BACKEND §3.5). */
-            clientUuid: crypto.randomUUID(),
-            kind: "CUSTOMER_PROBLEM",
-            contentType,
-            contentBase64: base64,
-          },
+            clientUuid: intent[file.name + file.size] ?? crypto.randomUUID(),
+            kind: 'CUSTOMER_PROBLEM',
+            contentType: prepared.contentType,
+            contentBase64: prepared.base64
+          }
         });
         stored.push({ url: result.url });
       } catch (error) {
@@ -609,7 +563,10 @@ function ProblemPhotos({
       }
     }
     setResults(stored);
-    setFiles([]);
+    /* The selection is deliberately kept on failure: the whole point of a stable
+       clientUuid is that the customer can press Upload again, and clearing the
+       list would throw away the files they had already chosen. */
+    if (stored.length === files.length) setFiles([]);
   };
 
   return (
@@ -639,7 +596,20 @@ function ProblemPhotos({
           accept="image/jpeg,image/png,image/webp"
           multiple
           className="text-sm text-secondary"
-          onChange={(event) => setFiles(Array.from(event.target.files ?? []).slice(0, MAX_PROBLEM_PHOTOS))}
+          onChange={(event) => {
+            const chosen = Array.from(event.target.files ?? []).slice(0, MAX_PROBLEM_PHOTOS);
+            /* Mint the intent key here, at selection time, so every later attempt
+               at the same file reuses it. */
+            setIntent((previous) => {
+              const next = { ...previous };
+              for (const file of chosen) {
+                const key = file.name + file.size;
+                next[key] ??= crypto.randomUUID();
+              }
+              return next;
+            });
+            setFiles(chosen);
+          }}
         />
         <p className="text-xs text-muted">{dict.booking.photosCount}</p>
       </div>
@@ -649,24 +619,11 @@ function ProblemPhotos({
           {upload.isPending ? dict.booking.working : dict.booking.photosUpload}
         </Button>
       ) : null}
-      {failed !== "" ? <p role="alert" className="mt-3 text-sm text-rose-700">{failed}</p> : null}
+      {failed !== '' ? (
+        <p role="alert" className="mt-3 text-sm text-rose-700">
+          {failed}
+        </p>
+      ) : null}
     </Card>
   );
 }
-
-const toBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("read failed"));
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        reject(new Error("unexpected read result"));
-        return;
-      }
-      /* Strip the `data:` prefix — the schema wants raw base64. */
-      resolve(result.slice(result.indexOf(",") + 1));
-    };
-    reader.readAsDataURL(file);
-  });
-

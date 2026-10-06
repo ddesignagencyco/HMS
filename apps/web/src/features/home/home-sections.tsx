@@ -1,30 +1,31 @@
-import { ArrowRight, BadgeCheck, BriefcaseBusiness, CheckCircle2, FileCheck2, MapPin, MapPinned, ReceiptText, Camera, ShieldCheck, Star } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
-import type { Dictionary } from "@/lib/dictionaries";
-import { areas, categories, heroImage, journeyImage, providers, services } from "@/lib/data";
-import { formatDateTime, formatDuration, formatMoney, formatNumber, getText, localizedPath, type Locale } from "@/lib/utils";
-import { cn } from "@/lib/utils";
-import { Container, Eyebrow, Section, SectionHeader, TextLink, buttonStyles } from "@/components/ui";
-import { AtmosphericBackground } from "@/components/layout/atmospheric-background";
-import { ServiceDocument, VerificationGeometry } from "@/components/decorative";
-import { DrawGraphic } from "@/components/motion/draw-graphic";
-import { HeroDepth } from "@/components/motion/hero-depth";
-import { ProcessJourney } from "@/components/motion/process-journey";
-import { CountUp } from "@/components/motion/count-up";
-import { Reveal } from "@/components/reveal";
-import { CategoryCard, PopularServiceCard, ProfessionalCard } from "@/components/cards";
-import { FaqAccordion } from "@/features/home/faq-accordion";
-import { ReviewsEditorial } from "@/features/home/reviews-editorial";
+import { ArrowRight, BadgeCheck, BriefcaseBusiness, CheckCircle2, FileCheck2, MapPin, MapPinned, ReceiptText, Camera, ShieldCheck, Star } from 'lucide-react';
+import Image from 'next/image';
+import Link from 'next/link';
+import type { Dictionary } from '@/lib/dictionaries';
+import { areas, heroImage, journeyImage, providers } from '@/lib/data';
+import { formatDateTime, formatNumber, getText, localizedPath, type Locale } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
-const iconCard = "size-[18px] shrink-0";
+import { Container, Eyebrow, Section, SectionHeader, TextLink, buttonStyles } from '@/components/ui';
+import { AtmosphericBackground } from '@/components/layout/atmospheric-background';
+import { ServiceDocument, VerificationGeometry } from '@/components/decorative';
+import { DrawGraphic } from '@/components/motion/draw-graphic';
+import { HeroDepth } from '@/components/motion/hero-depth';
+import { ProcessJourney } from '@/components/motion/process-journey';
+import { CountUp } from '@/components/motion/count-up';
+import { Reveal } from '@/components/reveal';
+import { ProfessionalCard } from '@/components/cards';
+import { FaqAccordion } from '@/features/home/faq-accordion';
+import { ReviewsEditorial } from '@/features/home/reviews-editorial';
+
+const iconCard = 'size-[18px] shrink-0';
 const iconTone = (tone: string) => `size-4 shrink-0 ${tone}`;
-const arrowClass = iconTone("link-arrow arrow-slide rtl:rotate-180");
+const arrowClass = iconTone('link-arrow arrow-slide rtl:rotate-180');
 
 /* Neighbouring surface colours, matched exactly so a wave never shows
    an outline, a shadow or a seam. */
-const WHITE = "#ffffff";
-const SURFACE = "#f8fafc";
+const WHITE = '#ffffff';
+const SURFACE = '#f8fafc';
 
 /* ================================================================== *
  * LEVEL 1 — HERO
@@ -52,11 +53,11 @@ export function HomeHero({ locale, dict, search }: { locale: Locale; dict: Dicti
           <Reveal variant="copy" delay={210}>
             <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2.5 text-sm text-white">
               <span className="inline-flex items-center gap-2">
-                <CheckCircle2 className={iconTone("text-yellow-500")} aria-hidden="true" />
+                <CheckCircle2 className={iconTone('text-yellow-500')} aria-hidden="true" />
                 {dict.home.trustOne}
               </span>
               <span className="inline-flex items-center gap-2">
-                <CheckCircle2 className={iconTone("text-yellow-500")} aria-hidden="true" />
+                <CheckCircle2 className={iconTone('text-yellow-500')} aria-hidden="true" />
                 {dict.home.trustTwo}
               </span>
             </div>
@@ -71,7 +72,7 @@ export function HomeHero({ locale, dict, search }: { locale: Locale; dict: Dicti
                 <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(7,21,47,0.34),transparent_46%)]" />
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-navy-950/55 via-transparent to-transparent" />
                 <span className="absolute end-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-navy-950/90 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/15 backdrop-blur">
-                  <BadgeCheck className={iconTone("text-yellow-500")} aria-hidden="true" />
+                  <BadgeCheck className={iconTone('text-yellow-500')} aria-hidden="true" />
                   {dict.providers.verified}
                 </span>
                 <div className="absolute bottom-4 start-4 inline-flex items-center gap-2 rounded-xl bg-navy-950/85 px-3.5 py-2 text-xs font-medium text-white shadow-lg backdrop-blur-sm ring-1 ring-white/15">
@@ -83,7 +84,7 @@ export function HomeHero({ locale, dict, search }: { locale: Locale; dict: Dicti
                     <Star className="size-3.5 fill-current" aria-hidden="true" />
                   </div>
                   <span className="font-bold text-white">4.9/5</span>
-                  <span className="text-slate-300 text-[11px]">• {locale === "ur" ? "لاہور میں تصدیق شدہ" : "Verified in Lahore"}</span>
+                  <span className="text-slate-300 text-[11px]">• {locale === 'ur' ? 'لاہور میں تصدیق شدہ' : 'Verified in Lahore'}</span>
                 </div>
               </div>
             </figure>
@@ -94,7 +95,9 @@ export function HomeHero({ locale, dict, search }: { locale: Locale; dict: Dicti
       {search ? (
         <div className="absolute inset-x-0 bottom-0 z-20 translate-y-1/2">
           <Container>
-            <Reveal variant="section" delay={280}>{search}</Reveal>
+            <Reveal variant="section" delay={280}>
+              {search}
+            </Reveal>
           </Container>
         </div>
       ) : null}
@@ -104,43 +107,20 @@ export function HomeHero({ locale, dict, search }: { locale: Locale; dict: Dicti
 
 /* ================================================================== *
  * LEVEL 3 — EXPLORE SERVICES (category discovery)
- * Straight top edge: the hero is a peak, so the cut back to white is
- * a straight one. Left-heavy wave arrives only on the section below.
+ *
+ * `CategorySection` and `PopularServicesSection` used to live here. Both now
+ * read the catalogue API, so both call `useQuery` — and this file is a *server*
+ * module, which makes that a hard error:
+ *
+ *   "Attempted to call useQuery() from the server but useQuery is on the
+ *    client."
+ *
+ * They live in `home-catalogue.tsx` instead, which is `"use client"` and is
+ * imported straight from `app/[locale]/(public)/page.tsx`. Marking this whole
+ * file `"use client"` would work and would be wrong: it would push the hero,
+ * the process band, the FAQ and the coverage map into the client bundle for the
+ * sake of two sections.
  * ================================================================== */
-export function CategorySection({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  return (
-    <Section size="default" className="section-after-hero">
-      <Container className="relative">
-        <Reveal>
-          <SectionHeader
-            eyebrow={dict.home.categoriesEyebrow}
-            title={dict.home.categoriesTitle}
-            description={dict.home.categoriesDescription}
-            action={<TextLink href={localizedPath(locale, "/services")}>{dict.home.browseServices}</TextLink>}
-          />
-        </Reveal>
-        <div className="header-gap grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
-          {categories.slice(0, 3).map((category, index) => {
-            const count = services.filter((service) => service.categorySlug === category.slug).length;
-            return (
-              <Reveal key={category.id} as="div" delay={index * 60} variant="card" className="h-full min-w-0">
-                <CategoryCard
-                  href={localizedPath(locale, `/services?category=${category.slug}`)}
-                  image={{ url: category.image.url, alt: getText(category.image.alt, locale) }}
-                  meta={dict.common.servicesCount.replace("{count}", formatNumber(count, locale))}
-                  categoryIcon={category.slug}
-                  title={getText(category.name, locale)}
-                  description={getText(category.description, locale)}
-                  cta={dict.home.explore}
-                />
-              </Reveal>
-            );
-          })}
-        </div>
-      </Container>
-    </Section>
-  );
-}
 
 /* ================================================================== *
  * LEVEL 2 — TRUST / METRICS
@@ -154,15 +134,11 @@ export function BrandTrustSection({ locale, dict }: { locale: Locale; dict: Dict
     { icon: BadgeCheck, value: providers.length, label: dict.home.metricProfessionals, decimals: 0 },
     { icon: Star, value: averageRating, label: dict.home.metricRating, decimals: 1 },
     { icon: BriefcaseBusiness, value: completedJobs, label: dict.home.metricJobs, decimals: 0 },
-    { icon: MapPinned, value: areas.length, label: dict.home.metricAreas, decimals: 0 },
+    { icon: MapPinned, value: areas.length, label: dict.home.metricAreas, decimals: 0 }
   ];
 
   return (
-    <Section
-      size="feature"
-      tone="dark"
-      waveTop={{ fill: WHITE, shape: "left", depth: { sm: 22, md: 44, lg: 84 } }}
-    >
+    <Section size="feature" tone="dark" waveTop={{ fill: WHITE, shape: 'left', depth: { sm: 22, md: 44, lg: 84 } }}>
       <AtmosphericBackground variant="trust" />
       <Container className="relative grid gap-14 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-center lg:gap-20">
         <Reveal variant="from-start">
@@ -171,7 +147,7 @@ export function BrandTrustSection({ locale, dict }: { locale: Locale; dict: Dict
             {dict.home.brandTitleLead} <span className="text-yellow-500">{dict.home.brandTitleAccent}</span>
           </h2>
           <p className="mt-4 max-w-lg text-pretty text-base leading-7 text-slate-300">{dict.home.brandDescription}</p>
-          <Link href={localizedPath(locale, "/services")} className={buttonStyles({ variant: "accent", className: "group lift-sm mt-8" })}>
+          <Link href={localizedPath(locale, '/services')} className={buttonStyles({ variant: 'accent', className: 'group lift-sm mt-8' })}>
             {dict.home.brandCta}
             <ArrowRight className={arrowClass} aria-hidden="true" />
           </Link>
@@ -204,51 +180,6 @@ export function BrandTrustSection({ locale, dict }: { locale: Locale; dict: Dict
 }
 
 /* ================================================================== *
- * LEVEL 3 — POPULAR SERVICES (bookable jobs)
- * Straight top edge after the dark band, then a very shallow curve into
- * Process. Compact, price-forward rows: nothing decorative at all here.
- * ================================================================== */
-export function PopularServicesSection({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const featured = [services[6], services[9], services[15]];
-  return (
-    <Section size="compact" tone="surface">
-      <Container className="relative">
-        <Reveal>
-          <SectionHeader
-            eyebrow={dict.home.popularEyebrow}
-            title={dict.home.popularTitle}
-            action={<TextLink href={localizedPath(locale, "/services")}>{dict.home.browseServices}</TextLink>}
-          />
-        </Reveal>
-        <div className="header-gap grid gap-4">
-          {featured.map((service, index) => {
-            const category = categories.find((item) => item.slug === service.categorySlug)!;
-            return (
-              <Reveal key={service.id} delay={index * 70} variant="card" className="min-w-0">
-                <PopularServiceCard
-                  href={localizedPath(locale, `/services/${service.slug}`)}
-                  image={{ url: service.image.url, alt: getText(service.image.alt, locale) }}
-                  category={getText(category.name, locale)}
-                  categoryIcon={service.categorySlug}
-                  title={getText(service.name, locale)}
-                  duration={formatDuration(service.expectedDurationMin, locale)}
-                  warranty={dict.common.warranty.replace("{days}", formatNumber(service.warrantyDays, locale))}
-                  priceFrom={dict.common.from}
-                  price={formatMoney(service.basePricePaisa, locale)}
-                  emergency={service.emergency}
-                  emergencyLabel={dict.common.emergency}
-                  actionLabel={dict.home.browseServices}
-                />
-              </Reveal>
-            );
-          })}
-        </div>
-      </Container>
-    </Section>
-  );
-}
-
-/* ================================================================== *
  * LEVEL 2 — PROCESS
  * Very shallow curve in, straight edge out. The photograph is deliberately
  * smaller than the step list, and the route drawing is the only graphic.
@@ -258,7 +189,7 @@ export function ProcessSection({ locale, dict }: { locale: Locale; dict: Diction
     { title: dict.home.process1, text: dict.home.process1Text },
     { title: dict.home.process2, text: dict.home.process2Text },
     { title: dict.home.process3, text: dict.home.process3Text },
-    { title: dict.home.process4, text: dict.home.process4Text },
+    { title: dict.home.process4, text: dict.home.process4Text }
   ];
   return (
     <Section
@@ -266,7 +197,7 @@ export function ProcessSection({ locale, dict }: { locale: Locale; dict: Diction
       size="feature"
       tone="dark"
       className="[scroll-margin-top:calc(6rem+var(--demo-bar-h,0px))]"
-      waveTop={{ fill: SURFACE, shape: "shallow", depth: { sm: 14, md: 24, lg: 34 } }}
+      waveTop={{ fill: SURFACE, shape: 'shallow', depth: { sm: 14, md: 24, lg: 34 } }}
     >
       <AtmosphericBackground variant="process" />
       <Container className="relative">
@@ -307,7 +238,7 @@ export function FeaturedProfessionalsSection({ locale, dict }: { locale: Locale;
             eyebrow={dict.home.prosEyebrow}
             title={dict.home.prosTitle}
             description={dict.home.prosDescription}
-            action={<TextLink href={localizedPath(locale, "/providers")}>{dict.home.browsePros}</TextLink>}
+            action={<TextLink href={localizedPath(locale, '/providers')}>{dict.home.browsePros}</TextLink>}
           />
         </Reveal>
         <div className="header-gap grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
@@ -319,13 +250,13 @@ export function FeaturedProfessionalsSection({ locale, dict }: { locale: Locale;
                 image={{ url: provider.image.url, alt: getText(provider.image.alt, locale) }}
                 focus={provider.focus}
                 name={provider.name}
-                specialisation={dict.providers.experience.replace("{years}", String(provider.experienceYears))}
+                specialisation={dict.providers.experience.replace('{years}', String(provider.experienceYears))}
                 bio={getText(provider.bio, locale)}
                 verifiedLabel={dict.providers.verified}
                 rating={provider.rating}
                 ratingCount={provider.ratingCount}
                 ratingAriaLabel={dict.common.rating}
-                jobs={dict.providers.jobs.replace("{count}", formatNumber(provider.verifiedJobs, locale))}
+                jobs={dict.providers.jobs.replace('{count}', formatNumber(provider.verifiedJobs, locale))}
                 availability={`${dict.home.nextAvailable} ${formatDateTime(provider.nextSlot, locale)}`}
               />
             </Reveal>
@@ -351,7 +282,7 @@ export function CoverageSection({ locale, dict }: { locale: Locale; dict: Dictio
             eyebrow={dict.home.coverageEyebrow}
             title={dict.home.coverageTitle}
             description={dict.home.coverageDescription}
-            action={<TextLink href={localizedPath(locale, "/providers")}>{dict.home.coverageAction}</TextLink>}
+            action={<TextLink href={localizedPath(locale, '/providers')}>{dict.home.coverageAction}</TextLink>}
           />
         </Reveal>
         <Reveal variant="section" delay={60}>
@@ -389,7 +320,7 @@ export function TrustSection({ locale, dict }: { locale: Locale; dict: Dictionar
   const items = [
     { icon: FileCheck2, title: dict.home.trust1, text: dict.home.trust1Text },
     { icon: ReceiptText, title: dict.home.trust2, text: dict.home.trust2Text },
-    { icon: Camera, title: dict.home.trust3, text: dict.home.trust3Text },
+    { icon: Camera, title: dict.home.trust3, text: dict.home.trust3Text }
   ];
   return (
     <Section
@@ -397,7 +328,7 @@ export function TrustSection({ locale, dict }: { locale: Locale; dict: Dictionar
       size="feature"
       tone="dark"
       className="[scroll-margin-top:calc(6rem+var(--demo-bar-h,0px))]"
-      waveTop={{ fill: WHITE, shape: "right", depth: { sm: 22, md: 44, lg: 84 } }}
+      waveTop={{ fill: WHITE, shape: 'right', depth: { sm: 22, md: 44, lg: 84 } }}
     >
       <AtmosphericBackground variant="managed" />
       <Container className="relative grid gap-8 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-stretch lg:gap-10">
@@ -406,11 +337,11 @@ export function TrustSection({ locale, dict }: { locale: Locale; dict: Dictionar
           <h2 className="title-section mt-3 max-w-lg text-white">{dict.home.trustTitle}</h2>
           <p className="mt-3 max-w-lg text-pretty text-sm leading-6 text-slate-300">{dict.home.trustDescription}</p>
           <div className="mt-5 inline-flex items-center gap-2 border-s-2 border-yellow-500 ps-4 text-sm font-semibold text-white">
-            <ShieldCheck className={iconTone("text-yellow-500")} aria-hidden="true" />
+            <ShieldCheck className={iconTone('text-yellow-500')} aria-hidden="true" />
             {dict.home.trustTwo}
           </div>
           <div className="mt-4">
-            <TextLink href={localizedPath(locale, "/how-verification-works")} className="text-yellow-500 hover:text-yellow-400">
+            <TextLink href={localizedPath(locale, '/how-verification-works')} className="text-yellow-500 hover:text-yellow-400">
               {dict.nav.howWeVerify}
             </TextLink>
           </div>
@@ -426,13 +357,7 @@ export function TrustSection({ locale, dict }: { locale: Locale; dict: Dictionar
               evenly instead of trailing off under the statement */}
           <ul className="flex flex-1 flex-col justify-between">
             {items.map(({ icon: Icon, title, text }, index) => (
-              <li
-                key={title}
-                className={cn(
-                  "group grid gap-3 py-5 sm:grid-cols-[44px_1fr] sm:gap-5 lg:py-6",
-                  index < items.length - 1 && "border-b border-white/12",
-                )}
-              >
+              <li key={title} className={cn('group grid gap-3 py-5 sm:grid-cols-[44px_1fr] sm:gap-5 lg:py-6', index < items.length - 1 && 'border-b border-white/12')}>
                 <span className="grid size-11 place-items-center rounded-[10px] bg-white/5 text-yellow-500 ring-1 ring-white/12 transition-colors duration-200 group-hover:bg-yellow-500 group-hover:text-navy-950">
                   <Icon className={iconCard} aria-hidden="true" />
                 </span>
@@ -487,16 +412,10 @@ export function FaqSection({ locale, dict }: { locale: Locale; dict: Dictionary 
     { question: dict.home.faq1Q, answer: dict.home.faq1A },
     { question: dict.home.faq2Q, answer: dict.home.faq2A },
     { question: dict.home.faq3Q, answer: dict.home.faq3A },
-    { question: dict.home.faq4Q, answer: dict.home.faq4A },
+    { question: dict.home.faq4Q, answer: dict.home.faq4A }
   ];
   return (
-    <Section
-      id="faq"
-      size="compact"
-      tone="dark"
-      className="[scroll-margin-top:calc(6rem+var(--demo-bar-h,0px))]"
-      waveTop={{ fill: WHITE, shape: "left", depth: { sm: 16, md: 30, lg: 52 } }}
-    >
+    <Section id="faq" size="compact" tone="dark" className="[scroll-margin-top:calc(6rem+var(--demo-bar-h,0px))]" waveTop={{ fill: WHITE, shape: 'left', depth: { sm: 16, md: 30, lg: 52 } }}>
       <AtmosphericBackground variant="faq" />
       <Container className="relative grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-16">
         <Reveal variant="from-start">
@@ -506,7 +425,7 @@ export function FaqSection({ locale, dict }: { locale: Locale; dict: Dictionary 
             <div className="mt-3 border-t border-white/12 pt-5">
               <p className="text-sm font-semibold text-white">{dict.home.faqSupportTitle}</p>
               <p className="mt-2 max-w-sm text-pretty text-sm leading-6 text-slate-300">{dict.home.faqSupportText}</p>
-              <TextLink href={localizedPath(locale, "/providers")} className="mt-4 text-yellow-500 hover:text-yellow-400">
+              <TextLink href={localizedPath(locale, '/providers')} className="mt-4 text-yellow-500 hover:text-yellow-400">
                 {dict.home.browsePros}
               </TextLink>
             </div>
@@ -544,11 +463,11 @@ export function ClosingCtaSection({ locale, dict }: { locale: Locale; dict: Dict
               <p className="mt-5 max-w-xl text-pretty text-base leading-7 text-slate-300">{dict.home.ctaDescription}</p>
 
               <div className="mt-9 flex w-full flex-col items-center gap-3 sm:w-auto sm:flex-row sm:justify-center">
-                <Link href={localizedPath(locale, "/services")} className={buttonStyles({ variant: "accent", size: "lg", className: "group lift-sm w-full sm:w-auto" })}>
+                <Link href={localizedPath(locale, '/services')} className={buttonStyles({ variant: 'accent', size: 'lg', className: 'group lift-sm w-full sm:w-auto' })}>
                   {dict.nav.bookService}
                   <ArrowRight className={arrowClass} aria-hidden="true" />
                 </Link>
-                <Link href={localizedPath(locale, "/providers")} className={buttonStyles({ variant: "outline-light", size: "lg", className: "w-full sm:w-auto" })}>
+                <Link href={localizedPath(locale, '/providers')} className={buttonStyles({ variant: 'outline-light', size: 'lg', className: 'w-full sm:w-auto' })}>
                   {dict.home.browsePros}
                 </Link>
               </div>

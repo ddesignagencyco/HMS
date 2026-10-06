@@ -10,6 +10,195 @@ Last updated: 2026-10-03 · API commit `08bf442` · Verified against local dev
 
 **Severity:** **S1** broken feature · **S2** contract/doc mismatch · **S3** hardening.
 
+> **Read `docs-final/API_HANDOFF.md` first.** It is the contract of record for the
+> frontend-facing API — all 175 operations, plus the conventions this document
+> would otherwise have to restate (idempotency, non-200 success codes, integer
+> paisa, RFC 7807 errors, the booking and verification flows). Two claims below are
+> now **superseded** and are marked where they appear: §6.1 (provider documents)
+> and §0.2 (missing endpoints — re-verify against the handoff before acting on it).
+
+---
+
+# 0. Environment
+
+## 0.1 S1 — The API and the web app both default to port 3000
+
+**File:** `.env` (`PORT=3000`) and `apps/web/next.config.ts:6`
+
+`.env` sets `PORT=3000` for the API. `next dev` also defaults to **3000**. Whichever
+process starts second fails to bind, and the failure mode is not a clean error — it is
+this, from the web app's own terminal:
+
+```
+Failed to proxy http://localhost:3000/api/v1/auth/me Error: socket hang up
+    code: 'ECONNRESET'
+```
+
+**Why that happens.** `next.config.ts` rewrites `/api/v1/:path*` onto `API_ORIGIN`. If
+Next is bound to 3000 _and_ `API_ORIGIN` is also 3000, Next forwards the request to
+itself. The dev server proxies into its own listener, recurses, and the socket is torn
+down — so every `/auth/me` and `/catalogue/*` call dies with `ECONNRESET` while page
+renders (`GET /en/services 200`) keep succeeding. The symptom reads like a broken API;
+it is a port collision.
+
+**What the frontend changed** (`apps/web` only):
+
+- `next dev` and `next start` are pinned to **`-p 3001`**, so the collision cannot recur
+  silently. **Open the web app at `http://localhost:3001`, not `:3000`.**
+- `next.config.ts` refuses to start if `API_PROXY_ORIGIN` resolves to this server's own
+  port, so a mis-set environment variable fails loudly at boot instead of producing a
+  wall of socket resets.
+
+**What the backend needs to do — one of:**
+
+1. **Preferred:** leave `PORT=3000` for the API and keep the web app on 3001 (the state
+   above). Nothing to change; the two are now explicitly separated.
+2. Or move the API to a port Next does not use (e.g. `PORT=4000`) and set
+   `API_PROXY_ORIGIN=http://localhost:4000` in `apps/web`'s environment.
+
+**One caveat worth fixing while you are in there.** `API_PROXY_ORIGIN` is read only by
+the Next process, and Next does **not** load the repo-root `.env` — it loads
+`apps/web/.env.local`. So setting `API_PROXY_ORIGIN` in the root `.env` has no effect,
+and the value can only be changed by editing the web app. If the API port is meant to be
+deployable, the web app needs an `apps/web/.env.local` (currently absent) or the origin
+should be passed in as a real deployment variable.
+
+**Also note:** `.env` sets `CORS_ORIGINS=http://localhost:3000`, which is the API's
+allow-list. Since the browser now reaches the API through the web app's origin on
+**3001**, that value is stale — it should be `http://localhost:3001`. It is currently
+harmless only because the proxy keeps every browser call same-origin, so the allow-list
+is never consulted.
+
+---
+
+# 0.2 Eight missing endpoints, and the screens they block
+
+> **Re-verify before acting on this section.** Written against `apps/api` before the
+> 5 Oct handoff landed. `docs-final/API_HANDOFF.md` §5 ("Things the backend has not
+> built yet") is now authoritative and is shorter: telephony is a mock, and
+> **operations board, reports and maintenance plans** have no endpoints. The rows
+> below that concern those three are confirmed still open. The provider-approval,
+> audit-log and roles rows below were checked against the controllers in this repo
+> and no reader exists for them — but confirm against the handoff index before
+> spending time on a new backend task.
+
+Raised 2026-10-06 while migrating every remaining screen off mock data.
+
+The frontend work to remove all mock data is **not blocked by effort** — it is blocked
+by these eight gaps. Everything else has a real endpoint waiting. Each row was verified
+against the controllers in `apps/api/src`, not inferred from a route name.
+
+**Priority order:** §0.2.1 and §0.2.2 first. They block the operations board and the
+entire provider-approval flow, which are the two largest mock surfaces in the app.
+
+| #     | Missing                                               | Blocks                                                         | Why it cannot be worked around                                                                                                                                 |
+| ----- | ----------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.2.1 | `GET /admin/bookings`                                 | `/admin/ops` — the whole operations board                      | `GET /bookings` is guarded `CUSTOMER, PROVIDER` only. An admin has no booking list of any kind.                                                                |
+| 0.2.2 | `GET /admin/providers` (directory + application list) | `/admin/providers`, `/admin/approvals`, `/admin/providers/:id` | `/admin/providers` exposes **only** `approve` and `reject`. There is no way to list applicants, so the approval queue has nothing to render.                   |
+| 0.2.3 | `GET /admin/customers`                                | `/admin/customers`                                             | No customer-facing admin endpoint exists. `GET /bookings` is scoped to the caller.                                                                             |
+| 0.2.4 | `GET /admin/reports`                                  | `/admin/reports`                                               | No analytics aggregate endpoint. Revenue-by-month, success rate and per-provider performance have no source.                                                   |
+| 0.2.5 | `GET /admin/audit`                                    | `/admin/audit`                                                 | `AuditService` **writes** `audit_log`; no controller ever reads it. The data is already there.                                                                 |
+| 0.2.6 | `GET /admin/roles`                                    | `/admin/roles`                                                 | The guard matrix is server-side policy metadata, never exposed over HTTP.                                                                                      |
+| 0.2.7 | Maintenance plans (any endpoint)                      | `/account/plans`, `/plans`                                     | The `plans` table and the `PLAN_DEFERRED` ledger account exist, but nothing reads them. `services[].isPlanEligible` is eligibility, not a subscription.        |
+| 0.2.8 | Public lookup by booking code                         | `/track`                                                       | `GET /bookings/:id` takes a **uuid** and is owner-scoped. The track form takes a human reference (`SHM-0001030`), so it cannot be built on the existing route. |
+
+## 0.2.1 S1 — Admin booking list
+
+`GET /bookings` is guarded `CUSTOMER, PROVIDER`. The operations board — today's
+bookings by state, verification queue depth, SLA breaches, open disputes, escrow
+held — has no data source.
+
+**Ask:** `GET /admin/bookings?status=&from=&to=` returning the same `Booking` shape the
+existing endpoint returns, so the frontend reuses `bookingApi` rather than a second
+type. Without paging this will be the heaviest read in the system; a cursor and a
+date range would both be welcome.
+
+## 0.2.2 S1 — Provider directory and application list
+
+`provider-approval-admin.controller.ts` exposes exactly two routes:
+
+```
+POST /admin/providers/:providerId/approve
+POST /admin/providers/:providerId/reject
+```
+
+There is **no** `GET`. So the approval queue cannot list applicants, cannot show
+how many documents each has submitted, and cannot show a provider's current status.
+`/admin/providers/:id` on the frontend is worse than empty: it falls back to
+`providers[0]`, so it silently displays a **different** provider.
+
+**Ask:**
+
+```
+GET  /admin/providers?status=PENDING_APPROVAL|APPROVED|REJECTED|BLOCKED&search=&page=
+GET  /admin/providers/:providerId          → user, profile, documents, status, services
+```
+
+`documentCount` on the list row is what makes the queue useful — the queue's whole
+job is comparing submitted documents against the required list.
+
+## 0.2.3 S1 — Customer register
+
+No endpoint. `/admin/customers` currently renders 20 invented rows with real-looking
+Pakistani phone numbers.
+
+**Ask:** `GET /admin/customers?search=&status=&page=` → id, display name, **masked**
+phone, joined date, booking count, spend, status. Note this feeds NFR-PR-01: the
+register is exactly where an unmasked number leaks, so the response should be masked
+server-side rather than trusting each client to mask.
+
+## 0.2.4 S1 — Reports
+
+No reporting endpoint. `/admin/reports` renders six months of invented revenue, a
+success rate computed as `((94 + rating) - 0.5)%`, and an inert Export button.
+
+**Ask:** `GET /admin/reports?kind=revenue|bookings|providers|verification&from=&to=` with
+the aggregates the screen already claims to show. Exports (PDF/Excel) can stay
+client-side if the data is returned as rows.
+
+## 0.2.5 S2 — Audit log reader
+
+`AuditService` writes `audit_log` and **no controller reads it**. The rows already
+exist, so this is a read endpoint over data you are already producing.
+
+**Ask:** `GET /admin/audit?actor=&entity=&entityId=&from=&to=&page=` → actor, action,
+entity, entityId, before/after JSON, createdAt. `TASKS_FRONTEND.md` asks for filter by
+actor, entity and date.
+
+## 0.2.6 S3 — Roles and permissions
+
+The role matrix is enforced by the policy guard and never serialised. `/admin/roles`
+renders a 9-row matrix that was typed by hand and can drift from the guard with
+nothing failing.
+
+**Ask (or alternatively, confirm this should be removed):** `GET /admin/roles` →
+role, label, and the permission keys the guard actually checks. If exposing the policy
+metadata is not wanted, say so and the frontend will render a static explanatory page
+instead of a matrix that claims to be authoritative.
+
+## 0.2.7 S1 — Maintenance plans
+
+Confirmed absent by grep across `apps/api/src`: the only `plan` hits are the Prisma
+model, the migration, `is_plan_eligible` on services, and `PLAN_DEFERRED` in the
+ledger. There is no subscribe, no entitlement balance, no renewal, no cancel.
+
+**Ask:** see `TASKS_FRONTEND.md` Phase 5 — browse plans, subscribe, view remaining
+entitlements and renewal date, cancel. `/account/plans` currently computes a pro-rata
+refund in the browser from an invented plan list, and its cancel button does nothing.
+
+## 0.2.8 S2 — Public lookup by booking code
+
+**Ask — pick one:**
+
+1. `GET /api/v1/track/:code` → `@Public()`, returning a deliberately narrow row (status,
+   scheduled window, service name, masked professional first name). This is the option
+   that keeps `/track` usable by somebody who is not signed in.
+2. Require sign-in on `/track` and list the caller's own bookings.
+
+Option 1 needs a rate limit and must not leak provider identity or the address.
+
+---
+
 ## Contents
 
 - [Module 1 — Authentication](#module-1--authentication)
@@ -48,10 +237,17 @@ Last updated: 2026-10-03 · API commit `08bf442` · Verified against local dev
   - [5.1 Provider document upload trigger](#51-provider-document-upload-trigger)
 - [What breaks in the frontend when each fix lands](#what-breaks-in-the-frontend-when-each-fix-lands)
 - [Priority order](#priority-order-for-the-backend-team)
+- [0. Environment — ports](#0-environment--ports)
+  - [0.1 S1 — The API and the web app both default to port 3000](#01-s1--the-api-and-the-web-app-both-default-to-port-3000)
+  - [0.2 Eight missing endpoints, and the screens they block](#02-eight-missing-endpoints-and-the-screens-they-block)
 
 ---
 
 # Module 1 — Authentication
+
+**Note on ports.** Everything below was verified against the web origin on
+**`http://localhost:3001`** with the API on 3000. See §0.1 if you see
+`socket hang up` / `ECONNRESET` — that is a port collision, not an API fault.
 
 Wired by the frontend and verified live. The whole `/api/v1/auth/*` surface is
 integrated: register, OTP request/verify, login, refresh, logout, password
@@ -155,7 +351,7 @@ record the failure in both branches.
    asked for and never checked. Should the route say staff-only? Today enrolment
    is accepted and then silently inert.
 3. **`DELETE /auth/totp` and live sessions.** Docs and behaviour agree —
-   `refresh()` derives `totpVerified` from the account's *current*
+   `refresh()` derives `totpVerified` from the account's _current_
    `totp_enabled_at` (`auth.service.ts:182`), so turning TOTP off downgrades every
    live staff token on its next refresh while the token in hand stays valid until
    it expires. Noted because the window is easy to miss in review.
@@ -220,25 +416,25 @@ without size limits and an allow-listed host.
 Confirmed against the running API through the web app's own origin, so the
 rewrite and the httpOnly cookie were both in play.
 
-| Behaviour | Result |
-|---|---|
-| `register` → duplicate | `409 CONFLICT`, message names phone or email |
-| `register` → session | none, `requiresOtp: true` only — correct |
-| `otp/verify` wrong code | `422` with "N attempt(s) remaining" |
-| `otp/verify` 5th wrong | `423 OTP_LOCKED`, stays locked |
-| `otp/request` cooldown | `429 RATE_LIMITED` at 60s |
-| `password/forgot` | `{sent:true}` for known **and** unknown accounts — correctly non-disclosing |
-| `password/reset` | wrong code `422`, success `201` + session, code reuse `422`, old password `401`, other sessions revoked |
-| `refresh` rotation | cookie rotates; replaying the old cookie → `401 REFRESH_REUSE_DETECTED` |
-| logout | `204`, clears cookie, refresh afterwards `401`; also `204` with no cookie |
-| staff login, no / wrong / correct code | `401 TOTP_REQUIRED` · `422 TOTP_INVALID` · `201` with `totp` claim `true`, `/admin/settings` `200` |
+| Behaviour                              | Result                                                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `register` → duplicate                 | `409 CONFLICT`, message names phone or email                                                            |
+| `register` → session                   | none, `requiresOtp: true` only — correct                                                                |
+| `otp/verify` wrong code                | `422` with "N attempt(s) remaining"                                                                     |
+| `otp/verify` 5th wrong                 | `423 OTP_LOCKED`, stays locked                                                                          |
+| `otp/request` cooldown                 | `429 RATE_LIMITED` at 60s                                                                               |
+| `password/forgot`                      | `{sent:true}` for known **and** unknown accounts — correctly non-disclosing                             |
+| `password/reset`                       | wrong code `422`, success `201` + session, code reuse `422`, old password `401`, other sessions revoked |
+| `refresh` rotation                     | cookie rotates; replaying the old cookie → `401 REFRESH_REUSE_DETECTED`                                 |
+| logout                                 | `204`, clears cookie, refresh afterwards `401`; also `204` with no cookie                               |
+| staff login, no / wrong / correct code | `401 TOTP_REQUIRED` · `422 TOTP_INVALID` · `201` with `totp` claim `true`, `/admin/settings` `200`      |
 
 ### Client obligation this depends on
 
 `REFRESH_REUSE_DETECTED` revoking the whole session family is correct, but it
 means **a client that fires two refreshes concurrently signs the user out
 permanently.** The web app serialises refresh into a single in-flight operation
-with a short reuse window and remembers a *refused* refresh for the life of the
+with a short reuse window and remembers a _refused_ refresh for the life of the
 document; there are tests pinning all three behaviours
 (`apps/web/src/lib/api/client.test.ts`). If that constraint is ever to be
 relaxed, please tell us rather than changing it silently - every browser client
@@ -253,7 +449,7 @@ that can possibly tell the frontend who this is, is the refresh cookie.
 
 **Why this lands on the backend team and not the frontend.** The access token is
 held in a module variable in the browser (`apps/web/src/lib/api/access-token.ts`)
-and is gone on reload by design. `GET /auth/me` is therefore the *only* source of
+and is gone on reload by design. `GET /auth/me` is therefore the _only_ source of
 truth after a reload, and the app can only reach a session through
 `POST /auth/refresh` carrying the httpOnly `shm_rt` cookie. If any of the
 following is true, the frontend has no way to distinguish "signed in" from
@@ -294,7 +490,7 @@ for `/auth/me`, so it would not have caught any of the four cases above - which 
 why this is filed rather than assumed correct.
 
 **What the frontend changed anyway, and what it is not.** Two changes were made so
-the site no longer *asserts* the wrong thing:
+the site no longer _asserts_ the wrong thing:
 
 - the header renders a neutral placeholder while `/auth/me` is in flight instead
   of a Sign in link, so the state a signed-in person used to see on every full
@@ -337,18 +533,18 @@ visitor is never redirected to sign-in. All ten are integrated in the web app.
 Base `/api/v1`. Every row was captured from the running API against the seeded
 database — not read off the endpoint name.
 
-| Endpoint | Query | Success | Errors (verified) |
-|---|---|---|---|
-| `GET /catalogue/categories` | — | `{items:[{id,slug,nameEn,nameUr,sortOrder,defaultWarrantyDays,isActive}]}` | — |
-| `GET /catalogue/categories/:slug/services` | — | `{items:[ServiceRow]}` | 404 unknown category |
-| `GET /catalogue/services/:slug` | — | `ServiceRow & {checklist:[…]}` | 404 unknown slug |
-| `GET /places/cities` | — | `{items:[{id,name,timezone}]}` | — |
-| `GET /places/cities/:cityId/areas` | — | `{items:[{id,cityId,name}]}` | 400 non-numeric id, 404 unknown city |
-| `GET /search/providers` | `serviceSlug`, `lat`, `lng` — **`.strict()`** | `{items:[…9 fields]}` | 404 unknown service slug, 422 any extra key |
-| `GET /search/providers/:providerId` | — | `{providerId,status,bio,experienceYears,qualification,cityId,radiusM,services[],areas[],reputation}` | 400 malformed uuid, 404 unknown **or not approved** |
-| `GET /search/providers/:providerId/reputation` | — | `{score,ratingCount,distribution,verifiedJobs,badge}` | 400 / 404 |
-| `GET /search/providers/:providerId/remarks` | `limit` 1–100, default 20 | `{items:[{id,displayName,body,score,createdAt,reply}]}` | 400 / 404 / 422 out-of-range limit |
-| `GET /search/providers/:providerId/slots` | `serviceId`, `date` `YYYY-MM-DD` — **`.strict()`** | `{date,durationMin,items:[{start,end}]}` ISO instants | 400 / 404 provider does not offer that service, 422 |
+| Endpoint                                       | Query                                              | Success                                                                                              | Errors (verified)                                   |
+| ---------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `GET /catalogue/categories`                    | —                                                  | `{items:[{id,slug,nameEn,nameUr,sortOrder,defaultWarrantyDays,isActive}]}`                           | —                                                   |
+| `GET /catalogue/categories/:slug/services`     | —                                                  | `{items:[ServiceRow]}`                                                                               | 404 unknown category                                |
+| `GET /catalogue/services/:slug`                | —                                                  | `ServiceRow & {checklist:[…]}`                                                                       | 404 unknown slug                                    |
+| `GET /places/cities`                           | —                                                  | `{items:[{id,name,timezone}]}`                                                                       | —                                                   |
+| `GET /places/cities/:cityId/areas`             | —                                                  | `{items:[{id,cityId,name}]}`                                                                         | 400 non-numeric id, 404 unknown city                |
+| `GET /search/providers`                        | `serviceSlug`, `lat`, `lng` — **`.strict()`**      | `{items:[…9 fields]}`                                                                                | 404 unknown service slug, 422 any extra key         |
+| `GET /search/providers/:providerId`            | —                                                  | `{providerId,status,bio,experienceYears,qualification,cityId,radiusM,services[],areas[],reputation}` | 400 malformed uuid, 404 unknown **or not approved** |
+| `GET /search/providers/:providerId/reputation` | —                                                  | `{score,ratingCount,distribution,verifiedJobs,badge}`                                                | 400 / 404                                           |
+| `GET /search/providers/:providerId/remarks`    | `limit` 1–100, default 20                          | `{items:[{id,displayName,body,score,createdAt,reply}]}`                                              | 400 / 404 / 422 out-of-range limit                  |
+| `GET /search/providers/:providerId/slots`      | `serviceId`, `date` `YYYY-MM-DD` — **`.strict()`** | `{date,durationMin,items:[{start,end}]}` ISO instants                                                | 400 / 404 provider does not offer that service, 422 |
 
 `ServiceRow` = `{id,categoryId,slug,nameEn,nameUr,description,pricingModel,
 timeUnit,basePricePaisa,minPricePaisa,maxPricePaisa,visitFeePaisa,
@@ -404,21 +600,21 @@ Lahore coordinate entirely. **Highest-value fix in this document.**
 **File:** `apps/api/src/reputation/reputation.service.ts:70`
 
 ```ts
-score: weightedScoreHundredths(hundredths, prior, priorWeight, recentWeight) / 100
+score: weightedScoreHundredths(hundredths, prior, priorWeight, recentWeight) / 100;
 ```
 
 With no ratings the numerator and denominator both collapse to the prior terms,
 so the score is exactly `rating.bayesian_prior` — **3.5** with the shipped
 settings. The `Reputation` type declares `score: number`; it is never null.
 
-The Swagger description on the same field says *"Null until there is at least one
-rating and no prior"*, which the code does not do. Anything written against that
+The Swagger description on the same field says _"Null until there is at least one
+rating and no prior"_, which the code does not do. Anything written against that
 sentence renders **"3.5 out of 5"** for a professional nobody has rated.
 
 Confirmed live for the seeded provider, who has zero ratings:
 
 ```json
-{"score":3.5,"ratingCount":0,"distribution":{"1":0,"2":0,"3":0,"4":0,"5":0},"verifiedJobs":0,"badge":null}
+{ "score": 3.5, "ratingCount": 0, "distribution": { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 }, "verifiedJobs": 0, "badge": null }
 ```
 
 `ProviderSearchResult.ratingScore` has the same shape — `3.5` alongside
@@ -438,10 +634,10 @@ a live trap for the next consumer.
 **File:** `apps/api/src/reputation/reputation.service.ts:136`
 
 ```ts
-reply: row.replyBody === null ? null : { body: row.replyBody, createdAt: row.repliedAt }
+reply: row.replyBody === null ? null : { body: row.replyBody, createdAt: row.repliedAt };
 ```
 
-The Swagger text — *"each with the provider's reply if they gave one"* — reads as
+The Swagger text — _"each with the provider's reply if they gave one"_ — reads as
 a string. Typed as `string | null` and rendered directly, this **throws in React**:
 an object is not a valid child.
 
@@ -489,13 +685,13 @@ not-found state.
 
 ## 2.7 Correct by design — do not "fix"
 
-| Behaviour | Where | Why it is right |
-|---|---|---|
-| A provider who is not approved answers **404**, same as one that does not exist | `search.service.ts:143`, `reputation.service.ts:80` | The public API does not confirm that a suspended person exists. The frontend renders not-found, never "unavailable". |
-| Slots are half-hourly starts inside declared hours, clear of leave and bookings plus the travel buffer, at least an hour out | `search.service.ts:48` | Availability is current information, not a reservation. The panel says so on screen. |
-| A slot can still be lost between listing and checkout → **409 `SLOT_TAKEN`** | `booking.service.ts` | The database exclusion constraint is the final word. The UI must never present a slot as reserved. |
-| Slot instants are **UTC**, the day is **Asia/Karachi** | `search.service.ts:85` | Midnight local is `19:00Z` the previous day. Formatting in the browser's zone shows the wrong day outside Pakistan. |
-| `/search/providers` ranks by weighted rating **and** distance | `search.service.ts:125` | The **controller's OpenAPI description is stale** — it still claims distance only. The frontend avoids claiming a specific order. |
+| Behaviour                                                                                                                    | Where                                               | Why it is right                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| A provider who is not approved answers **404**, same as one that does not exist                                              | `search.service.ts:143`, `reputation.service.ts:80` | The public API does not confirm that a suspended person exists. The frontend renders not-found, never "unavailable".              |
+| Slots are half-hourly starts inside declared hours, clear of leave and bookings plus the travel buffer, at least an hour out | `search.service.ts:48`                              | Availability is current information, not a reservation. The panel says so on screen.                                              |
+| A slot can still be lost between listing and checkout → **409 `SLOT_TAKEN`**                                                 | `booking.service.ts`                                | The database exclusion constraint is the final word. The UI must never present a slot as reserved.                                |
+| Slot instants are **UTC**, the day is **Asia/Karachi**                                                                       | `search.service.ts:85`                              | Midnight local is `19:00Z` the previous day. Formatting in the browser's zone shows the wrong day outside Pakistan.               |
+| `/search/providers` ranks by weighted rating **and** distance                                                                | `search.service.ts:125`                             | The **controller's OpenAPI description is stale** — it still claims distance only. The frontend avoids claiming a specific order. |
 
 ## 2.8 Not a backend gap — the booking hand-off
 
@@ -503,10 +699,15 @@ not-found state.
 chosen slot through:
 
 ```json
-{ "providerId": "…uuid…", "serviceId": 1, "addressId": "…uuid…",
+{
+  "providerId": "…uuid…",
+  "serviceId": 1,
+  "addressId": "…uuid…",
   "scheduledStart": "2026-10-01T10:00:00.000Z",
-  "scheduledEnd":   "2026-10-01T11:00:00.000Z",
-  "problemText": "Kitchen tap is leaking", "paymentMode": "ONLINE" }
+  "scheduledEnd": "2026-10-01T11:00:00.000Z",
+  "problemText": "Kitchen tap is leaking",
+  "paymentMode": "ONLINE"
+}
 ```
 
 `POST /bookings/quote` prices the same shape first. Both require a **customer**
@@ -526,7 +727,7 @@ Wired by the frontend. `POST /bookings/quote`, `POST /bookings`, `GET /bookings`
 `/warranty-claim`, `/no-show`, `/evidence` and `/messages` are all called, plus
 `GET`/`POST /customer/addresses` as a booking dependency.
 
-**The module works.** The items below are gaps in what the API *publishes* or
+**The module works.** The items below are gaps in what the API _publishes_ or
 contradictions between the docs and the code — not reasons the feature is blocked.
 Two of them (§3.4, §3.5) the frontend has worked around in a way you should know
 about, because in both cases the workaround is visible to a customer.
@@ -576,8 +777,7 @@ consistent with what the rest of the product may show.
 **File:** `apps/api/src/booking/booking.schemas.ts:84`
 
 ```ts
-status: z.enum(['REQUESTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION',
-  'WORK_COMPLETED','UNFULFILLED','CANCELLED_CUSTOMER','CANCELLED_PROVIDER','NO_SHOW']).optional()
+status: z.enum(['REQUESTED', 'SCHEDULED', 'EN_ROUTE', 'IN_PROGRESS', 'QUOTE_REVISION', 'WORK_COMPLETED', 'UNFULFILLED', 'CANCELLED_CUSTOMER', 'CANCELLED_PROVIDER', 'NO_SHOW']).optional();
 ```
 
 Ten values. `booking_status` in the Prisma schema has **twenty-two**. So
@@ -599,11 +799,11 @@ same enum also appears in `packages/domain/src/bookingTransitions.ts` as
 page, so the frontend team went looking for it. **`BookingController` has no such
 route.** The nearest things are:
 
-| What you probably meant | Route |
-|---|---|
-| the provider proposing extra work | `POST /bookings/:id/revisions` |
-| the customer answering it | `POST /bookings/:id/revisions/approve` · `/reject` |
-| pricing a booking before committing | `POST /bookings/quote` |
+| What you probably meant             | Route                                              |
+| ----------------------------------- | -------------------------------------------------- |
+| the provider proposing extra work   | `POST /bookings/:id/revisions`                     |
+| the customer answering it           | `POST /bookings/:id/revisions/approve` · `/reject` |
+| pricing a booking before committing | `POST /bookings/quote`                             |
 
 **Action:** correct the module-5 table. No code change needed — the frontend
 builds against the controller, not the document, so nothing is blocked.
@@ -625,8 +825,8 @@ that returns the policy, and `cancelReason` is free text, so a cancellation reco
 does not say whether a fee was due.
 
 **What the frontend does, and you should check you agree with it:** the cancel
-card says *"No cancellation fee is charged — the platform does not apply one yet,
-so we will not quote you a figure that is never collected."* No fee is shown
+card says _"No cancellation fee is charged — the platform does not apply one yet,
+so we will not quote you a figure that is never collected."_ No fee is shown
 anywhere. If that is wrong, the fix is server-side and the copy has to change with
 it.
 
@@ -662,7 +862,7 @@ If (2), `cancellationPolicy` should be built from a single source that the cance
 path also consults, so the two cannot drift again.
 
 **Then, separately:** return `cancellationPolicy` and any `cancellationFeePaisa`
-from `GET /bookings/:id`, so the detail page can state the rule for *this* booking
+from `GET /bookings/:id`, so the detail page can state the rule for _this_ booking
 at the moment the customer is deciding — rather than only during checkout.
 
 ## 3.5 S2 — Auto-assign cannot show availability before a taker exists
@@ -680,8 +880,8 @@ requested time is not validated against anybody's calendar until a provider acce
 — and if that provider is busy then, the acceptance fails.
 
 **What the frontend does:** on the auto-assign path it shows **requested** windows
-labelled as requested, with the sentence *"These are the times we can offer. None
-is held until a professional accepts your request."* It never renders a slot as
+labelled as requested, with the sentence _"These are the times we can offer. None
+is held until a professional accepts your request."_ It never renders a slot as
 confirmed. On the chosen-professional path it uses `/slots` as normal.
 
 **Ask:** should an auto-assign booking show times at all, or should the flow ask
@@ -701,7 +901,7 @@ back**. The only way to see what a booking was priced for is
 
 **Consequence.** The booking detail page shows `quotedAmountPaisa`,
 `approvedTotalPaisa`, `discountPaisa` and `finalAmountPaisa` — four numbers — and
-cannot show what they are *for*. The line-item breakdown exists in the customer's
+cannot show what they are _for_. The line-item breakdown exists in the customer's
 own confirmation screen only because the frontend kept the `POST /bookings/quote`
 response in component state for that one render.
 
@@ -714,8 +914,7 @@ The rows already exist.
 **File:** `apps/api/src/booking/booking.service.ts:134`
 
 ```ts
-const payment = await this.payments.startCheckout(
-  created.paymentId, { userId: customerId }, `/checkout/return?bookingId=${booking.id}`);
+const payment = await this.payments.startCheckout(created.paymentId, { userId: customerId }, `/checkout/return?bookingId=${booking.id}`);
 ```
 
 Three problems, all confirmed live:
@@ -747,7 +946,7 @@ instead of assuming a relative path.
 
 **Also worth knowing (not a defect):** an online booking is `PENDING_PAYMENT` with
 `paymentStatus: "PENDING"` until the webhook lands. A `201` from `POST /bookings`
-means *held*, not *booked*, and the frontend says exactly that on the confirmation
+means _held_, not _booked_, and the frontend says exactly that on the confirmation
 screen. Verified: `status=PENDING_PAYMENT`, `paymentStatus=PENDING`, `redirectUrl`
 present.
 
@@ -761,9 +960,9 @@ places API (§2.2), so an area cannot become a point either.
 
 **What the frontend does:** the inline address form offers exactly two sources,
 both labelled on screen — the browser's own geolocation, or the city-centre
-approximation already used by provider search. The copy says plainly: *"There is
+approximation already used by provider search. The copy says plainly: _"There is
 no address lookup on the platform yet… we will not claim either one is your exact
-address."* A customer in a new area therefore cannot enter a precise address at
+address."_ A customer in a new area therefore cannot enter a precise address at
 all, and the professional list is searched around an approximate point.
 
 **This is the same root cause as §2.2.** Selecting `areas.centroid` fixes both.
@@ -778,34 +977,34 @@ with `customer@smart-home.local`. The seeded fixtures are: 6 active categories,
 (`00000000-0000-4000-8000-000000000098`), and 1 saved address ("Home", Gulberg,
 `31.5204, 74.3587`).
 
-| Behaviour | Result |
-|---|---|
-| login as the seeded customer | 200, roles `[CUSTOMER]`, `totpRequired: false` |
-| quote, no provider (auto-assign) | 200, `totalPaisa: 250000` — the **service base price** |
-| quote, chosen provider | 200, `quotedAmountPaisa: 100000` — **that professional's rate**, not the catalogue's `250000` |
-| `GET /customer/addresses` | 200, 1 item, and it carries a real `lat`/`lng` |
-| `GET /places/cities/:id/areas` | 200, 24 items, **no `lat`/`lng`** — §2.2 confirmed again |
-| `GET /search/providers` | 200, 1 result, `ratingScore: 3.5` with `ratingCount: 0` — §2.3 confirmed again |
-| `GET …/slots?serviceId=1&date=2026-10-06` | 200, 45 slots, `durationMin: 90`; the first start is `2026-10-05T19:00Z` for local date **the 6th** — the Asia/Karachi day boundary |
-| create, CASH, chosen provider | 201, `code: SHM-0000001`, `status: REQUESTED`, **no `payment`** |
-| create, ONLINE, chosen provider | 201, `status: PENDING_PAYMENT`, `paymentStatus: PENDING`, `redirectUrl` present |
-| create, auto-assign | 201, `isAutoAssign: true`, `providerId: null`, `quotedAmountPaisa: 250000` (base) |
-| create, **the same slot again** | **409 `SLOT_TAKEN`** — "That provider is no longer free at this time" |
-| create, unknown `addressId` | 404 `Address was not found` |
-| create, `scheduledStart` in the past | 400 "The booking must start in the future" |
-| create, one unrecognised body key | 422 `VALIDATION_FAILED` — `.strict()` confirmed |
-| reschedule from `REQUESTED` | 409 `ILLEGAL_TRANSITION` "Cannot reschedule a booking in status REQUESTED" |
-| cancel with body `{}` | 200, `CANCELLED_CUSTOMER` — the empty-body case is accepted |
-| quote, emergency on an ineligible service | 400 "This service is not available as an emergency booking" |
-| quote, unknown coupon | 400 "That coupon code is not valid" — reported, never a silent zero |
-| `GET /bookings` | 200, `{items:[…]}`, everything in one response, no paging |
-| `GET /bookings?status=SCHEDULED` | 200 |
-| **`GET /bookings?status=VERIFIED`** | **422 `VALIDATION_FAILED`** — §3.2 confirmed |
-| `GET /bookings/:id` not yours | 404 "Booking was not found" — identical to a booking that does not exist |
-| `GET /bookings/:id` malformed uuid | 400 "uuid is expected" |
-| `GET /bookings/:id/messages` at `REQUESTED` | 200, **`open: false`** — the chat is shut before a professional accepts, exactly as `canMessage` assumes |
-| `GET /bookings/:id` row keys | the 27 columns of `BOOKING_COLUMNS`, matching the frontend type field for field; `finalAmountPaisa` is `null`, not `0` |
-| cancel, then re-quote | `outstandingReceivablePaisa: 0`, `ledger_entries: 0` — **no fee charged**, see §3.4 |
+| Behaviour                                   | Result                                                                                                                              |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| login as the seeded customer                | 200, roles `[CUSTOMER]`, `totpRequired: false`                                                                                      |
+| quote, no provider (auto-assign)            | 200, `totalPaisa: 250000` — the **service base price**                                                                              |
+| quote, chosen provider                      | 200, `quotedAmountPaisa: 100000` — **that professional's rate**, not the catalogue's `250000`                                       |
+| `GET /customer/addresses`                   | 200, 1 item, and it carries a real `lat`/`lng`                                                                                      |
+| `GET /places/cities/:id/areas`              | 200, 24 items, **no `lat`/`lng`** — §2.2 confirmed again                                                                            |
+| `GET /search/providers`                     | 200, 1 result, `ratingScore: 3.5` with `ratingCount: 0` — §2.3 confirmed again                                                      |
+| `GET …/slots?serviceId=1&date=2026-10-06`   | 200, 45 slots, `durationMin: 90`; the first start is `2026-10-05T19:00Z` for local date **the 6th** — the Asia/Karachi day boundary |
+| create, CASH, chosen provider               | 201, `code: SHM-0000001`, `status: REQUESTED`, **no `payment`**                                                                     |
+| create, ONLINE, chosen provider             | 201, `status: PENDING_PAYMENT`, `paymentStatus: PENDING`, `redirectUrl` present                                                     |
+| create, auto-assign                         | 201, `isAutoAssign: true`, `providerId: null`, `quotedAmountPaisa: 250000` (base)                                                   |
+| create, **the same slot again**             | **409 `SLOT_TAKEN`** — "That provider is no longer free at this time"                                                               |
+| create, unknown `addressId`                 | 404 `Address was not found`                                                                                                         |
+| create, `scheduledStart` in the past        | 400 "The booking must start in the future"                                                                                          |
+| create, one unrecognised body key           | 422 `VALIDATION_FAILED` — `.strict()` confirmed                                                                                     |
+| reschedule from `REQUESTED`                 | 409 `ILLEGAL_TRANSITION` "Cannot reschedule a booking in status REQUESTED"                                                          |
+| cancel with body `{}`                       | 200, `CANCELLED_CUSTOMER` — the empty-body case is accepted                                                                         |
+| quote, emergency on an ineligible service   | 400 "This service is not available as an emergency booking"                                                                         |
+| quote, unknown coupon                       | 400 "That coupon code is not valid" — reported, never a silent zero                                                                 |
+| `GET /bookings`                             | 200, `{items:[…]}`, everything in one response, no paging                                                                           |
+| `GET /bookings?status=SCHEDULED`            | 200                                                                                                                                 |
+| **`GET /bookings?status=VERIFIED`**         | **422 `VALIDATION_FAILED`** — §3.2 confirmed                                                                                        |
+| `GET /bookings/:id` not yours               | 404 "Booking was not found" — identical to a booking that does not exist                                                            |
+| `GET /bookings/:id` malformed uuid          | 400 "uuid is expected"                                                                                                              |
+| `GET /bookings/:id/messages` at `REQUESTED` | 200, **`open: false`** — the chat is shut before a professional accepts, exactly as `canMessage` assumes                            |
+| `GET /bookings/:id` row keys                | the 27 columns of `BOOKING_COLUMNS`, matching the frontend type field for field; `finalAmountPaisa` is `null`, not `0`              |
+| cancel, then re-quote                       | `outstandingReceivablePaisa: 0`, `ledger_entries: 0` — **no fee charged**, see §3.4                                                 |
 
 ### Client obligations these depend on
 
@@ -856,6 +1055,13 @@ Registration and OTP login both use Pakistani numbers (`+92 3XX XXXXXXX`).
 
 ## 6.1 Provider document upload trigger
 
+> **RESOLVED — 6 Oct 2026.** This section previously said no provider-document
+> endpoint existed. That was true when it was written and is no longer: the
+> backend added `GET`/`POST /provider/documents` plus `POST /uploads/presign`,
+> and `docs-final/API_HANDOFF.md` §"Provider onboarding" now documents the flow.
+> The frontend types it in `features/provider/api.ts` and
+> `features/uploads/api.ts`. Kept below as the record of what was asked.
+
 - Registering with `role: "PROVIDER"` provisions the account with
   `requiresOtp: true`.
 - **After OTP verification succeeds**, automatically initialise the `providers`
@@ -873,25 +1079,25 @@ the backend performs it.
 So nobody merges a backend fix and breaks a page. Each row is a change the
 frontend has already prepared for, or must be told about.
 
-| If the backend changes… | The frontend must… |
-|---|---|
-| **§2.2** adds `lat`/`lng` to `AreaRow` | `features/places/api.ts` gains the fields; `features/search/location.ts` can stop hard-coding the Lahore centre; the area selector stops being disabled and **starts affecting the query** — so `dict.search.areaNotApplied` ("this cannot narrow the search") must be deleted, and `areaId` must be added to the search query key. `useCityAreas` stops needing the "cannot filter" caveat. |
-| **§2.3** makes `score` nullable | `Reputation.score` becomes `number \| null`; `profile-sections.tsx` and `provider-card.tsx` currently gate on `ratingCount`, so they keep working — but the `score === null` branch in the reputation section becomes meaningful rather than dead. |
-| **§2.4** renames or flattens `reply` | `Remark.reply` in `features/search/api.ts` and the `remark.reply.body` read in `profile-sections.tsx` must change together. |
-| **§2.6** returns `{items:[]}` for an unknown service slug | `service-detail.tsx` loses the 404 branch, and the catalogue explorer's unknown-category fallback needs rethinking — currently a 404 is a not-found state and an empty list is an empty state. |
-| **§1.7** adds social sign-in | The "Coming soon" buttons in `sign-in-form.tsx` / `register-form.tsx` become live, `authApi` gains two calls, and `session.tsx` must adopt the provider's profile shape. `callback` needs a route — currently there is none. |
-| **§1.1** fixes email OTP | No frontend change. The inline error it produces today simply stops appearing. |
-| **§1.6** adds a refresh grace period | None required, but `api-client.test.ts`'s "collapses simultaneous 401s onto a single refresh" becomes belt-and-braces rather than essential. Relaxing single-flight client-side before the server does would sign users out. |
-| **§2.5** adds `GET /auth/session` | `session.tsx` can skip `/auth/me` on public pages; the `me` query moves behind a check. |
-| **§3.1** adds names to `BOOKING_COLUMNS` | `Booking` in `features/booking/api.ts` gains the fields; **`service-names.ts` and its catalogue fan-out can be deleted entirely**, which also removes `1 + N` requests from the bookings list and the detail page. Then re-run `booking-contract.test.ts` — its "carries exactly the fields `BOOKING_COLUMNS` selects" assertion is written to fail loudly on purpose. |
-| **§3.1** adds an address to the booking row | `booking-detail.tsx` gains a real "where" line. Until then the page shows no address at all, which is a gap a customer will notice. |
-| **§3.2** widens the `status` filter | `BookingListStatus` in `features/booking/api.ts` widens to match, and `booking-list.tsx`'s `FILTERS` can offer "verified", "refunded" and so on. The hand-written enum must be deleted, not extended by hand. |
-| **§3.4** returns a cancellation policy or fee on `GET /bookings/:id` | The cancel card's copy changes: `dict.booking.cancelNote` currently says no fee is charged, which becomes false. **This is a copy change, not just a code change** — the sentence must be rewritten to state the rule as the API now applies it. |
-| **§3.5** adds a provider-agnostic availability endpoint | The auto-assign path could show real availability instead of requested windows; `requestedWindows()` in `provider-choice.tsx` would go, and the screen would become one path rather than two. |
-| **§3.6** returns `items` on `GET /bookings/:id` | The detail page can show the price breakdown after the fact rather than only during checkout. |
-| **§3.8** geocodes addresses, or `areaId` implies a point | The inline address form loses its two-source point picker; `features/search/location.ts` stops being needed there. Same root cause as §2.2. |
-| **A real `GET /catalogue/services` list endpoint is added** | `catalogueApi.listAllServices` stops fanning out and becomes one call. `useAllServices` loses its `N+1` shape. Text search and paging would then be server-side, so the client's `searchQuery` / `sortBy` / `pricingFilter` state moves into query params and the filtering moves out of `catalogue-explorer.tsx`. **Biggest single improvement available to this module.** |
-| Anything adds a **new field** to a response row | Add it to the type in `features/{catalogue,places,search}/api.ts`. `src/tests/providers/search-contract.test.ts` asserts the exact field set on the search row and will fail loudly, which is the intent. |
+| If the backend changes…                                              | The frontend must…                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **§2.2** adds `lat`/`lng` to `AreaRow`                               | `features/places/api.ts` gains the fields; `features/search/location.ts` can stop hard-coding the Lahore centre; the area selector stops being disabled and **starts affecting the query** — so `dict.search.areaNotApplied` ("this cannot narrow the search") must be deleted, and `areaId` must be added to the search query key. `useCityAreas` stops needing the "cannot filter" caveat. |
+| **§2.3** makes `score` nullable                                      | `Reputation.score` becomes `number \| null`; `profile-sections.tsx` and `provider-card.tsx` currently gate on `ratingCount`, so they keep working — but the `score === null` branch in the reputation section becomes meaningful rather than dead.                                                                                                                                           |
+| **§2.4** renames or flattens `reply`                                 | `Remark.reply` in `features/search/api.ts` and the `remark.reply.body` read in `profile-sections.tsx` must change together.                                                                                                                                                                                                                                                                  |
+| **§2.6** returns `{items:[]}` for an unknown service slug            | `service-detail.tsx` loses the 404 branch, and the catalogue explorer's unknown-category fallback needs rethinking — currently a 404 is a not-found state and an empty list is an empty state.                                                                                                                                                                                               |
+| **§1.7** adds social sign-in                                         | The "Coming soon" buttons in `sign-in-form.tsx` / `register-form.tsx` become live, `authApi` gains two calls, and `session.tsx` must adopt the provider's profile shape. `callback` needs a route — currently there is none.                                                                                                                                                                 |
+| **§1.1** fixes email OTP                                             | No frontend change. The inline error it produces today simply stops appearing.                                                                                                                                                                                                                                                                                                               |
+| **§1.6** adds a refresh grace period                                 | None required, but `api-client.test.ts`'s "collapses simultaneous 401s onto a single refresh" becomes belt-and-braces rather than essential. Relaxing single-flight client-side before the server does would sign users out.                                                                                                                                                                 |
+| **§2.5** adds `GET /auth/session`                                    | `session.tsx` can skip `/auth/me` on public pages; the `me` query moves behind a check.                                                                                                                                                                                                                                                                                                      |
+| **§3.1** adds names to `BOOKING_COLUMNS`                             | `Booking` in `features/booking/api.ts` gains the fields; **`service-names.ts` and its catalogue fan-out can be deleted entirely**, which also removes `1 + N` requests from the bookings list and the detail page. Then re-run `booking-contract.test.ts` — its "carries exactly the fields `BOOKING_COLUMNS` selects" assertion is written to fail loudly on purpose.                       |
+| **§3.1** adds an address to the booking row                          | `booking-detail.tsx` gains a real "where" line. Until then the page shows no address at all, which is a gap a customer will notice.                                                                                                                                                                                                                                                          |
+| **§3.2** widens the `status` filter                                  | `BookingListStatus` in `features/booking/api.ts` widens to match, and `booking-list.tsx`'s `FILTERS` can offer "verified", "refunded" and so on. The hand-written enum must be deleted, not extended by hand.                                                                                                                                                                                |
+| **§3.4** returns a cancellation policy or fee on `GET /bookings/:id` | The cancel card's copy changes: `dict.booking.cancelNote` currently says no fee is charged, which becomes false. **This is a copy change, not just a code change** — the sentence must be rewritten to state the rule as the API now applies it.                                                                                                                                             |
+| **§3.5** adds a provider-agnostic availability endpoint              | The auto-assign path could show real availability instead of requested windows; `requestedWindows()` in `provider-choice.tsx` would go, and the screen would become one path rather than two.                                                                                                                                                                                                |
+| **§3.6** returns `items` on `GET /bookings/:id`                      | The detail page can show the price breakdown after the fact rather than only during checkout.                                                                                                                                                                                                                                                                                                |
+| **§3.8** geocodes addresses, or `areaId` implies a point             | The inline address form loses its two-source point picker; `features/search/location.ts` stops being needed there. Same root cause as §2.2.                                                                                                                                                                                                                                                  |
+| **A real `GET /catalogue/services` list endpoint is added**          | `catalogueApi.listAllServices` stops fanning out and becomes one call. `useAllServices` loses its `N+1` shape. Text search and paging would then be server-side, so the client's `searchQuery` / `sortBy` / `pricingFilter` state moves into query params and the filtering moves out of `catalogue-explorer.tsx`. **Biggest single improvement available to this module.**                  |
+| Anything adds a **new field** to a response row                      | Add it to the type in `features/{catalogue,places,search}/api.ts`. `src/tests/providers/search-contract.test.ts` asserts the exact field set on the search row and will fail loudly, which is the intent.                                                                                                                                                                                    |
 
 ## Conflicts already found and resolved in the frontend
 
@@ -899,7 +1105,7 @@ Recorded because each was invisible to every gate:
 
 1. **A hardcoded fallback dataset in the catalogue API layer.** `api.ts` caught
    every error and answered from `catalogue-data.ts`. An unknown slug was answered
-   with a *different real service* including its price, duration and warranty, so a
+   with a _different real service_ including its price, duration and warranty, so a
    customer could have booked a job that does not exist; and a total API outage
    rendered a healthy-looking catalogue, so nobody would know to look. Fixed by
    making the API layer thin and honest, and pinned by
@@ -912,7 +1118,7 @@ Recorded because each was invisible to every gate:
    `relative`, so the stretched title link covered the filter sidebar and
    swallowed clicks on it.
 4. **An unknown category in the URL filtered to nothing.** `?category=<slug the
-   API does not publish>` produced "Showing 0 verified services" with no
+API does not publish>` produced "Showing 0 verified services" with no
    explanation, which reads as an empty catalogue. The catalogue explorer now
    discards an unrecognised slug and falls back to the whole catalogue.
 5. **A mock `serviceId` in the booking flow.** `/book/[slug]` read the service
@@ -957,28 +1163,28 @@ This is a deliberate choice and worth knowing about:
 
 # Priority order for the backend team
 
-| # | Sev | Module | Item |
-|---|---|---|---|
-| 0 | **S1** | 1 | **Confirm the refresh cookie survives the proxy** - a successful staff sign-in renders signed-out chrome, and no frontend change can fix it if `GET /auth/me` cannot answer from the cookie alone (§1.9) |
-| 1 | **S1** | 2 | Select `areas.centroid` — one line, turns the area filter from a disabled control into a real filter **and unblocks address creation (§3.8)** |
-| 2 | **S2** | 2 | Reconcile `score` / `ratingScore` with their documentation — a live trap for every consumer |
-| 3 | **S2** | 2 | `remark.reply` in the response schema — a crash for any client that reads the docs literally |
-| 4 | **S2** | 3 | Add names to `BOOKING_COLUMNS` — service, provider, address (§3.1). Without it a booking list can only show ids, and a booking detail cannot show the address at all |
-| 5 | **S2** | 3 | **Reconcile the cancellation fee with itself** (§3.4) — the quote promises Rs 500 and the cancel charges nothing. Either apply it or stop promising it; today the two halves of one feature disagree |
-| 6 | **S2** | 3 | Make the payment `returnUrl` absolute, configurable and locale-aware (§3.7) — it is hardcoded to a path this app had to add a route to match |
-| 7 | **S1** | 1 | Email OTP delivery — `isEmailTarget()` instead of `startsWith('@')` |
-| 8 | **S1** | 1 | Social authentication is entirely absent — endpoints, `federated_identities`, linking rule (§1.7) |
-| 9 | **S2** | 3 | Derive the `GET /bookings?status=` enum from the database (§3.2) — `?status=VERIFIED` is a live 422 |
-| 10 | **S2** | 3 | Correct the module-5 docs: `POST /bookings/:id/quote` does not exist (§3.3) |
-| 11 | **S3** | 3 | Return `items` on `GET /bookings/:id` — the rows exist, nothing reads them (§3.6) |
-| 12 | **S3** | 3 | A provider-agnostic availability endpoint, so an auto-assign booking can show real times (§3.5) |
-| 13 | **S3** | 2 | A cheap anonymous-session answer, removing two console entries per public page load |
-| 14 | **S3** | 5 | SMS gateway routing, sender-ID masking, WhatsApp failover (§5.1) |
-| 15 | **S2** | 1 | `/auth/me` should return `providerStatus` |
-| 16 | **S3** | 1 | Login throttle should cover unknown identifiers |
-| 17 | **S3** | 1 | Grace period for the previous refresh token (§1.6) |
-| 18 | **S2** | 1 | Refresh/logout body schemas: wire or delete |
-| 19 | — | 5, 6 | Localized notification templates; provider KYC trigger (§5.2, §6.1) |
-| 20 | — | 2 | Refresh the stale `/search/providers` OpenAPI description |
-| 21 | — | 2 | Paging / sorting / text on `/search/providers`, once there are enough providers for it to matter |
-| 22 | — | 2 | Provider first name and photo — the biggest change to how the public product looks |
+| #   | Sev    | Module | Item                                                                                                                                                                                                     |
+| --- | ------ | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | **S1** | 1      | **Confirm the refresh cookie survives the proxy** - a successful staff sign-in renders signed-out chrome, and no frontend change can fix it if `GET /auth/me` cannot answer from the cookie alone (§1.9) |
+| 1   | **S1** | 2      | Select `areas.centroid` — one line, turns the area filter from a disabled control into a real filter **and unblocks address creation (§3.8)**                                                            |
+| 2   | **S2** | 2      | Reconcile `score` / `ratingScore` with their documentation — a live trap for every consumer                                                                                                              |
+| 3   | **S2** | 2      | `remark.reply` in the response schema — a crash for any client that reads the docs literally                                                                                                             |
+| 4   | **S2** | 3      | Add names to `BOOKING_COLUMNS` — service, provider, address (§3.1). Without it a booking list can only show ids, and a booking detail cannot show the address at all                                     |
+| 5   | **S2** | 3      | **Reconcile the cancellation fee with itself** (§3.4) — the quote promises Rs 500 and the cancel charges nothing. Either apply it or stop promising it; today the two halves of one feature disagree     |
+| 6   | **S2** | 3      | Make the payment `returnUrl` absolute, configurable and locale-aware (§3.7) — it is hardcoded to a path this app had to add a route to match                                                             |
+| 7   | **S1** | 1      | Email OTP delivery — `isEmailTarget()` instead of `startsWith('@')`                                                                                                                                      |
+| 8   | **S1** | 1      | Social authentication is entirely absent — endpoints, `federated_identities`, linking rule (§1.7)                                                                                                        |
+| 9   | **S2** | 3      | Derive the `GET /bookings?status=` enum from the database (§3.2) — `?status=VERIFIED` is a live 422                                                                                                      |
+| 10  | **S2** | 3      | Correct the module-5 docs: `POST /bookings/:id/quote` does not exist (§3.3)                                                                                                                              |
+| 11  | **S3** | 3      | Return `items` on `GET /bookings/:id` — the rows exist, nothing reads them (§3.6)                                                                                                                        |
+| 12  | **S3** | 3      | A provider-agnostic availability endpoint, so an auto-assign booking can show real times (§3.5)                                                                                                          |
+| 13  | **S3** | 2      | A cheap anonymous-session answer, removing two console entries per public page load                                                                                                                      |
+| 14  | **S3** | 5      | SMS gateway routing, sender-ID masking, WhatsApp failover (§5.1)                                                                                                                                         |
+| 15  | **S2** | 1      | `/auth/me` should return `providerStatus`                                                                                                                                                                |
+| 16  | **S3** | 1      | Login throttle should cover unknown identifiers                                                                                                                                                          |
+| 17  | **S3** | 1      | Grace period for the previous refresh token (§1.6)                                                                                                                                                       |
+| 18  | **S2** | 1      | Refresh/logout body schemas: wire or delete                                                                                                                                                              |
+| 19  | —      | 5, 6   | Localized notification templates; provider KYC trigger (§5.2, §6.1)                                                                                                                                      |
+| 20  | —      | 2      | Refresh the stale `/search/providers` OpenAPI description                                                                                                                                                |
+| 21  | —      | 2      | Paging / sorting / text on `/search/providers`, once there are enough providers for it to matter                                                                                                         |
+| 22  | —      | 2      | Provider first name and photo — the biggest change to how the public product looks                                                                                                                       |

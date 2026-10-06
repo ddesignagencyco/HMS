@@ -2,11 +2,11 @@
 
 | Field | Detail |
 |---|---|
-| Version | 1.0 |
-| Physical schema | `04_schema.sql` (PostgreSQL 16 + PostGIS) — **the source of truth**; this document explains it |
+| Version | 1.0 — relocated to `docs-final/` 2026-09-28, content unchanged; see `README.md` in this folder |
+| Physical schema | `schema.sql` (PostgreSQL 16 + PostGIS) — **the source of truth**, confirmed byte-identical to `packages/db/migrations/0001_init.sql` by CI; this document explains it |
 | Tables | 72 tables, 3 views, 52 enum types |
 
-Diagrams are split by domain for readability (Mermaid renders on GitHub, GitLab, Cursor preview and most Markdown viewers). Only keys and the most significant columns are drawn; `04_schema.sql` has every column, type and constraint.
+Diagrams are split by domain for readability (Mermaid renders on GitHub, GitLab, Cursor preview and most Markdown viewers). Only keys and the most significant columns are drawn; `schema.sql` has every column, type and constraint.
 
 ---
 
@@ -594,7 +594,7 @@ Legend: **PK** primary key · **FK** foreign key · **UK** unique · 🔒 insert
 City/area (`providers_city_idx`, `areas_city_idx`, `addresses.area_id`), service (`provider_services_service_idx`, `bookings_service_idx`), booking status (`bookings_status_idx`), rating (`provider_stats_rating_idx`), geography GiST (`providers_location_gix`, `addresses_location_gix`), queue (`verification_queue_idx`), outbox (`outbox_unprocessed_idx`), audit (`audit_log_entity_idx`, `audit_log_actor_idx`).
 
 ## 12. Prisma Integration
-1. `dbmate up` applies `04_schema.sql` (copied to `packages/db/migrations/0001_init.sql`).
+1. `dbmate up` applies `schema.sql` (copied to `packages/db/migrations/0001_init.sql`).
 2. `prisma db pull` introspects; `geography` and `tstzrange` columns appear as `Unsupported(...)` — read/write them with `$queryRaw` in dedicated repository functions (`SlotRepository`, `GeoRepository`).
 3. `prisma generate` produces the typed client. **Never** run `prisma migrate`; all schema changes are new dbmate SQL files followed by `db pull`.
 4. Money columns are `BigInt` in Prisma — convert with the shared `Money` helper; never `Number()` on paisa values above 2^53 (not reachable in practice, but enforced by lint).

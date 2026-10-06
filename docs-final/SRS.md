@@ -2,10 +2,10 @@
 
 | Field | Detail |
 |---|---|
-| Document | Software Requirements Specification (SRS) |
+| Document | Software Requirements Specification (SRS) — the doc of record, see `README.md` in this folder |
 | Version | 2.1 (build baseline) |
-| Supersedes | SRS v2.0 (4 Sep 2026), which superseded FR.pdf |
-| Companion documents | `02_TRD.md` (technical design), `03_ERD.md` + `04_schema.sql` (data model), `05_CURSOR_BUILD_PROMPT.md` (build instructions) |
+| Supersedes | SRS v2.0 (4 Sep 2026, `archive/SRS_Smart_Home_Maintenance_Services.pdf`), which superseded FR.pdf |
+| Companion documents | `TRD.md` (technical design, this folder), `ERD.md` (this folder) + `schema.sql` (data model, this folder), `archive/05_CURSOR_BUILD_PROMPT.md` (build instructions — historical, see `README.md`) |
 | Currency / time zone | PKR / Asia/Karachi (PKT, UTC+5) |
 
 > **What changed in 2.1.** v2.0 is functionally complete but contained a number of ambiguities and internal contradictions that would have been discovered only during build or test (cash collection timing, the 25-point integrity rule vs. the demerit schedule, `per Day` vs `hourly` pricing, where `CALL_IN_PROGRESS` lives, and others). Section 3 resolves every one of them with a stated decision. All v2.0 requirement IDs are preserved unchanged; new requirements are appended with new IDs and marked **v2.1**. Nothing from FR.pdf has been dropped (Appendix A).
@@ -528,7 +528,7 @@ Additional detailed use case:
 ---
 
 ## 11. Data Requirements
-The complete logical and physical model is in `03_ERD.md` and `04_schema.sql`. Integrity rules enforced **in the database**:
+The complete logical and physical model is in `ERD.md` (this folder) and `schema.sql`. Integrity rules enforced **in the database**:
 1. `ratings.verification_call_id` NOT NULL, FK, UNIQUE; the referenced record must have a rating-producing outcome (trigger).
 2. `bookings` cannot enter `WORK_COMPLETED` unless `start_otp_verified_at` is set (CHECK).
 3. `bookings` cannot enter `PAYMENT_RELEASED` unless a release-permitting verification exists or auto-release applies (trigger).

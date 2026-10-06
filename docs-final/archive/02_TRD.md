@@ -1,5 +1,11 @@
 # Technical Requirements & Design Document (TRD) — Smart Home Maintenance Services
 
+> **Superseded 2026-09-28 — see `../docs-final/TRD.md`.** That document keeps this one's
+> business-logic depth (state machine, ledger, verification engine, etc., all still correct)
+> and corrects every stack/repo-layout fact against the code that was actually built
+> (Express not Fastify, npm workspaces not Turborepo/pnpm, and more — see its §0 and §24).
+> Left here as historical record; do not treat this copy as current.
+
 | Field | Detail |
 |---|---|
 | Version | 1.0 |

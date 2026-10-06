@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarDays, ClipboardCheck, MapPin, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
+import { AlertTriangle, CalendarDays, ClipboardCheck, MapPin, ReceiptText, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import type { Dictionary } from "@/lib/dictionaries";
@@ -353,44 +353,13 @@ export function BookingDetailView({ locale, dict, id }: { locale: Locale; dict: 
   );
 }
 
-export function AddressesView({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  return (
-    <div>
-      <PageHeader eyebrow={dict.portal.customer} title={dict.portal.addresses} action={<button className={buttonStyles()}><MapPin className="size-4" />{dict.portal.addAddress}</button>} />
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        {areas.slice(0, 4).map((area, index) => <Card key={area.id} className="p-5"><div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold text-navy">{area.name[locale]}</h2><p className="mt-2 text-sm text-secondary">House {24 + index}, Street {7 + index}, {area.name[locale]}</p><p className="mt-1 text-xs text-muted">Default · {index === 0 ? "Yes" : "No"}</p></div><MapPin className="size-5 text-primary" /></div></Card>)}
-      </div>
-    </div>
-  );
-}
+/* `AddressesView` and `ProfileView` used to live here and rendered mock data —
+   four address cards invented from the array index, and a profile reading
+   "Ayesha Khan / 0300 1234567 / Gulberg III" regardless of who was signed in.
 
-export function ProfileView({ dict }: { dict: Dictionary }) {
-  return (
-    <div>
-      <PageHeader eyebrow={dict.portal.customer} title={dict.portal.profile} action={<button className={buttonStyles()}><UserRound className="size-4" />{dict.portal.editProfile}</button>} />
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_400px]">
-        <Card className="p-6">
-          <dl className="grid gap-4 text-sm"><div className="flex justify-between border-b border-line pb-3"><dt className="text-muted">{dict.auth.name}</dt><dd className="font-medium text-navy">Ayesha Khan</dd></div><div className="flex justify-between border-b border-line pb-3"><dt className="text-muted">{dict.auth.phone}</dt><dd className="text-navy">0300 1234567</dd></div><div className="flex justify-between"><dt className="text-muted">{dict.common.area}</dt><dd className="text-navy">Gulberg III</dd></div></dl>
-        </Card>
+   Both are real now:
+     · `features/account/addresses-view.tsx` — `GET`/`POST`/`PATCH`/`DELETE /customer/addresses`
+     · `features/account/profile-view.tsx`    — `GET /auth/me`
 
-        {/* FR-CU-09: deactivate anonymises PII, keeps bookings and the ledger. */}
-        <Card className="p-6">
-          <h2 className="font-semibold text-navy">{dict.portal.deactivateTitle}</h2>
-          <p className="mt-2 text-sm leading-6 text-secondary">{dict.portal.deactivateText}</p>
-          <ul className="mt-4 grid gap-2">
-            {[dict.portal.deactivate1, dict.portal.deactivate2, dict.portal.deactivate3].map((line) => (
-              <li key={line} className="flex items-start gap-2.5 text-sm leading-6 text-secondary">
-                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden="true" />
-                {line}
-              </li>
-            ))}
-          </ul>
-          <button type="button" className="mt-6 min-h-11 w-full rounded-[9px] border border-rose-300 bg-rose-50 text-sm font-semibold text-rose-700 transition hover:bg-rose-100">
-            {dict.portal.deactivate}
-          </button>
-          <p className="mt-3 text-xs text-muted">{dict.portal.deactivateHint}</p>
-        </Card>
-      </div>
-    </div>
-  );
-}
+   They were removed rather than left unused: a component that renders a
+   plausible-looking address list is one someone will reach for again. */

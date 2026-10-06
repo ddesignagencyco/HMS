@@ -10,29 +10,58 @@
    the session provider clears every non-`auth` key on sign-out, so nothing here
    survives into the next account. */
 
-import type { ProviderSearchFilters } from "@/features/search/types";
-import type { BookingListStatus } from "@/features/booking/api";
-import { ApiError } from "@/lib/api/problem";
+import type { ProviderSearchFilters } from '@/features/search/types';
+import type { BookingListStatus } from '@/features/booking/api';
+import { ApiError } from '@/lib/api/problem';
 
 export const publicKeys = {
-  categories: ["public", "categories"] as const,
-  categoryServices: (slug: string) => ["public", "categories", slug, "services"] as const,
-  service: (slug: string) => ["public", "services", slug] as const,
-  cities: ["public", "places", "cities"] as const,
-  areas: (cityId: number) => ["public", "places", "cities", cityId, "areas"] as const,
+  categories: ['public', 'categories'] as const,
+  categoryServices: (slug: string) => ['public', 'categories', slug, 'services'] as const,
+  service: (slug: string) => ['public', 'services', slug] as const,
+  cities: ['public', 'places', 'cities'] as const,
+  areas: (cityId: number) => ['public', 'places', 'cities', cityId, 'areas'] as const,
   /** Every effective filter, in a fixed order, so equivalent searches share a key. */
-  providerSearch: (filters: ProviderSearchFilters) =>
-    ["public", "search", "providers", filters.serviceSlug, filters.lat, filters.lng] as const,
-  provider: (providerId: string) => ["public", "providers", providerId] as const,
-  reputation: (providerId: string) => ["public", "providers", providerId, "reputation"] as const,
-  remarks: (providerId: string, limit: number) => ["public", "providers", providerId, "remarks", limit] as const,
-  slots: (providerId: string, serviceId: number, date: string) =>
-    ["public", "providers", providerId, "slots", serviceId, date] as const,
+  providerSearch: (filters: ProviderSearchFilters) => ['public', 'search', 'providers', filters.serviceSlug, filters.lat, filters.lng] as const,
+  provider: (providerId: string) => ['public', 'providers', providerId] as const,
+  reputation: (providerId: string) => ['public', 'providers', providerId, 'reputation'] as const,
+  remarks: (providerId: string, limit: number) => ['public', 'providers', providerId, 'remarks', limit] as const,
+  slots: (providerId: string, serviceId: number, date: string) => ['public', 'providers', providerId, 'slots', serviceId, date] as const
 } as const;
 
 export const accountKeys = {
   /** The signed-in customer's saved addresses. Theirs alone; never shared. */
-  addresses: ["account", "addresses"] as const,
+  addresses: ['account', 'addresses'] as const
+} as const;
+
+/**
+ * The signed-in professional's own records.
+ *
+ * Every route is `PROVIDER`-guarded and identified by the access token, so
+ * **nothing here is keyed on a provider id** — there is no provider id in these
+ * paths, and adding one would be inventing a contract. Keys are per-account and
+ * are purged on sign-out by the same rule as every other non-`auth` key, so a
+ * second professional signing in on the same browser never sees the first one's
+ * earnings.
+ */
+export const providerKeys = {
+  all: ['provider'] as const,
+  profile: ['provider', 'profile'] as const,
+  services: ['provider', 'services'] as const,
+  serviceAreas: ['provider', 'service-areas'] as const,
+  availability: ['provider', 'availability'] as const,
+  timeOff: ['provider', 'time-off'] as const,
+  /** Offers are perishable — `expiresAt` on each row — so never cached. */
+  offers: ['provider', 'offers'] as const,
+  earnings: ['provider', 'earnings'] as const,
+  wallet: ['provider', 'wallet'] as const,
+  payouts: ['provider', 'payouts'] as const,
+  payoutAccounts: ['provider', 'payout-accounts'] as const,
+  ratings: ['provider', 'ratings'] as const,
+  conduct: ['provider', 'conduct'] as const,
+  penalties: ['provider', 'penalties'] as const,
+  appeals: ['provider', 'appeals'] as const,
+  disputes: ['provider', 'disputes'] as const,
+  dispute: (id: string) => ['provider', 'disputes', id] as const
 } as const;
 
 /**
@@ -49,9 +78,9 @@ export const accountKeys = {
  * is a mutation for the same reason.
  */
 export const bookingKeys = {
-  all: ["account", "bookings"] as const,
-  list: (status?: BookingListStatus) => ["account", "bookings", "list", status ?? "all"] as const,
-  detail: (bookingId: string) => ["account", "bookings", "detail", bookingId] as const,
+  all: ['account', 'bookings'] as const,
+  list: (status?: BookingListStatus) => ['account', 'bookings', 'list', status ?? 'all'] as const,
+  detail: (bookingId: string) => ['account', 'bookings', 'detail', bookingId] as const
 } as const;
 
 /**
@@ -79,6 +108,21 @@ export const FRESHNESS = {
   booking: { staleTime: 15_000, gcTime: 5 * 60_000 },
   /** The chat changes when the provider replies, and reading it has a side effect. */
   messages: { staleTime: 0, gcTime: 60_000, refetchOnWindowFocus: true },
+  /* The professional's own records. Offers lapse on a clock, so they get no stale
+     window at all — an offer that expired must not still be on screen as live. */
+  providerProfile: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
+  providerServices: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
+  providerAreas: { staleTime: 10 * 60_000, gcTime: 30 * 60_000 },
+  availability: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
+  offers: { staleTime: 0, gcTime: 60_000, refetchOnWindowFocus: true },
+  /* Money moves between screens — a payout request changes the wallet — so these
+     are short and invalidated by their own mutations. */
+  earnings: { staleTime: 60_000, gcTime: 5 * 60_000 },
+  payouts: { staleTime: 60_000, gcTime: 5 * 60_000 },
+  ratings: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
+  conduct: { staleTime: 5 * 60_000, gcTime: 30 * 60_000 },
+  penalties: { staleTime: 5 * 60_000, gcTime: 30 * 60_000 },
+  disputes: { staleTime: 60_000, gcTime: 5 * 60_000 }
 } as const;
 
 /** True when the API is saying "this does not exist" rather than "try again". */

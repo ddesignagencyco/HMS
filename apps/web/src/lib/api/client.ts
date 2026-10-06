@@ -1,9 +1,9 @@
-import type { Locale } from "@/lib/utils";
-import { readAccessToken, writeAccessToken } from "./access-token";
-import { ApiError, EXPIRED_SESSION_CODES, isProblem, NetworkError, type Problem } from "./problem";
+import type { Locale } from '@/lib/utils';
+import { readAccessToken, writeAccessToken } from './access-token';
+import { ApiError, EXPIRED_SESSION_CODES, isProblem, NetworkError, type Problem } from './problem';
 
 /** Same-origin prefix; next.config.ts rewrites it to the API process. */
-export const API_BASE = "/api/v1";
+export const API_BASE = '/api/v1';
 
 export type SessionResult = {
   user: {
@@ -13,7 +13,7 @@ export type SessionResult = {
     firstName: string;
     lastName: string;
     locale: string;
-    status: "ACTIVE" | "LOCKED" | "DEACTIVATED";
+    status: 'ACTIVE' | 'LOCKED' | 'DEACTIVATED';
     roles: string[];
     totpEnabled: boolean;
     providerStatus: string | null;
@@ -24,11 +24,18 @@ export type SessionResult = {
 };
 
 export type ApiRequest = {
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined>;
   signal?: AbortSignal;
   locale?: Locale;
+  /**
+   * Extra headers for this call. Used for `Idempotency-Key`, which the API
+   * accepts on every write — see `lib/api/idempotency.ts`. Merged last, so a
+   * caller can override a default but cannot accidentally drop `accept` or the
+   * bearer token by replacing the object.
+   */
+  headers?: Record<string, string>;
   /**
    * Whether to present the session at all. False on public reads: the catalogue,
    * the places list and provider search are `@Public()` on the API, so sending a
@@ -60,45 +67,48 @@ const announceSessionLost = (): void => {
   for (const listener of sessionLostListeners) listener();
 };
 
-const buildUrl = (path: string, query: ApiRequest["query"]): string => {
+const buildUrl = (path: string, query: ApiRequest['query']): string => {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value !== undefined) search.set(key, String(value));
   }
   const suffix = search.toString();
-  return `${API_BASE}${path}${suffix === "" ? "" : `?${suffix}`}`;
+  return `${API_BASE}${path}${suffix === '' ? '' : `?${suffix}`}`;
 };
 
 type RawResult = { status: number; body: unknown };
 
 /** One round trip. No refresh, no retry: the layers above own those decisions. */
 const rawFetch = async (path: string, request: ApiRequest): Promise<RawResult> => {
-  const headers: Record<string, string> = { accept: "application/json, application/problem+json" };
-  if (request.body !== undefined) headers["content-type"] = "application/json";
-  if (request.locale !== undefined) headers["accept-language"] = request.locale;
+  const headers: Record<string, string> = { accept: 'application/json, application/problem+json' };
+  if (request.body !== undefined) headers['content-type'] = 'application/json';
+  if (request.locale !== undefined) headers['accept-language'] = request.locale;
   const authorization = readAccessToken();
   if (request.auth !== false && authorization !== null) headers.authorization = `Bearer ${authorization}`;
+  /* Caller's headers last, so `Idempotency-Key` can be added without having to
+     restate — or accidentally drop — the ones above. */
+  for (const [name, value] of Object.entries(request.headers ?? {})) headers[name] = value;
 
   let response: Response;
   try {
     response = await fetch(buildUrl(path, request.query), {
-      method: request.method ?? "GET",
+      method: request.method ?? 'GET',
       headers,
       /* The refresh cookie is httpOnly and scoped to /api/v1/auth; it has to
          ride along on every request or a reload cannot restore the session. */
-      credentials: "include",
+      credentials: 'include',
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
-      ...(request.signal === undefined ? {} : { signal: request.signal }),
+      ...(request.signal === undefined ? {} : { signal: request.signal })
     });
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
-    throw new NetworkError("The server could not be reached", error);
+    if (error instanceof Error && error.name === 'AbortError') throw error;
+    throw new NetworkError('The server could not be reached', error);
   }
 
   if (response.status === 204) return { status: 204, body: undefined };
   const text = await response.text();
   let body: unknown;
-  if (text === "") body = undefined;
+  if (text === '') body = undefined;
   else {
     try {
       body = JSON.parse(text);
@@ -112,12 +122,12 @@ const rawFetch = async (path: string, request: ApiRequest): Promise<RawResult> =
 const problemFrom = (status: number, body: unknown): Problem => {
   if (isProblem(body)) return body;
   return {
-    type: "about:blank",
-    title: "Request failed",
+    type: 'about:blank',
+    title: 'Request failed',
     status,
-    code: "INTERNAL_ERROR",
-    detail: "The request could not be completed.",
-    errors: [],
+    code: 'INTERNAL_ERROR',
+    detail: 'The request could not be completed.',
+    errors: []
   };
 };
 
@@ -151,8 +161,8 @@ const performRefresh = async (locale: Locale | undefined): Promise<boolean> => {
      session rather than the end of one, and must not be announced as an expiry. */
   const hadToken = readAccessToken() !== null;
   try {
-    const { status, body } = await rawFetch("/auth/refresh", { method: "POST", locale, refreshOnExpiry: false });
-    if (status >= 200 && status < 300 && typeof body === "object" && body !== null && "accessToken" in body) {
+    const { status, body } = await rawFetch('/auth/refresh', { method: 'POST', locale, refreshOnExpiry: false });
+    if (status >= 200 && status < 300 && typeof body === 'object' && body !== null && 'accessToken' in body) {
       const result = body as SessionResult;
       writeAccessToken(result.accessToken, result.expiresInSeconds);
       refreshUnavailable = false;
@@ -164,7 +174,7 @@ const performRefresh = async (locale: Locale | undefined): Promise<boolean> => {
     return false;
   } catch (error) {
     /* A cancelled or offline refresh leaves the session exactly as it was. */
-    if (!(error instanceof Error && error.name === "AbortError")) {
+    if (!(error instanceof Error && error.name === 'AbortError')) {
       writeAccessToken(null);
       refreshUnavailable = true;
       if (hadToken) announceSessionLost();
@@ -188,8 +198,7 @@ export const refreshSession = (locale?: Locale): Promise<boolean> => {
   return inFlightRefresh;
 };
 
-const isExpiredSession = (error: unknown): boolean =>
-  error instanceof ApiError && EXPIRED_SESSION_CODES.includes(error.code);
+const isExpiredSession = (error: unknown): boolean => error instanceof ApiError && EXPIRED_SESSION_CODES.includes(error.code);
 
 const asError = (status: number, body: unknown): ApiError => new ApiError(problemFrom(status, body));
 
