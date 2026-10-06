@@ -18,6 +18,7 @@ import {
   type ProviderService,
   type ProviderServiceArea,
   type PayoutAccountInput,
+  type ProviderDocumentInput,
   type SetProviderServiceInput,
   type TimeOffInput,
   type Wallet
@@ -239,6 +240,36 @@ export const useAddPayoutAccount = (locale: Locale) => {
 };
 
 export const usePayDebt = (locale: Locale) => useProviderAction((amountPaisa: number) => providerApi.payDebt(amountPaisa, { locale }));
+
+/* ---- Documents ----------------------------------------------------------- */
+
+export const useProviderDocuments = (locale: Locale) =>
+  useQuery({
+    queryKey: providerKeys.documents,
+    queryFn: ({ signal }) => providerApi.documents({ signal, locale }),
+    staleTime: FRESHNESS.providerProfile.staleTime,
+    gcTime: FRESHNESS.providerProfile.gcTime,
+    retry: publicRetry
+  });
+
+/**
+ * Records a document. `documentSubmitSchema` refuses both and neither of
+ * `contentBase64` / `storageKey`, so this takes the presigned key the uploads
+ * screen produces.
+ */
+export const useSubmitDocument = (locale: Locale) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ProviderDocumentInput) => providerApi.submitDocument(input, { locale }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: providerKeys.documents });
+      /* The CNIC banner reads from the same response, so a fresh CNIC number
+         changes whether `cnicVerified` is true. */
+      void queryClient.invalidateQueries({ queryKey: providerKeys.profile });
+    },
+    ...noRetry
+  });
+};
 
 /* ---- Reputation --------------------------------------------------------- */
 

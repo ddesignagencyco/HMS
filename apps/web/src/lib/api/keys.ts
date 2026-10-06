@@ -61,7 +61,10 @@ export const providerKeys = {
   penalties: ['provider', 'penalties'] as const,
   appeals: ['provider', 'appeals'] as const,
   disputes: ['provider', 'disputes'] as const,
-  dispute: (id: string) => ['provider', 'disputes', id] as const
+  dispute: (id: string) => ['provider', 'disputes', id] as const,
+  /** The CNIC banner reads from the same response, so this key is invalidated
+      alongside it when a document is submitted. */
+  documents: ['provider', 'documents'] as const
 } as const;
 
 /**

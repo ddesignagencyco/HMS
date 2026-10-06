@@ -108,9 +108,9 @@ export const MAX_SERVICE_AREAS = 50;
    screen drew a month calendar with "booked" and "free" cells, which is a view of
    bookings, not of availability — and availability is what this endpoint owns.
 
-   `GET /provider/availability` answers `{ items }` and `PUT` takes `{ items }`;
-   there is no `travelBufferMinutes` field, so the buffer note cannot be sourced
-   from here. Both request and response use the same envelope. */
+   The row carries an `id`, but `availabilityReplaceSchema` is `.strict()` and does
+   **not** accept one: a save sends `{ items: [{ weekday, startTime, endTime }] }`
+   and the server re-inserts, handing out fresh ids. */
 
 export type AvailabilityBlock = {
   /** 0 = Sunday … 6 = Saturday. `availabilityReplaceSchema`. */
@@ -120,21 +120,26 @@ export type AvailabilityBlock = {
   endTime: string;
 };
 
-/** `availabilityReplaceSchema` caps the list at 21 blocks. See `limits.ts`. */
-export { MAX_AVAILABILITY_BLOCKS } from './limits';
+/** What `listMine` returns — same as a block plus the row's own id. */
+export type AvailabilityRow = AvailabilityBlock & { id: string };
 
-export type Availability = { items: AvailabilityBlock[] };
+export type Availability = { items: AvailabilityRow[] };
 
 /* ---- Leave ---------------------------------------------------------------
    `timeOffCreateSchema` takes `{ start, end }` as **ISO datetimes**, not dates —
    an earlier draft of this file typed them as `fromDate`/`toDate`, which would
-   have been a 422 on every leave request. */
+   have been a 422 on every leave request.
+
+   The stored range is half-open (`[)`): `end` is the first moment work is
+   possible again, so a one-day leave on the 10th is start=10th 00:00, end=11th
+   00:00, not start=end=10th. The screen converts a single picked date that way. */
 
 export type TimeOff = {
   id: string;
   start: string;
   end: string;
   reason: string | null;
+  createdAt: string;
 };
 
 export type TimeOffInput = { start: string; end: string; reason?: string };
@@ -328,37 +333,74 @@ export type ProviderDisputeDetail = ProviderDispute & {
    these screens were first written, and BACKEND_REQUIREMENTS §6.1 said so — that
    entry is now wrong and has been corrected.
 
-   Upload is presigned, not a single POST:
-     POST /uploads/presign  →  a target URL
-     PUT  <that URL>        →  the file bytes
-     POST /provider/documents  →  confirm, returns 201
-   See `presignUpload` below. */
+   Two routes, and the schema is strict about the choice between them:
 
-/** `provider_document_kind` in the schema. */
+     A. inline     → `POST /provider/documents` with `{ docType, contentBase64, contentType }`
+     B. presigned  → `POST /uploads/presign` → PUT the bytes → `POST /provider/documents`
+                     with `{ docType, storageKey }`
+
+   `documentSubmitSchema` refuses **both and neither**, so the screen must pick one
+   and stick to it. B is what a phone on a weak connection wants.
+
+   `cnicNumber` is accepted only alongside `CNIC_FRONT` or `CNIC_BACK`, is encrypted
+   at rest, and is **never returned** by any endpoint — the response carries
+   `cnic: { hasCnic, cnicVerified }` and nothing else. */
+
+/** `DocumentType` in packages/contracts. */
 export type ProviderDocumentKind = 'CNIC_FRONT' | 'CNIC_BACK' | 'TRADE_CERTIFICATE' | 'CHARACTER_CERTIFICATE';
+
+export type ProviderDocumentStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export type ProviderDocument = {
   id: string;
-  kind: ProviderDocumentKind;
-  /** Object key, not a public URL. Resolve it through the storage route. */
-  objectKey: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  rejectionReason: string | null;
-  uploadedAt: string;
+  providerId: string;
+  docType: ProviderDocumentKind;
+  status: ProviderDocumentStatus;
+  /** A storage key, never a public URL — viewing is a privileged, logged action. */
+  storageKey: string;
+  reviewedBy: string | null;
   reviewedAt: string | null;
+  /** Why it was rejected. The API requires one whenever the status is REJECTED. */
+  reviewNote: string | null;
+  createdAt: string;
 };
 
-export type ProviderDocumentInput = { kind: ProviderDocumentKind; objectKey: string };
+/** The CNIC's review state, and nothing about the number itself. */
+export type CnicReviewState = { hasCnic: boolean; cnicVerified: boolean };
 
-/** What `POST /uploads/presign` returns. */
+export type ProviderDocumentList = { items: ProviderDocument[]; cnic: CnicReviewState };
+
+/** `documentContentTypes` — deliberately narrow: no generic octet-stream. */
+export const DOCUMENT_CONTENT_TYPES = ['image/jpeg', 'image/png', 'application/pdf'] as const;
+export type DocumentContentType = (typeof DOCUMENT_CONTENT_TYPES)[number];
+
+/** `MAX_DOCUMENT_BYTES`, which the presign response also reports back. */
+export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
+
+/** Exactly one of `contentBase64` or `storageKey` — the schema refuses both and neither. */
+export type ProviderDocumentInput = {
+  docType: ProviderDocumentKind;
+  clientUuid?: string;
+  contentType?: DocumentContentType;
+  contentBase64?: string;
+  storageKey?: string;
+  /** Only alongside CNIC_FRONT or CNIC_BACK. */
+  cnicNumber?: string;
+};
+
+/** What `POST /uploads/presign` returns. No `headers` — the storage mock takes
+    the content type as a query parameter, so nothing extra is sent on the PUT. */
 export type PresignedUpload = {
+  storageKey: string;
   url: string;
   method: 'PUT';
-  headers: Record<string, string>;
-  objectKey: string;
-  /** PUT the bytes to `url` directly — do not route this through `apiRequest`. */
   expiresAt: string;
+  maxBytes: number;
 };
+
+/** `documentPresignSchema`. Only the type is sent — the size is checked locally
+    against `maxBytes` rather than declared up front. */
+export type PresignInput = { docType: ProviderDocumentKind; contentType: DocumentContentType };
 
 /** Only defined keys are sent: the provider write schemas are `.strict()`. */
 const compact = <T extends Record<string, unknown>>(input: T): Partial<T> => {
@@ -386,8 +428,7 @@ export const providerApi = {
   setAvailability: (blocks: AvailabilityBlock[], options?: ProviderOptions) => call<Availability>('/provider/availability', { method: 'PUT', body: { items: blocks } }, options),
 
   timeOff: (options?: ProviderOptions) => call<{ items: TimeOff[] }>('/provider/time-off', {}, options),
-  addTimeOff: (input: TimeOffInput, options?: ProviderOptions) =>
-    call<{ id: string; start: string; end: string; reason: string | null }>('/provider/time-off', { method: 'POST', body: compact(input) }, options),
+  addTimeOff: (input: TimeOffInput, options?: ProviderOptions) => call<TimeOff>('/provider/time-off', { method: 'POST', body: compact(input) }, options),
   removeTimeOff: (id: string, options?: ProviderOptions) => call<undefined>(`/provider/time-off/${encodeURIComponent(id)}`, { method: 'DELETE' }, options),
 
   /* ---- Offers ---- */
@@ -410,7 +451,7 @@ export const providerApi = {
     call<{ paymentId?: string; redirectUrl: string }>('/provider/debt/pay', { method: 'POST', body: compact({ amountPaisa }) }, options),
 
   /* ---- Documents ---- */
-  documents: (options?: ProviderOptions) => call<{ items: ProviderDocument[] }>('/provider/documents', {}, options),
+  documents: (options?: ProviderOptions) => call<ProviderDocumentList>('/provider/documents', {}, options),
   submitDocument: (input: ProviderDocumentInput, options?: ProviderOptions) => call<ProviderDocument>('/provider/documents', { method: 'POST', body: compact(input) }, options),
 
   /* ---- Reputation ---- */

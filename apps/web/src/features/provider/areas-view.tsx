@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Button, Card, PageHeader } from '@/components/ui';
+import { Button, Card, Label, PageHeader } from '@/components/ui';
 import { useCities, useCityAreas } from '@/features/places/queries';
 import { useProviderServiceAreas, useSetServiceAreas } from '@/features/provider/queries';
 import { MAX_SERVICE_AREAS } from '@/features/provider/api';
@@ -97,6 +97,26 @@ export function ProviderAreasScreen({ locale, dict }: { locale: Locale; dict: Di
 
       <Card className="mt-6 p-6">
         <p className="text-sm text-secondary">{dict.portal.areasSaved.replace('{count}', formatNumber(savedCount, locale))}</p>
+
+        {cities.data !== undefined && cities.data.items.length > 1 ? (
+          /* The places API is city-scoped, so with more than one city on the
+               platform the picker has to say which one these areas belong to. */
+          <div className="mt-4 grid max-w-xs gap-2">
+            <Label htmlFor="areas-city">{dict.booking.cityLabel}</Label>
+            <select
+              id="areas-city"
+              className="min-h-11 rounded-[9px] border border-line bg-white px-3 text-sm"
+              value={effectiveCityId ?? ''}
+              onChange={(event) => setCityId(Number(event.target.value))}
+            >
+              {cities.data.items.map((city) => (
+                <option key={city.id} value={city.id}>
+                  {city.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         {cities.isError ? (
           <p role="alert" className="mt-4 text-sm text-rose-700">

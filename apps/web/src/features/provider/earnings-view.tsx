@@ -4,7 +4,7 @@ import { AlertTriangle, Banknote, Clock3, TrendingUp } from 'lucide-react';
 import { Button, Card, PageHeader, StatCard } from '@/components/ui';
 import { useEarnings, useWallet } from '@/features/provider/queries';
 import type { Dictionary } from '@/lib/dictionaries';
-import { formatMoney, formatNumber, type Locale } from '@/lib/utils';
+import { formatMoney, type Locale } from '@/lib/utils';
 
 /* What a professional has earned and what they can ask for.
 
