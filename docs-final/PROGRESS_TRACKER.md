@@ -8,10 +8,12 @@
 | Baseline docs | SRS v2.1 (`SRS.md`) · TRD (`TRD.md`) · ERD (`ERD.md`) · `schema.sql` · Cursor build prompt |
 | Tracker created | 21 Sep 2026 |
 | Last updated | 5 Oct 2026 - *update on every change* |
-| Reconciled against | `apps/api/test/api-surface.baseline.json` — **171 operations**, 2026-10-05 |
+| Reconciled against | `apps/api/test/api-surface.baseline.json` — **175 operations**, 2026-10-05 |
 | Product owner | Muhammad Hamza Kundi |
 | BE lead | backend agent |
 | FE lead | _name_ |
+
+**Client request of 5 Oct 2026, and where each part landed.** Four asks. One ("book a provider for the next hour") was partly built and needed real work; two ("book for someone else", "a dropdown of common faults") did not exist at all; one ("call the customer, they approve, money is released") was **already the built product** and needed no new logic — but the single notification that makes it reachable was missing. The booking-screen dropdown is specified as an API here and still needs a frontend to render: there is no frontend in this repository (`TASKS_FRONTEND.md` is a plan; Frontend is 0/36).
 
 ---
 
@@ -76,11 +78,11 @@ grep -oE '\| (TODO|IN PROGRESS|IN REVIEW|BLOCKED|DONE) \|' docs-final/PROGRESS_T
 |---|---|---|---|---|---|---|
 | E0 | 10 / 10 | 0 / 5 | 3 / 3 | 53 / 69 | 77 % | 0 |
 | E1 | 2 / 7 | 0 / 6 | 0 / 1 | 10 / 77 | 13 % | 0 |
-| E2 | 12 / 13 | 0 / 7 | 0 / 1 | 64 / 117 | 55 % | 0 |
+| E2 | 16 / 17 | 0 / 7 | 0 / 1 | 79 / 132 | 60 % | 0 |
 | E3 | 12 / 12 | 0 / 8 | 0 / 1 | 60 / 100 | 60 % | 0 |
 | E4 | 1 / 7 | 0 / 6 | 0 / 1 | 5 / 74 | 7 % | 0 |
 | E5 | 0 / 7 | 0 / 4 | 0 / 2 | 0 / 70 | 0 % | 0 |
-| **All** | **37 / 56** | **0 / 36** | **3 / 9** | **192 / 507** | **38 %** | **0** |
+| **All** | **41 / 60** | **0 / 36** | **3 / 9** | **207 / 522** | **40 %** | **0** |
 
 By status, across all 101 tickets:
 
@@ -184,6 +186,10 @@ Priority: **P0** = required for the phase exit gate · **P1** = required for rel
 | [SHM-051](#shm-051) | FE | Story | P0 | 8 | Provider job execution flow (PWA) | SHM-041, SHM-042, SHM-043 | — | TODO | — |
 | [SHM-052](#shm-052) | FE | Story | P0 | 5 | Offline evidence queue | SHM-051 | — | TODO | — |
 | [SHM-053](#shm-053) | SHARED | Test | P0 | 5 | Phase 2 E2E + exit gate | SHM-045, SHM-046, SHM-049, SHM-051, SHM-052 | backend agent | TODO | — |
+| [SHM-104](#shm-104) | BE | Story | P0 | 5 | Same-day / next-hour booking: one notice rule, midnight crossing, next-available resolver | SHM-035, SHM-036 | backend agent | IN REVIEW | built 5 Oct 2026, awaiting reviewer |
+| [SHM-105](#shm-105) | BE | Story | P0 | 5 | Booking on behalf of someone else; third-party contact masked until accepted | SHM-037, SHM-040 | backend agent | IN REVIEW | built 5 Oct 2026, awaiting reviewer |
+| [SHM-106](#shm-106) | BE | Story | P1 | 3 | Service common-faults dropdown: table, admin CRUD, public read, checkout field | SHM-018, SHM-037 | backend agent | IN REVIEW | built 5 Oct 2026, awaiting reviewer |
+| [SHM-107](#shm-107) | BE | Task | P0 | 2 | Text the customer on completion, so the approval loop is actually reachable | SHM-043, SHM-044 | backend agent | IN REVIEW | built 5 Oct 2026, awaiting reviewer |
 
 ### E3 · Phase 3 — Verification & Money (M7, M8, M9)
 
@@ -1145,6 +1151,80 @@ Still missing, and now the main substance of this ticket:
 - [ ] Lint proves no status write outside the service
 - [ ] Definition of Done met
 
+<a id="shm-104"></a>
+#### SHM-104 — Same-day / next-hour booking
+
+`BE` · Story · P0 · 5 SP · **Depends on:** SHM-035, SHM-036 · **Blocks:** -
+
+**Refs:** FR-BK-11, FR-BK-12, FR-CAT-06, CL-26, TRD §4
+
+**Scope:** One minimum-notice rule read by both the slot listing and checkout; a day-span rule so a job may cross local midnight; availability matched one local day at a time in both the named-provider check and the auto-assign candidate query; a "next free" resolver that needs no date from the customer.
+
+**Acceptance criteria**
+- [x] A start inside `booking.min_notice_min` is refused, and the message names the notice - `same-day-booking.test.ts`
+- [x] A booking 45 minutes out succeeds - the client's actual ask
+- [x] The slot listing and checkout cannot disagree - both call `windowRefusal` with the same setting; the pre-existing 60-minute listing-only constant is gone
+- [x] A 23:00-00:30 job is accepted; a window crossing more than one night is refused - clock pinned to 22:00 local so the assertion does not depend on when the suite runs
+- [x] A cross-midnight auto-assign booking still finds a candidate rather than exhausting to `UNFULFILLED` - the availability split is applied to the candidate SQL too, not only to `assertWindowIsBookable`
+- [x] `GET /search/providers/:id/next-slots` returns the soonest start times in order, each bookable, honouring `limit`, empty rather than erroring when nothing is free, 404 for a provider who does not offer the service
+- [x] Pure logic unit-tested: `packages/domain/test/sameDay.test.ts`, 25 tests over day-span, midnight splitting and the refusal predicate
+- [ ] Definition of Done met
+
+<a id="shm-105"></a>
+#### SHM-105 — Booking on behalf of someone else
+
+`BE` · Story · P0 · 5 SP · **Depends on:** SHM-037, SHM-040 · **Blocks:** -
+
+**Refs:** FR-BK-13, CL-27, NFR-PR-01, FR-BK-07
+
+**Scope:** `bookings.is_on_behalf` / `on_behalf_name` / `on_behalf_phone_e164`. The booker keeps the booking entirely - payment, rating, disputes, verification - so the escrow ledger is untouched; only the person at the door changes. The number is masked until the provider accepts.
+
+**Acceptance criteria**
+- [x] The third party is recorded and `customer_id` is unchanged, so escrow and ratings still key off the paying account
+- [x] The number is **not** on `BookingRow`, so no provider-facing endpoint can return it by accident - asserted by string-searching every booking response for the number
+- [x] Masked to a provider who has not accepted; revealed once they have, in both `accept` and the contact endpoint
+- [x] A third party with no booking relationship gets a 404, not a leak
+- [x] An ordinary booking reports no contact at all
+- [x] Database enforces the invariant, not just the validator: E.164 regex and all-or-nothing name+phone by check constraint, so it does not rest on the request schema alone
+- [x] A half-filled contact object and a non-E.164 number are both refused at 422
+- [ ] Definition of Done met
+
+<a id="shm-106"></a>
+#### SHM-106 — Service common-faults dropdown
+
+`BE` · Story · P1 · 3 SP · **Depends on:** SHM-018, SHM-037 · **Blocks:** -
+
+**Refs:** FR-BK-14, CL-28
+
+**Scope:** A per-service list of common faults for the booking screen, in English and Urdu, that helps a customer who cannot describe the fault in a provider's vocabulary without constraining what they may write.
+
+**Acceptance criteria**
+- [x] `service_issue_options` per service, slug and position unique per service
+- [x] Admin replaces the whole list, like the checklist; published at `GET /catalogue/services/:slug/issue-options` and included in service detail
+- [x] A booking may carry an option, free text, both or neither - the client's "or can edit his own description too", tested in all three shapes
+- [x] An option belonging to another service is refused, so a fault can never be misreported onto the wrong service
+- [x] The label the customer chose is what the provider is shown
+- [x] 44 options seeded across 13 services, EN and UR
+- [ ] **Frontend still to do:** the dropdown itself. Specified as an API only - see the header note.
+- [ ] Definition of Done met
+
+<a id="shm-107"></a>
+#### SHM-107 — Text the customer on completion
+
+`BE` · Task · P0 · 2 SP · **Depends on:** SHM-043, SHM-044 · **Blocks:** -
+
+**Refs:** FR-VC-01, FR-NT-01, MODULE_DEFINITIONS.md (the escrow promise)
+
+**Scope:** Not new logic - the verification loop already existed end to end. The gap was that the customer was never told, so on a Tier B job the money released itself.
+
+**Acceptance criteria**
+- [x] `booking.handToVerification` sends on both channels; an SMS template exists in EN and UR
+- [x] The SMS carries the booking reference, the amount and a link, so the customer can actually act
+- [x] In-app still fires, so a customer who never receives the SMS is not left uninformed
+- [x] Exactly one message per completion however often the outbox is replayed
+- [x] A test asserts the notification at all - no verification test had ever done so, which is why this went unnoticed
+- [ ] Definition of Done met
+
 ### E3 · Phase 3 — Verification & Money (M7, M8, M9)
 
 <a id="shm-054"></a>
@@ -1942,6 +2022,7 @@ No gate has been signed and none can be, for two reasons that apply to every pha
 
 | Date | Who | Change |
 |---|---|---|
+| 5 Oct 2026 | OpenCode (backend agent) | **Client request of 5 Oct 2026 built on the backend: SHM-104-107 `IN REVIEW`** (surface **171 → 175**; 432 integration and 244 unit tests green; lint, typecheck, build clean; `db:reset` re-verified from scratch over both migrations). The client asked for four things; only two needed building. Recorded honestly rather than as four new features. **(a) Same-day / next-hour booking (SHM-104)** was already ~70% present (emergency surcharge, a pure slot generator, an exclusion constraint, a business-hours calendar) but could not actually be used: `booking.service.ts` refused *any* booking whose start and end fell on different local days, so a 23:00-00:30 job was unbookable, and the slot listing hardcoded a 60-minute notice that checkout did not enforce — the two disagreed in both directions. Both now read `booking.min_notice_min` (30) via one shared pure predicate (`windowRefusal`), so a slot offered by the listing is one checkout accepts; `booking.max_day_span` (1) replaces the same-calendar-day rule; provider availability is matched one local day at a time (`splitAtLocalMidnight`) in **both** `assertWindowIsBookable` and the auto-assign candidate SQL — without that second fix a cross-midnight booking matched no candidate and fell straight through to `UNFULFILLED`. New `GET /search/providers/:id/next-slots` answers "when is this provider next free?" across `booking.next_slot_days`, which is the actual question a customer has at 21:00. 14 integration tests + 25 domain unit tests. **(b) Booking on behalf of someone else (SHM-105)** did not exist: no `on_behalf` field anywhere, and `booking.service.ts` scoped the address with `AND customer_id = ${customerId}`, so a booking against anyone else's address threw 404. Decided with the client: the **booker keeps everything** — `customer_id` untouched, so escrow, ratings, verification and disputes still key off the paying account, and only the door changes (`on_behalf_name`, `on_behalf_phone_e164`, E.164 and all-or-nothing by check constraint). **The number is deliberately not a field on `BookingRow`**: every provider-facing endpoint returns that row, so a number on it would reach a provider through all of them, including the offer list. It is read only through `BookingService.onBehalfContact`, masked for a provider who has not accepted (they may still decline) and revealed to the one who has. This resolves a genuine conflict with FR-BK-07/NFR-PR-01 rather than ignoring it, and CL-27 records the split. 15 integration tests. **(c) Common-faults dropdown (SHM-106)** did not exist either — no FAQ, no tags, no issue taxonomy on `services`. `service_issue_options` per service (EN/UR), replaced wholesale by an admin route exactly as the checklist already is, published publicly and included in service detail; 44 options seeded across 13 services. `bookings.issue_option_id` is optional and is checked against the service being booked, so a fault cannot be misreported onto the wrong service. Deliberately **not** a constraint on what a customer may write: option, free text, both or neither, which is what the client asked for. **(d) The verification loop was already the product** — `MODULE_DEFINITIONS.md` calls the staff-calls-the-customer escrow model the core differentiator, and it is fully built (63 tests, a DB trigger refusing release without a permitting verification). What was missing was the one thing that makes it reachable: `booking.handToVerification` was `IN_APP`-only, so on a **Tier B** job — where escrow releases on the customer's own answer and auto-releases after 72 h — a customer who never opened the app was never told there was anything to confirm, and the money released itself. Now `BOTH` with an SMS template, and no verification test had ever asserted a notification, which is why this went unnoticed. 5 tests. **Also fixed: the `migration-fidelity` CI job could never pass again.** It compared the *text* of `docs-final/schema.sql` with the body of `0001_init.sql`, which only holds while there is exactly one migration — the first real schema change makes them diverge forever, since a later migration must use `ALTER TABLE` while the doc restates the table. Rewriting an applied migration was not an option, so it now builds the schema **twice for real** (replaying every migration's up-section; applying the doc) and compares `pg_dump --schema-only` of the two. That caught a genuine defect on first run: the doc named the check constraints and the `ALTER` let Postgres auto-name them differently. Requires `psql`/`pg_dump` on PATH plus a superuser connection, so the job gained a PostGIS service and a `db:check-schema` script. **Also fixed: CI was not running on branches other than `main`** — `push.branches: [main]` only, so pushes to `backend-dev` produced no run at all. **Environment note:** the local `.env` was missing `CNIC_ENCRYPTION_KEY` (present in `.env.example` since SHM-022), which failed app boot with 32 suites erroring; added it from the example — `.env` is gitignored, and no `cnic_enc` row existed, so nothing was encrypted under a different key. |
 | 5 Oct 2026 | Claude (backend agent) | **Tracker reconciled against the code, and SHM-022 built.** Two things happened in one session, so they are recorded together. |
 | | | *(a) SHM-022 · Provider documents & CNIC protection — `TODO` → `IN REVIEW`.* Six operations (surface **165 → 171**): `POST /uploads/presign`, `GET/POST /provider/documents`, `GET /admin/providers/:id/documents`, `GET /admin/documents/:id/url`, `POST /admin/documents/:id/review`. The CNIC is AES-256-GCM encrypted at rest under a **new required `CNIC_ENCRYPTION_KEY`** (deliberately not TOTP's; a production `superRefine` rejects the two being equal — `.env.example`, CI workflow and `environment.test.ts` all updated), with an HMAC blind index in a `UNIQUE` column so "one person, one account" is enforceable by the database. Viewing is `ADMIN`+TOTP only via a 5-minute signed link, and every view writes an `audit_log` row. All three acceptance criteria covered: 36 integration tests + 14 unit tests. Two defects found and fixed in the tests themselves — hard-coded CNICs made the file non-re-runnable (the unique index is global and permanent), and one assertion was simply wrong about the intended behaviour, which the corrected test now documents. Scope left deliberately: SHM-023's verified-CNIC approval gate is *not* wired here, because it changes an endpoint the test harness relies on. |
 | | | *(b) Reconciliation.* §3's dashboard had never been recounted after the Sept–Oct work — it still read 0% across 101 tickets and 507 SP while 192 SP of tested code sat `IN REVIEW`. Corrected, and restructured to show **Built** (`IN REVIEW` + `DONE`) alongside **Done**, because reading only *Done* says 0% for a project that is 38% built and reading only *Built* would flatter work no one has reviewed. Verified figures: 40 `IN REVIEW` / 11 `IN PROGRESS` / 48 `TODO` / 2 `BLOCKED` / 0 `DONE`; **backend 184 of 297 SP built (62%), frontend 0 of 176.** Every number in the dashboard was re-derived by parsing the §4 tables, not by hand. |

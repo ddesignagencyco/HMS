@@ -165,6 +165,15 @@
       ]
     },
     {
+      "method": "PUT",
+      "path": "/api/v1/admin/catalogue/services/{id}/issue-options",
+      "operationId": "CatalogueAdminController_replaceIssueOptions",
+      "summary": "Replace a service's common-faults list",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
       "method": "GET",
       "path": "/api/v1/admin/complaints",
       "operationId": "ComplaintsController_queue",
@@ -777,6 +786,15 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/on-behalf-contact",
+      "operationId": "BookingController_onBehalfContact",
+      "summary": "Who will receive the provider, when the booking is for someone else",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
       "method": "POST",
       "path": "/api/v1/bookings/{id}/reschedule",
       "operationId": "BookingController_reschedule",
@@ -871,6 +889,15 @@
       "path": "/api/v1/catalogue/services/{slug}",
       "operationId": "CatalogueController_serviceDetail",
       "summary": "Get one service, including its checklist",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/catalogue/services/{slug}/issue-options",
+      "operationId": "CatalogueController_issueOptions",
+      "summary": "The common faults a customer can pick from when booking this service",
       "tags": [
         "catalogue"
       ]
@@ -1501,6 +1528,15 @@
       "path": "/api/v1/search/providers/{providerId}",
       "operationId": "SearchController_providerDetail",
       "summary": "Get a provider’s full public profile",
+      "tags": [
+        "search"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/search/providers/{providerId}/next-slots",
+      "operationId": "SearchController_nextSlots",
+      "summary": "When is this provider next free?",
       "tags": [
         "search"
       ]

@@ -121,6 +121,9 @@ Each item states the problem found in v2.0 and the decision now binding on desig
 | CL-23 | Provider cancellation — is the booking re-offered? | `CANCELLED_PROVIDER` is terminal with a full refund; the customer gets a one-tap "rebook with next best provider" pre-filled from the cancelled booking. |
 | CL-24 | Money stored as `decimal`. | Stored as `BIGINT` minor units (paisa) to eliminate rounding error. Commission rounds half-up to the nearest paisa, remainder to the provider. |
 | CL-25 | Numbering glitches in v2.0 (§7.1 starts at 5, §10.3 starts at 10). | Editorial only; renumbered here. |
+| CL-26 | "Can I book for the same day / within the hour?" — the original text said only "book by date", and the slot listing hardcoded a 60-minute notice that checkout did not enforce, so the two disagreed. | Minimum notice is a setting, `booking.min_notice_min` (30 min), read by both the listing and checkout. `booking.max_day_span` (1) replaces the old "must start and end on the same calendar day" rule, which refused an ordinary 23:00–00:30 job. A new endpoint answers "next free" without a date. |
+| CL-27 | "Can a customer book for someone else, and give the provider their number?" — and FR-BK-07/NFR-PR-01 say no phone numbers are exposed to the other party. | These conflict, so the split is explicit. The booker's account still pays, rates, disputes and is verified against: nothing about the money moves. Only the *door* changes, via `bookings.on_behalf_name` / `on_behalf_phone_e164`. FR-BK-07 governs the chat channel, which still masks; the number is a different field with a different rule — masked in the offer list, revealed to the provider who accepted the job, and never placed on the booking row that every provider-facing endpoint returns. |
+| CL-28 | Should the common-faults list constrain what a customer may report? | No. It is a booking-time convenience for a customer who cannot describe the fault in a provider's vocabulary. A booking may carry an option, free text, both or neither, and an option is never the sole evidence of what was reported. The list is replaced wholesale by an admin, like the checklist, and a booking keeps the label it was shown. |
 
 ### 3.1 Open questions for the product owner
 | ID | Question | Default used until answered |
@@ -332,6 +335,10 @@ Every transition writes `booking_status_history` (from, to, event, actor, reason
 | FR-BK-08 | Every state change in status history. | H | v2.0 | History row count = number of transitions (property test). |
 | FR-BK-09 | Online bookings paid at checkout; `PENDING_PAYMENT` until captured (CL-07). | H | v2.1 | Provider never sees an unpaid online booking. |
 | FR-BK-10 | Unfulfilled bookings refunded (CL-05). | H | v2.1 | After `BR-06` offers/`BR-07` min → `UNFULFILLED` + refund posting. |
+| FR-BK-11 | Same-day / short-notice booking: a provider can be booked from `booking.min_notice_min` (30 min) ahead, and "when is this provider next free?" is answerable without naming a date. | H | v2.2 | A start inside the notice period is refused with the notice named; a start 45 minutes out succeeds; `GET /search/providers/{id}/next-slots` returns the soonest start times in order, each one bookable. |
+| FR-BK-12 | A booking may run past local midnight. | M | v2.2 | A 23:00–00:30 job is accepted; a window crossing more than one night is refused. The slot listing and checkout apply one rule, so no offered time is refused at checkout. |
+| FR-BK-13 | Book a service for someone who is not the customer: the booker pays, rates and disputes it; the third party is only who the provider is given a name and number for. | M | v2.2 | `bookings.customer_id` is unchanged; the third party's number is masked to a provider who has not accepted the job, and revealed once they have. |
+| FR-BK-14 | At booking, offer the service's common faults as a dropdown alongside the customer's own free-text description. | M | v2.2 | Options are published per service in EN/UR; a booking may carry an option, free text, both or neither; an option belonging to another service is refused. |
 
 ### 7.6 M6 — Work Execution & Evidence
 | ID | Requirement | P | Src | Acceptance criterion |

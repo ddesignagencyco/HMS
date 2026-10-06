@@ -88,10 +88,30 @@ jobs:
       - run: npm run test:integration
 
   migration-fidelity:
-    name: 0001_init mirrors docs-final/schema.sql
+    name: the migrations build docs-final/schema.sql
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgis:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: smart_home
+          POSTGRES_USER: smart_home
+          POSTGRES_PASSWORD: smart_home
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U smart_home -d smart_home"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DIRECT_URL: postgresql://smart_home:smart_home@localhost:5432/smart_home?schema=public
     steps:
       - uses: actions/checkout@v4
-      - name: assert the dbmate migration is a copy of the canonical schema
-        run: node -e "const fs=require('node:fs');const strip=t=>t.split(/\r?\n/).filter(l=>l.trim()!==''&&!l.trimStart().startsWith('--')).join('\n');const doc=strip(fs.readFileSync('docs-final/schema.sql','utf8'));const mig=strip(fs.readFileSync('packages/db/migrations/0001_init.sql','utf8').split('-- migrate:down')[0].split('-- migrate:up')[1]);if(doc!==mig){console.error('0001_init.sql has drifted from docs-final/schema.sql');process.exit(1)}console.log('0001_init.sql matches docs-final/schema.sql')"
+      - name: assert the migrations build exactly the canonical schema
+        # Builds the schema twice -- once by replaying every migration, once by
+        # applying docs-final/schema.sql -- and compares pg_dump of the two. The
+        # previous check compared the doc's text with 0001_init.sql, which could
+        # only ever hold while there was a single migration.
+        run: npm run db:check-schema --workspace @smart-home/db

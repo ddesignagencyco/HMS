@@ -1,7 +1,7 @@
 // apps/api/src/booking/booking.service.ts
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { canTransition, type BookingEvent, type BookingStatus } from '@smart-home/domain';
+import { canTransition, splitAtLocalMidnight, windowRefusal, type BookingEvent, type BookingStatus } from '@smart-home/domain';
 import { DomainError, badRequest, conflict, notFound } from '../common/domain-error.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -17,6 +17,7 @@ import { BookingStateService } from './booking-state.service.js';
 import { CompletionService } from './completion.service.js';
 import { ExecutionService } from './execution.service.js';
 import { OfferService } from './offer.service.js';
+import { contactFor, maySeeFullContact, type OnBehalfContact } from './on-behalf.js';
 import { PricingService } from './pricing.service.js';
 import type { BookingCreateInput, BookingRescheduleInput } from './booking.schemas.js';
 
@@ -68,7 +69,8 @@ export class BookingService {
   async create(customerId: string, input: BookingCreateInput): Promise<BookingRow & { payment?: { paymentId: string; redirectUrl: string } }> {
     const start = new Date(input.scheduledStart);
     const end = new Date(input.scheduledEnd);
-    if (start.getTime() <= Date.now()) throw badRequest('The booking must start in the future');
+    const refusal = await this.refuseWindow(start, end);
+    if (refusal !== null) throw badRequest(refusal);
 
     if (input.providerId !== undefined) {
       const blocked = await this.prisma.$queryRaw<{ reason: string | null }[]>(Prisma.sql`SELECT offer_blocked_reason as reason FROM providers WHERE user_id = ${input.providerId}::uuid`);
@@ -82,8 +84,8 @@ export class BookingService {
     );
     if (addresses.length === 0) throw notFound('Address');
 
-    const startWeekday = localWeekday(start);
-    if (startWeekday !== localWeekday(end)) throw badRequest('A booking must start and end on the same calendar day');
+    const issueOptionId = await this.resolveIssueOption(input.serviceId, input.issueOptionId);
+
     if (input.providerId !== undefined) await this.assertWindowIsBookable(input.providerId, start, end);
 
     const bufferMin = await this.settings.getNumber('booking.travel_buffer_min');
@@ -96,11 +98,13 @@ export class BookingService {
       const created = await this.prisma.$transaction(async tx => {
         const rows = await tx.$queryRaw<BookingRowRaw[]>(
           Prisma.sql`INSERT INTO bookings(customer_id, provider_id, service_id, address_id, status, payment_mode, payment_status, is_emergency, is_auto_assign, slot, scheduled_start, scheduled_end,
-              problem_text, quoted_amount_paisa, approved_total_paisa, discount_paisa, coupon_id, commission_rate_bp)
+              problem_text, issue_option_id, is_on_behalf, on_behalf_name, on_behalf_phone_e164, quoted_amount_paisa, approved_total_paisa, discount_paisa, coupon_id, commission_rate_bp)
             VALUES (${customerId}::uuid, ${input.providerId ?? null}::uuid, ${input.serviceId}, ${input.addressId}::uuid,
               ${online ? 'PENDING_PAYMENT' : 'REQUESTED'}::booking_status, ${online ? 'ONLINE' : 'CASH'}::payment_mode, ${online ? 'PENDING' : 'NONE'}::booking_payment_status,
               ${input.isEmergency}, ${input.providerId === undefined}, ${this.slotRange(start, end, bufferMin)},
-              ${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, ${input.problemText ?? null}, ${total}, ${total},
+              ${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, ${input.problemText ?? null}, ${issueOptionId ?? null}::int,
+              ${input.onBehalfOf !== undefined}, ${input.onBehalfOf?.name ?? null}, ${input.onBehalfOf?.phoneE164 ?? null},
+              ${total}, ${total},
               ${BigInt(quote.discountPaisa)}, ${priced.couponId}::uuid, ${commissionRateBp})
             RETURNING ${BOOKING_COLUMNS}`
         );
@@ -116,7 +120,8 @@ export class BookingService {
         }
         await tx.$executeRaw(
           Prisma.sql`INSERT INTO booking_status_history(booking_id, from_status, to_status, event, actor_user_id, actor_role, metadata)
-            VALUES (${row.id}::uuid, NULL, ${row.status}::booking_status, 'create', ${customerId}::uuid, 'CUSTOMER'::actor_role, ${JSON.stringify({ paymentMode: input.paymentMode, isEmergency: input.isEmergency })}::jsonb)`
+            VALUES (${row.id}::uuid, NULL, ${row.status}::booking_status, 'create', ${customerId}::uuid, 'CUSTOMER'::actor_role,
+              ${JSON.stringify({ paymentMode: input.paymentMode, isEmergency: input.isEmergency, isOnBehalf: input.onBehalfOf !== undefined, issueOptionId: issueOptionId ?? null })}::jsonb)`
         );
 
         let paymentId: string | null = null;
@@ -204,15 +209,56 @@ export class BookingService {
     );
   }
 
-  /** FR-BK-02: the same availability/leave checks for a fresh booking and a reschedule. */
-  private async assertWindowIsBookable(providerId: string, start: Date, end: Date): Promise<void> {
-    const weekday = localWeekday(start);
-    const availability = await this.prisma.$queryRaw<{ id: string }[]>(
-      Prisma.sql`SELECT id FROM provider_availability WHERE provider_id = ${providerId}::uuid AND weekday = ${weekday}
-        AND start_time <= ${localTimeOfDay(start)}::time AND end_time >= ${localTimeOfDay(end)}::time`
+  /**
+   * The common fault the customer picked, if any. Checked against the service being
+   * booked rather than merely well-formed, so an option from another service cannot
+   * be attached to this booking and later read back to a provider as the reported
+   * fault. An inactive option is refused too: it has been retired, and a retired
+   * option is not what anyone agreed to.
+   */
+  private async resolveIssueOption(serviceId: number, issueOptionId: number | undefined): Promise<number | null> {
+    if (issueOptionId === undefined) return null;
+    const rows = await this.prisma.$queryRaw<{ id: number }[]>(
+      Prisma.sql`SELECT id FROM service_issue_options WHERE id = ${issueOptionId} AND service_id = ${serviceId} AND is_active = true`
     );
-    if (availability.length === 0) throw badRequest("The requested time falls outside the provider's declared availability");
-    const timeOff = await this.prisma.$queryRaw<{ id: string }[]>(
+    if (rows[0] === undefined) throw notFound('Issue option');
+    return rows[0].id;
+  }
+
+  /**
+   * Same-day / next-hour booking: the shortest notice and the widest window the
+   * platform accepts. Both thresholds are settings, and the identical rule is
+   * applied by `SearchService.listSlots` when it offers start times — a listing
+   * that offers a start time checkout would refuse is worse than no listing.
+   */
+  async refuseWindow(start: Date, end: Date): Promise<string | null> {
+    return windowRefusal(this.clock.now(), start, end, {
+      minNoticeMin: await this.settings.getNumber('booking.min_notice_min'),
+      maxDaySpan: await this.settings.getNumber('booking.max_day_span')
+    });
+  }
+
+  /**
+   * FR-BK-02: the same availability/leave checks for a fresh booking and a reschedule.
+   *
+   * Availability is a wall-clock range inside *one* local day, so a window that
+   * crosses local midnight is asked about one piece per local day: 22:30–00:30
+   * needs the provider free until close on the first day *and* from opening on the
+   * next. Without the split, a provider who genuinely works late could never be
+   * booked for a job that ends just after midnight.
+   */
+  private async assertWindowIsBookable(providerId: string, start: Date, end: Date, tx?: Prisma.TransactionClient): Promise<void> {
+    const client = tx ?? this.prisma;
+    const pieces = splitAtLocalMidnight(start, end);
+    for (const piece of pieces) {
+      const weekday = localWeekday(piece.start);
+      const availability = await client.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT id FROM provider_availability WHERE provider_id = ${providerId}::uuid AND weekday = ${weekday}
+          AND start_time <= ${localTimeOfDay(piece.start)}::time AND end_time >= ${localTimeOfDay(piece.end)}::time`
+      );
+      if (availability.length === 0) throw badRequest("The requested time falls outside the provider's declared availability");
+    }
+    const timeOff = await client.$queryRaw<{ id: string }[]>(
       Prisma.sql`SELECT id FROM provider_time_off WHERE provider_id = ${providerId}::uuid AND period && tstzrange(${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, '[)')`
     );
     if (timeOff.length > 0) throw badRequest('The provider has recorded leave over part of this window');
@@ -342,19 +388,9 @@ export class BookingService {
         const noticeCutoff = new Date(row.scheduledStart.getTime() - RESCHEDULE_NOTICE_HOURS * 60 * 60 * 1000);
         if (new Date() > noticeCutoff) throw badRequest(`A booking can only be rescheduled at least ${RESCHEDULE_NOTICE_HOURS} hours before its current slot`);
 
-        const startWeekday = localWeekday(start);
-        if (startWeekday !== localWeekday(end)) throw badRequest('A booking must start and end on the same calendar day');
-
-        const availability = await tx.$queryRaw<{ id: string }[]>(
-          Prisma.sql`SELECT id FROM provider_availability WHERE provider_id = ${row.providerId}::uuid AND weekday = ${startWeekday}
-            AND start_time <= ${localTimeOfDay(start)}::time AND end_time >= ${localTimeOfDay(end)}::time`
-        );
-        if (availability.length === 0) throw badRequest("The requested time falls outside the provider's declared availability");
-
-        const timeOff = await tx.$queryRaw<{ id: string }[]>(
-          Prisma.sql`SELECT id FROM provider_time_off WHERE provider_id = ${row.providerId}::uuid AND period && tstzrange(${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, '[)')`
-        );
-        if (timeOff.length > 0) throw badRequest('The provider has recorded leave over part of this window');
+        const windowRefusalMessage = await this.refuseWindow(start, end);
+        if (windowRefusalMessage !== null) throw badRequest(windowRefusalMessage);
+        await this.assertWindowIsBookable(row.providerId as string, start, end, tx);
 
         // Status is unchanged (SCHEDULED -> SCHEDULED), so `trg_booking_status_guard`
         // never fires here — no `app.transition_ctx` needed for this update.
@@ -515,6 +551,30 @@ export class BookingService {
     );
     await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.approveQuoteRevision', payload: { revisionId } });
     return toBookingRow(next);
+  }
+
+  /**
+   * Who will receive the provider when a booking was made for someone other than
+   * the customer, or `null` when it was not.
+   *
+   * This is the only way a third party's phone number leaves the database. It is
+   * masked for anyone who has not accepted the job, in full for the customer who
+   * entered it and for the provider the job belongs to — see `on-behalf.ts`.
+   */
+  async onBehalfContact(bookingId: string, actorUserId: string): Promise<OnBehalfContact | null> {
+    const rows = await this.prisma.$queryRaw<{ customerId: string; providerId: string | null; status: string; isOnBehalf: boolean; onBehalfName: string | null; onBehalfPhoneE164: string | null }[]>(
+      Prisma.sql`SELECT customer_id as "customerId", provider_id as "providerId", status, is_on_behalf as "isOnBehalf",
+          on_behalf_name as "onBehalfName", on_behalf_phone_e164 as "onBehalfPhoneE164"
+        FROM bookings WHERE id = ${bookingId}::uuid AND (customer_id = ${actorUserId}::uuid OR provider_id = ${actorUserId}::uuid)`
+    );
+    const row = rows[0];
+    if (row === undefined) throw notFound('Booking');
+    if (!row.isOnBehalf || row.onBehalfName === null || row.onBehalfPhoneE164 === null) return null;
+    const revealed = maySeeFullContact(
+      { userId: actorUserId, isCustomer: row.customerId === actorUserId, isProvider: row.providerId === actorUserId },
+      row
+    );
+    return contactFor({ name: row.onBehalfName, phone: row.onBehalfPhoneE164 }, revealed);
   }
 
   async getOwned(bookingId: string, actorUserId: string): Promise<BookingRow> {

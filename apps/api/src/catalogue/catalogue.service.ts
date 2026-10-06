@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { conflict, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
-import type { CategoryCreateInput, CategoryUpdateInput, ChecklistReplaceInput, CommissionRuleCreateInput, CommissionRuleListQuery, ServiceCreateInput, ServiceUpdateInput } from './catalogue.schemas.js';
+import type { CategoryCreateInput, CategoryUpdateInput, ChecklistReplaceInput, CommissionRuleCreateInput, CommissionRuleListQuery, IssueOptionsReplaceInput, ServiceCreateInput, ServiceUpdateInput } from './catalogue.schemas.js';
 
 export type CategoryRow = { id: number; slug: string; nameEn: string; nameUr: string; sortOrder: number; defaultWarrantyDays: number; isActive: boolean };
 
@@ -38,7 +38,7 @@ type ServiceRowRaw = Omit<ServiceRow, 'basePricePaisa' | 'minPricePaisa' | 'maxP
 
 export type ChecklistItemRow = { id: number; position: number; labelEn: string; labelUr: string; requiresPhoto: boolean };
 
-export type ServiceDetailRow = ServiceRow & { checklist: ChecklistItemRow[] };
+export type ServiceDetailRow = ServiceRow & { checklist: ChecklistItemRow[]; issueOptions: IssueOptionRow[] };
 
 const SERVICE_COLUMNS = Prisma.sql`id, category_id as "categoryId", slug, name_en as "nameEn", name_ur as "nameUr", description,
   pricing_model as "pricingModel", time_unit as "timeUnit", base_price_paisa as "basePricePaisa", min_price_paisa as "minPricePaisa",
@@ -47,6 +47,16 @@ const SERVICE_COLUMNS = Prisma.sql`id, category_id as "categoryId", slug, name_e
   is_high_risk as "isHighRisk", is_active as "isActive"`;
 
 const CHECKLIST_COLUMNS = Prisma.sql`id, position, label_en as "labelEn", label_ur as "labelUr", requires_photo as "requiresPhoto"`;
+
+/**
+ * The common faults a customer may pick from instead of describing the problem in
+ * their own words. Purely a convenience on the booking screen: a booking may carry
+ * an option, free text, both or neither, so nothing downstream treats this as the
+ * authoritative report of what is wrong.
+ */
+export type IssueOptionRow = { id: number; slug: string; labelEn: string; labelUr: string; position: number };
+
+const ISSUE_OPTION_COLUMNS = Prisma.sql`id, slug, label_en as "labelEn", label_ur as "labelUr", position`;
 
 export type CommissionRuleRow = {
   id: string;
@@ -122,7 +132,43 @@ export class CatalogueService {
     const row = raw[0];
     if (row === undefined) throw notFound('Service');
     const checklist = await this.prisma.$queryRaw<ChecklistItemRow[]>(Prisma.sql`SELECT ${CHECKLIST_COLUMNS} FROM service_checklist_items WHERE service_id = ${row.id} AND is_active = true ORDER BY position`);
-    return { ...toServiceRow(row), checklist };
+    return { ...toServiceRow(row), checklist, issueOptions: await this.listIssueOptions(row.id) };
+  }
+
+  /** The service's common faults, in display order. Empty for a service with none. */
+  async listIssueOptions(serviceId: number): Promise<IssueOptionRow[]> {
+    return this.prisma.$queryRaw<IssueOptionRow[]>(
+      Prisma.sql`SELECT ${ISSUE_OPTION_COLUMNS} FROM service_issue_options WHERE service_id = ${serviceId} AND is_active = true ORDER BY position`
+    );
+  }
+
+  /**
+   * Replaces a service's common-faults list wholesale, like `replaceChecklist`.
+   * Options already attached to a booking keep their row: this deletes and
+   * reinserts, so the ids change. That is safe precisely because a booking stores
+   * the option as a label it was shown, not as something later looked up to decide
+   * what happened -- but it does mean an old option id silently stops resolving, so
+   * this is an admin action and not something a customer can trigger.
+   */
+  async replaceIssueOptions(serviceId: number, items: IssueOptionsReplaceInput['items']): Promise<IssueOptionRow[]> {
+    const slugs = items.map(item => item.slug);
+    if (new Set(slugs).size !== slugs.length) throw conflict('Two issue options share the same slug');
+    return this.prisma.$transaction(async tx => {
+      const services = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM services WHERE id = ${serviceId}`);
+      if (services.length === 0) throw notFound('Service');
+      await tx.$executeRaw(Prisma.sql`DELETE FROM service_issue_options WHERE service_id = ${serviceId}`);
+      const inserted: IssueOptionRow[] = [];
+      for (const [position, item] of items.entries()) {
+        const rows = await tx.$queryRaw<IssueOptionRow[]>(
+          Prisma.sql`INSERT INTO service_issue_options(service_id, position, slug, label_en, label_ur)
+            VALUES (${serviceId}, ${position}, ${item.slug}, ${item.labelEn}, ${item.labelUr})
+            RETURNING ${ISSUE_OPTION_COLUMNS}`
+        );
+        const row = rows[0];
+        if (row !== undefined) inserted.push(row);
+      }
+      return inserted;
+    });
   }
 
   async createService(input: ServiceCreateInput): Promise<ServiceRow> {
