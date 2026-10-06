@@ -61,7 +61,20 @@ export type ChecklistItem = {
   requiresPhoto: boolean;
 };
 
-export type ServiceDetail = CatalogueService & { checklist: ChecklistItem[] };
+export type ServiceDetail = CatalogueService & {
+  checklist: ChecklistItem[];
+  /** The common faults list, included on the detail response itself. Also
+      available standalone via `getIssueOptions`. */
+  issueOptions?: IssueOption[];
+};
+
+export type IssueOption = {
+  id: number;
+  slug: string;
+  labelEn: string;
+  labelUr: string;
+  position: number;
+};
 
 export type CatalogueOptions = { signal?: AbortSignal; locale?: Locale };
 
@@ -115,4 +128,10 @@ export const catalogueApi = {
 
   getService: (slug: string, options?: CatalogueOptions) =>
     read<ServiceDetail>(`/catalogue/services/${encodeURIComponent(slug)}`, options),
+
+  /** The common faults a customer can pick from when booking this service,
+      seeded by the admin. It is a convenience, never a constraint: the customer
+      may still write their own description. */
+  getIssueOptions: (slug: string, options?: CatalogueOptions) =>
+    read<{ items: IssueOption[] }>(`/catalogue/services/${encodeURIComponent(slug)}/issue-options`, options),
 };

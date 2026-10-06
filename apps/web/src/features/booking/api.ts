@@ -215,6 +215,19 @@ export type ChatMessage = {
 
 export type ChatThread = { items: ChatMessage[]; open: boolean };
 
+/** geoPoint on the start/complete schemas: client location recorded as the check-in. */
+export type GeoPoint = { lat?: number; lng?: number; accuracyM?: number };
+
+/** `bookingStartSchema` — 6-digit code the customer reads out; the location is
+    recorded as the check-in. A geofence shortfall is a warning, never a refusal. */
+export type StartBookingInput = { code: string } & GeoPoint;
+
+/** `bookingCompleteSchema` — finalAmountPaisa may lower, never exceed. */
+export type CompleteBookingInput = { finalAmountPaisa?: number } & GeoPoint;
+
+/** `bookingRaiseRevisionSchema` — the extra work the provider found, as a delta. */
+export type CreateRevisionInput = { deltaPaisa: number; reason: string };
+
 export type BookingOptions = { signal?: AbortSignal; locale?: Locale };
 
 /**
@@ -325,4 +338,61 @@ export const bookingApi = {
       { method: "POST", body: { body } },
       options,
     ),
+
+  /** The contact the booking is for when somebody else is paying. The number is
+      masked until the provider accepts — an offer is not yet a customer, and a
+      provider browsing offers should not collect details for jobs they may
+      decline. `revealed:false` means render the masked form as-is; never try
+      to reconstruct it. */
+  onBehalfContact: (bookingId: string, options?: BookingOptions) =>
+    call<{ contact: { name: string; phone: string; revealed: boolean } | null }>(
+      `/bookings/${encodeURIComponent(bookingId)}/on-behalf-contact`,
+      {},
+      options,
+    ),
+
+  /* ---- The provider's actions on a booking. Still on `/bookings`, so they live
+      here rather than in features/provider — that module is only the provider's
+      own profile, settings, money and reputation. */
+
+  /** `POST /provider/offers/{id}/accept` is a different route that takes an offer
+      id; this one takes the booking id and is for direct provider actions. */
+  accept: (bookingId: string, options?: BookingOptions) =>
+    call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/accept`, { method: "POST" }, options),
+
+  decline: (bookingId: string, options?: BookingOptions) =>
+    call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/decline`, { method: "POST" }, options),
+
+  depart: (bookingId: string, options?: BookingOptions) =>
+    call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/depart`, { method: "POST" }, options),
+
+  /** Wrong code is 422 `OTP_INVALID`; the fifth consecutive wrong one is
+      423 `OTP_LOCKED` for 15 minutes. The location is recorded as the check-in:
+      it answers `distanceM` and `withinGeofence`, and a geofence shortfall is a
+      warning, never a refusal. */
+  start: (bookingId: string, input: StartBookingInput, options?: BookingOptions) =>
+    call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/start`, { method: "POST", body: compact(input) }, options),
+
+  /** `{ done: true, evidenceId? }` per step. A photo step needs the evidenceId of
+      a CHECKLIST photo already uploaded for that step, else 422. */
+  markChecklistDone: (bookingId: string, itemId: number, evidenceId: string | undefined, options?: BookingOptions) =>
+    call<{ checklistItemId: number; done: boolean; evidenceId: string | null }>(
+      `/bookings/${encodeURIComponent(bookingId)}/checklist/${itemId}`,
+      { method: "POST", body: compact({ done: true as const, evidenceId }) },
+      options,
+    ),
+
+  /** All checklist steps and a before&after photo are enforced server-side; the
+      response is AWAITING_VERIFICATION and a verification call is queued.
+      finalAmountPaisa may lower the charge, never exceed the approved total. */
+  complete: (bookingId: string, input: CompleteBookingInput, options?: BookingOptions) =>
+    call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/complete`, { method: "POST", body: compact(input) }, options),
+
+  /** Only after a passing verification has authorised collection. */
+  cashReceived: (bookingId: string, options?: BookingOptions) =>
+    call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/cash-received`, { method: "POST" }, options),
+
+  /** The provider found extra work; the customer approves or rejects. */
+  createRevision: (bookingId: string, input: CreateRevisionInput, options?: BookingOptions) =>
+    call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/revisions`, { method: "POST", body: compact(input) }, options),
 };

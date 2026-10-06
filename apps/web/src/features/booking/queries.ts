@@ -139,6 +139,48 @@ export const useWarrantyClaim = (locale: Locale) =>
 export const useReportNoShow = (locale: Locale) =>
   useBookingAction((input: { id: string; party: "CUSTOMER" | "PROVIDER" }) => bookingApi.reportNoShow(input.id, input.party, { locale }));
 
+/* ---- Provider actions on a booking ---------------------------------------- */
+
+export const useAcceptBooking = (locale: Locale) => useBookingAction((id: string) => bookingApi.accept(id, { locale }));
+
+export const useDeclineBooking = (locale: Locale) => useBookingAction((id: string) => bookingApi.decline(id, { locale }));
+
+export const useDepartBooking = (locale: Locale) => useBookingAction((id: string) => bookingApi.depart(id, { locale }));
+
+export const useStartBooking = (locale: Locale) =>
+  useBookingAction((input: { id: string; code: string; lat?: number; lng?: number; accuracyM?: number }) =>
+    bookingApi.start(input.id, { code: input.code, lat: input.lat, lng: input.lng, accuracyM: input.accuracyM }, { locale }),
+  );
+
+export const useCompleteBooking = (locale: Locale) =>
+  useBookingAction((input: { id: string; finalAmountPaisa?: number; lat?: number; lng?: number; accuracyM?: number }) =>
+    bookingApi.complete(input.id, { finalAmountPaisa: input.finalAmountPaisa, lat: input.lat, lng: input.lng, accuracyM: input.accuracyM }, { locale }),
+  );
+
+export const useCashReceived = (locale: Locale) => useBookingAction((id: string) => bookingApi.cashReceived(id, { locale }));
+
+export const useMarkChecklistDone = (locale: Locale) =>
+  useBookingAction((input: { id: string; itemId: number; evidenceId?: string }) =>
+    bookingApi.markChecklistDone(input.id, input.itemId, input.evidenceId, { locale }),
+  );
+
+export const useCreateRevision = (locale: Locale) =>
+  useBookingAction((input: { id: string; deltaPaisa: number; reason: string }) =>
+    bookingApi.createRevision(input.id, { deltaPaisa: input.deltaPaisa, reason: input.reason }, { locale }),
+  );
+
+/* The contact is masked until the provider accepts — this is the customer/provider
+   seeing who the job is for, not a public read. */
+export const useOnBehalfContact = (id: string | null, locale: Locale) =>
+  useQuery({
+    queryKey: [...bookingKeys.detail(id ?? ""), "on-behalf"],
+    queryFn: ({ signal }) => bookingApi.onBehalfContact(id as string, { signal, locale }),
+    enabled: id !== null && id !== "",
+    staleTime: FRESHNESS.booking.staleTime,
+    gcTime: FRESHNESS.booking.gcTime,
+    retry: (failureCount, error) => !isNotFoundError(error) && publicRetry(failureCount, error),
+  });
+
 /** FR-BK-03: at most five problem photos, and only before the job starts. */
 export const MAX_PROBLEM_PHOTOS = 5;
 

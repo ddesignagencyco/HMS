@@ -125,4 +125,10 @@ export const searchApi = {
       ...options,
       query: { serviceId, date },
     }),
+
+  /** When this provider is next free, across all services. There is no date
+      input — it is the "when can I get in soonest?" question, which needs no
+      guess about a day. */
+  nextSlots: (providerId: string, options?: SearchOptions) =>
+    read<{ slots: Slot[] }>(`/search/providers/${encodeURIComponent(providerId)}/next-slots`, options),
 };
