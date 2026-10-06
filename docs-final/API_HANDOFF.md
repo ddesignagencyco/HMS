@@ -9,7 +9,7 @@ otherwise surprise you. The exhaustive list of all 175 operations is in
 |---|---|
 | Base URL | `http://localhost:3000/api/v1` (dev) |
 | Interactive API docs | `http://localhost:3000/api/docs` — generated from the live app, always current |
-| OpenAPI JSON | `http://localhost:3000/api/docs-json` — generate your typed client from this |
+| OpenAPI JSON | `./openapi.json` — committed snapshot (§ regenerate with `npm run api:openapi -w @smart-home/api`); the live copy is at `http://localhost:3000/api/docs/openapi.json` |
 | Auth scheme | `Authorization: Bearer <accessToken>` |
 | Content type | `application/json` everywhere except the two PDF/CSV downloads |
 | Errors | RFC 7807 `application/problem+json` |
