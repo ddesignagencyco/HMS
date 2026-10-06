@@ -15,6 +15,7 @@ import {
   type ProviderProfile,
   type ProviderProfileInput,
   type ProviderRatings,
+  type ProviderRating,
   type ProviderService,
   type ProviderServiceArea,
   type PayoutAccountInput,
@@ -379,6 +380,7 @@ export type {
   ProviderOffer,
   ProviderProfile,
   ProviderRatings,
+  ProviderRating,
   ProviderService,
   ProviderServiceArea,
   Wallet

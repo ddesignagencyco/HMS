@@ -233,83 +233,158 @@ export type PayoutAccountInput = {
   isDefault?: boolean;
 };
 
-/* ---- Reputation and conduct ---------------------------------------------- */
+/* ---- Reputation -----------------------------------------------------------
+   Two shapes of "reply" live in this codebase and they are **not** the same:
 
-export type RemarkReply = { body: string; createdAt: string } | null;
+   · `GET /search/providers/:id/remarks` (public) → `reply: { body, createdAt } | null`
+   · `GET /provider/ratings` (own)              → `reply: string | null`
+
+   The second is `rr.body` selected straight off `remark_replies` with no wrapper.
+   Typing it as the object form — which is what this file did first — renders
+   `[object Object]` or throws, because React will not take an object as a child.
+
+   `ownRatings` also returns remarks an admin has since **unpublished**, because
+   FR-SP-05 says the provider still sees them. They must be labelled, not hidden
+   and not presented as public. */
 
 export type ProviderRating = {
   ratingId: string;
   score: number;
-  quality: number | null;
-  punctuality: number | null;
-  conduct: number | null;
-  cleanliness: number | null;
+  quality: number;
+  punctuality: number;
+  conduct: number;
+  cleanliness: number;
   createdAt: string;
-  remark: { id: string; body: string; displayName: string; published: boolean; reply: RemarkReply } | null;
+  remark: {
+    id: string;
+    body: string | null;
+    displayName: string | null;
+    /** False means an admin took it down. Not the same as "never published". */
+    published: boolean;
+    reply: string | null;
+  } | null;
 };
 
 export type ProviderRatings = {
   reputation: {
+    /** A Bayesian mean pulled toward the prior — **read only when `ratingCount > 0`**,
+        or an unrated professional is shown as "3.5 out of 5". */
     score: number;
     ratingCount: number;
-    /** Counts keyed by "1".."5". */
-    distribution: Record<string, number>;
+    distribution: Record<'1' | '2' | '3' | '4' | '5', number>;
     verifiedJobs: number;
     badge: string | null;
   };
   items: ProviderRating[];
 };
 
+/* ---- Conduct ---------------------------------------------------------------
+   Everything below was retyped against `ConductService.record` and `present`.
+   The shapes that had been guessed wrong, and which would have rendered blank or
+   thrown:
+
+   · **The schedule comes from the API, bilingual.** `breach_types` carries
+     `name_en` and `name_ur`, so the Urdu screen can show the platform's own Urdu
+     wording instead of a client-side translation of an English label. The old
+     screen hardcoded the schedule in the dictionary, which meant it could drift
+     from `breach_types` and never showed a breach the admin had just activated.
+   · **`standingConsequences` has `consequence` and `until`,** not a `code` and a
+     label pair. `until: null` means permanent.
+   · **`thresholds` have no label at all** — just `{ points, consequence }`.
+   · **An award carries its own lifecycle flags.** `active` is computed
+     server-side from voided / remaining / expiry, and the row survives the award
+     being voided or decayed, so the list is a history, not a balance.
+   · **`providerStatus` is nullable** — there is no `providers` row yet. */
+
 export type ConductAward = {
   id: string;
-  code: string;
-  points: number;
-  grantedAt: string;
-  expiresAt: string | null;
+  breachCode: string;
+  pointsAwarded: number;
+  /** What is left after decay. Only this counts towards the total. */
+  pointsRemaining: number;
+  awardedAt: string;
+  /** FR-PN-02: points expire in full 180 days after they were awarded. */
+  expiresAt: string;
+  /** Set when an appeal reversed the penalty that produced it. */
+  voided: boolean;
+  /** Server-computed: not voided, something remaining, not yet expired. */
+  active: boolean;
 };
 
-export type ConductThreshold = {
+export type ConductThreshold = { points: number; consequence: string };
+
+/** One row of `breach_types` — the rules the provider agreed to. */
+export type BreachType = {
+  code: string;
+  nameEn: string;
+  /** Present so the Urdu screen shows the platform's own wording. */
+  nameUr: string;
+  category: string;
   points: number;
-  consequence: string;
-  /** Server-supplied label in both languages — never reworded client-side. */
-  label: { en: string; ur: string };
+  /** What this breach costs on its own, before the threshold effects. */
+  consequence: string | null;
 };
 
 export type Conduct = {
-  providerStatus: ProviderStatus;
+  providerStatus: ProviderStatus | null;
   activePoints: number;
+  /** Null when there has never been a breach or a decay. */
   daysSinceLastBreachOrDecay: number | null;
   awards: ConductAward[];
-  standingConsequences: { code: string; label: { en: string; ur: string } }[];
+  /** `until: null` is a permanent block, not a missing date. */
+  standingConsequences: { consequence: string; until: string | null }[];
   thresholds: ConductThreshold[];
-  schedule: { code: string; label: { en: string; ur: string } }[];
+  schedule: BreachType[];
 };
 
-export type PenaltyStatus = 'OPEN' | 'APPLIED' | 'WITHDRAWN' | 'EXPIRED';
+/* ---- Penalties -------------------------------------------------------------
+   `ConductService.present` joins `penalties` to `breach_types` and to `bookings`,
+   so the row already carries the human-readable breach name and the job it came
+   from. `evidence` is `jsonb` and is shaped per breach, so it stays `unknown`
+   here rather than being guessed into a field the API never promised.
+
+   **The status set matters more than it looks.** A penalty is *proposed* first
+   and nothing has happened yet — no fine taken, no points awarded. It can be
+   applied the moment the provider replies, or when the 48 hours run out. So
+   "APPLIED" is not the end: it can go on to APPEALED and then be UPHELD (no
+   change), REVERSED (undone exactly) or PARTIAL. There is no EXPIRED state; a
+   proposal that nobody applied simply stops being applied. */
+
+export type PenaltyStatus = 'PROPOSED' | 'APPLIED' | 'APPEALED' | 'UPHELD' | 'REVERSED' | 'WITHDRAWN';
 
 export type Penalty = {
   id: string;
-  code: string;
-  status: PenaltyStatus;
+  providerId: string;
+  breachCode: string;
+  /** From `breach_types.name_en`. The Urdu name is not on this row. */
+  breachName: string;
+  category: string;
   points: number;
-  reason: string;
-  issuedAt: string;
-  /** The window in which the provider may put their case. */
-  replyDeadline: string | null;
-  providerReply: string | null;
+  status: PenaltyStatus;
+  /** The job it came from, when there was one. Null for a complaint-only penalty. */
+  bookingCode: string | null;
   finePaisa: number;
+  /** Always present, and always 48 hours out. Not nullable. */
+  replyDueAt: string;
+  providerReply: string | null;
+  repliedAt: string | null;
+  /** Per-breach `jsonb`. Rendered generically — the shape is not guaranteed. */
+  evidence: unknown;
+  appliedAt: string | null;
+  createdAt: string;
 };
-
-export type AppealGrounds = string;
 
 export type Appeal = {
   id: string;
   penaltyId: string;
-  grounds: AppealGrounds;
+  providerId: string;
+  grounds: string;
   status: 'OPEN' | 'UPHELD' | 'REVERSED' | 'PARTIAL';
   decisionNote: string | null;
-  finePaisa: number | null;
-  submittedAt: string;
+  createdAt: string;
+  decidedAt: string | null;
+  breachCode: string;
+  finePaisa: number;
 };
 
 export type ProviderDispute = {
@@ -463,7 +538,9 @@ export const providerApi = {
   conduct: (options?: ProviderOptions) => call<Conduct>('/provider/conduct', {}, options),
   penalties: (options?: ProviderOptions) => call<{ items: Penalty[] }>('/provider/penalties', {}, options),
   penalty: (id: string, options?: ProviderOptions) => call<Penalty>(`/provider/penalties/${encodeURIComponent(id)}`, {}, options),
-  replyToPenalty: (id: string, body: string, options?: ProviderOptions) => call<Penalty>(`/provider/penalties/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { body } }, options),
+  /* `replySchema` takes `{ reply }`, not `{ body }` — sending `body` is a 422 because
+   the schema is `.strict()`. */
+  replyToPenalty: (id: string, reply: string, options?: ProviderOptions) => call<Penalty>(`/provider/penalties/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { reply } }, options),
   appealPenalty: (id: string, grounds: string, options?: ProviderOptions) => call<Appeal>(`/provider/penalties/${encodeURIComponent(id)}/appeal`, { method: 'POST', body: { grounds } }, options),
 
   /* ---- Disputes ---- */
