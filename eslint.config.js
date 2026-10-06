@@ -7,6 +7,9 @@ const packageRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const bookingStatuses = 'PENDING_PAYMENT|ABANDONED|REQUESTED|UNFULFILLED|ACCEPTED|SCHEDULED|EN_ROUTE|IN_PROGRESS|QUOTE_REVISION|WORK_COMPLETED|AWAITING_VERIFICATION|REWORK_REQUIRED|VERIFIED|AUTO_RELEASED|DISPUTED|PAYMENT_RELEASED|PARTIALLY_REFUNDED|REFUNDED|CANCELLED_CUSTOMER|CANCELLED_PROVIDER|NO_SHOW|CLOSED';
 
+/** The words that mark a value as paisa money; the bare-Identifier and MemberExpression money bans both key off this. */
+const moneyName = 'paisa|amount|price|fee|commission|balance|debt|credit|wallet|escrow|refund|payout|total';
+
 /**
  * The write methods Prisma exposes, reached either bare (`update`) or through a
  * model handle (`prisma.booking.update`). Both shapes appear in real code, so
@@ -23,6 +26,20 @@ const memberWriteCallee = 'CallExpression:has(MemberExpression > Identifier[name
  */
 const statusValue = `[key.name='status'][value.value=/^('|")?(${bookingStatuses})('|")?$/]`;
 
+/**
+ * The raw-SQL half of the status ban. The Prisma builtin shapes above are
+ * object literals; a `Prisma.sql` tagged template is a different AST shape
+ * entirely — the word `status` sits inside a TemplateElement's cooked string,
+ * where no Property node exists for the object-literal selectors to match, so
+ * every real writer slipped past. The DB trigger (`trg_booking_status_guard`)
+ * is the actual enforcement; this closes the gap so a raw writer is forced to
+ * opt out explicitly instead. The pre-existing sanctioned writers (the two
+ * state-machine files) each carry a disable comment at the site, all three set
+ * `app.transition_ctx = 'on'` immediately before, and a new raw writer now
+ * fails lint until it is reviewed.
+ */
+const prismaSqlStatusWrite = `TaggedTemplateExpression TemplateElement[value.raw=/UPDATE\\s+bookings\\b[\\s\\S]*?\\bstatus\\s*=/i]`;
+
 const statusWriteMessage = 'bookings.status is written only by BookingStateService.apply() inside a transaction.';
 const moneyMessage = 'Money is bigint paisa. Use the helpers from @smart-home/domain, never Number().';
 
@@ -33,9 +50,13 @@ const rules = [
   { selector: `${prismaWriteCallee} > ObjectExpression > Property[key.name='data'] > ObjectExpression > Property${statusValue}`, message: statusWriteMessage },
   { selector: `${memberWriteCallee} > ObjectExpression > Property${statusValue}`, message: statusWriteMessage },
   { selector: `${memberWriteCallee} > ObjectExpression > Property[key.name='data'] > ObjectExpression > Property${statusValue}`, message: statusWriteMessage },
+  { selector: prismaSqlStatusWrite, message: statusWriteMessage },
   // Case insensitive: the risk is a paisa value reaching Number(), whatever the
   // variable happens to be called.
-  { selector: 'CallExpression[callee.name="Number"][arguments.0.type="Identifier"][arguments.0.name=/(paisa|amount|price|fee|commission|balance|debt|credit|wallet|escrow|refund|payout|total)/i]', message: moneyMessage }
+  { selector: `CallExpression[callee.name="Number"][arguments.0.type="Identifier"][arguments.0.name=/(${moneyName})/i]`, message: moneyMessage },
+  // `Number(raw.approvedTotalPaisa)` puts the money word on a member, so the
+  // Identifier selector above cannot see it; real coercions are member reads.
+  { selector: `CallExpression[callee.name="Number"][arguments.0.type="MemberExpression"][arguments.0.property.name=/(${moneyName})/i]`, message: moneyMessage }
 ];
 
 export default tseslint.config(

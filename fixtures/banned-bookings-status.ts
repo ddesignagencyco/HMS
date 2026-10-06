@@ -7,6 +7,8 @@
  */
 declare const prisma: { booking: { update: (args: unknown) => Promise<void> } };
 declare const update: (args: unknown) => Promise<void>;
+declare const sql: (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
+declare const db: { $executeRaw: (query: unknown) => Promise<unknown> };
 
 export const bareStatusWrite = async (): Promise<void> => {
   await update({ status: 'VERIFIED' });
@@ -18,4 +20,14 @@ export const prismaStatusWrite = async (): Promise<void> => {
 
 export const bareNestedStatusWrite = async (): Promise<void> => {
   await update({ where: { id: '1' }, data: { status: 'CANCELLED_CUSTOMER' } });
+};
+
+/**
+ * The raw-SQL shape the object-literal selectors cannot reach: `status` is a
+ * word inside a TemplateElement, not a Property node. Every real status write
+ * in the codebase looks like this, so a ban that only matched Prisma's
+ * `.update()` never fired at all.
+ */
+export const rawStatusWrite = async (to: string): Promise<void> => {
+  await db.$executeRaw(sql`UPDATE bookings SET status = ${to}::booking_status WHERE id = '1'`);
 };

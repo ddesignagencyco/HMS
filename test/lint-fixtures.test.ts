@@ -66,15 +66,26 @@ describe('SHM-001: every banned pattern has a fixture that makes lint fail', () 
     expect(rules).toContain('no-restricted-syntax');
   });
 
+  it('rejects a raw SQL status write, not just the Prisma update shapes', async () => {
+    const rules = await lintFile('banned-bookings-status.ts');
+    expect(rules.filter(rule => rule === 'no-restricted-syntax').length).toBeGreaterThanOrEqual(4);
+  });
+
   it('still accepts lookalike code that is not a money or status write', async () => {
     const rules = await lintFile('allowed-lookalikes.ts');
     expect(rules).not.toContain('no-restricted-syntax');
   });
 
-  it('covers both the bare and the qualified Prisma write, and the nested data object', async () => {
+  it('covers the bare, the qualified, the nested data object and the raw SQL write', async () => {
     const messages = await lintMessages('banned-bookings-status.ts');
     const statusMessages = messages.filter(entry => entry.message.includes('BookingStateService'));
-    expect(statusMessages.length).toBeGreaterThanOrEqual(3);
+    expect(statusMessages.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('covers the bare-Identifier and the MemberExpression money coercions', async () => {
+    const messages = await lintMessages('banned-money-as-number.ts');
+    const moneyMessages = messages.filter(entry => entry.message.includes('bigint paisa'));
+    expect(moneyMessages.length).toBeGreaterThanOrEqual(5);
   });
 
   it('states both bans as messages a developer can act on', () => {
