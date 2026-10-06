@@ -1,5 +1,6 @@
 // apps/api/src/booking/booking.row.ts
 import { Prisma } from '@prisma/client';
+import { paisaToNumber } from '@smart-home/domain';
 
 export type BookingRow = {
   id: string;
@@ -57,9 +58,9 @@ export const BOOKING_COLUMNS = Prisma.sql`id, code, customer_id as "customerId",
 
 export const toBookingRow = (raw: BookingRowRaw): BookingRow => ({
   ...raw,
-  quotedAmountPaisa: Number(raw.quotedAmountPaisa),
-  approvedTotalPaisa: Number(raw.approvedTotalPaisa),
-  finalAmountPaisa: raw.finalAmountPaisa === null ? null : Number(raw.finalAmountPaisa),
-  discountPaisa: Number(raw.discountPaisa)
+  quotedAmountPaisa: paisaToNumber(raw.quotedAmountPaisa),
+  approvedTotalPaisa: paisaToNumber(raw.approvedTotalPaisa),
+  finalAmountPaisa: raw.finalAmountPaisa === null ? null : paisaToNumber(raw.finalAmountPaisa),
+  discountPaisa: paisaToNumber(raw.discountPaisa)
 });
 

@@ -1,7 +1,7 @@
 // apps/api/src/booking/offer.service.ts
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { splitAtLocalMidnight } from '@smart-home/domain';
+import { paisaToNumber, splitAtLocalMidnight } from '@smart-home/domain';
 import { DomainError, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { PaymentsService } from '../payment/payments.service.js';
@@ -90,7 +90,7 @@ export class OfferService {
     );
     return rows.map(({ onBehalfName, onBehalfPhoneE164, isOnBehalf, ...row }) => ({
       ...row,
-      quotedAmountPaisa: Number(row.quotedAmountPaisa),
+      quotedAmountPaisa: paisaToNumber(row.quotedAmountPaisa),
       // Masked: an offer is still a choice, so the provider does not get the contact
       // details of a job they are free to decline.
       onBehalfContact:

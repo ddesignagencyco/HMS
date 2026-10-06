@@ -217,11 +217,12 @@ export class PayoutsService {
   }
 
   async listBatches() {
-    const rows = await this.prisma.$queryRaw<{ id: string; periodStart: Date; periodEnd: Date; status: string; totalPaisa: bigint; payouts: bigint; createdAt: Date; paidAt: Date | null }[]>(
-      Prisma.sql`SELECT b.id, b.period_start as "periodStart", b.period_end as "periodEnd", b.status::text, b.total_paisa as "totalPaisa", (SELECT count(*) FROM payouts p WHERE p.batch_id = b.id)::bigint as payouts, b.created_at as "createdAt", b.paid_at as "paidAt"
+    // The payout count is a count, not paisa, so int4 keeps it a plain number at the Postgres boundary.
+    const rows = await this.prisma.$queryRaw<{ id: string; periodStart: Date; periodEnd: Date; status: string; totalPaisa: bigint; payoutCount: number; createdAt: Date; paidAt: Date | null }[]>(
+      Prisma.sql`SELECT b.id, b.period_start as "periodStart", b.period_end as "periodEnd", b.status::text, b.total_paisa as "totalPaisa", (SELECT count(*) FROM payouts p WHERE p.batch_id = b.id)::int as "payoutCount", b.created_at as "createdAt", b.paid_at as "paidAt"
         FROM payout_batches b ORDER BY b.created_at DESC LIMIT 100`
     );
-    return rows.map(row => ({ ...row, totalPaisa: paisaToNumber(row.totalPaisa), payouts: Number(row.payouts) }));
+    return rows.map(row => ({ ...row, totalPaisa: paisaToNumber(row.totalPaisa), payoutCount: row.payoutCount }));
   }
 
   /** The bank file. The account numbers in it are decrypted for this one purpose, and the download is audited. */

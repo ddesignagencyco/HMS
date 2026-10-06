@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { daySpan, earliestStart, generateSlots, instantFromWallTime, localDateOf, localMidnightOf } from '@smart-home/domain';
+import { daySpan, earliestStart, generateSlots, instantFromWallTime, localDateOf, localMidnightOf, paisaToNumber } from '@smart-home/domain';
 import { badRequest, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AppClock } from '../platform/app-clock.js';
@@ -215,7 +215,7 @@ export class SearchService {
     raw.sort((left, right) => rank(right) - rank(left) || left.distanceM - right.distanceM);
     return raw.map(({ ratingScoreHundredths, radiusM, ...row }) => {
       void radiusM;
-      return { ...row, pricePaisa: Number(row.pricePaisa), ratingScore: ratingScoreHundredths / 100, ratingCount: row.ratingCount };
+      return { ...row, pricePaisa: paisaToNumber(row.pricePaisa), ratingScore: ratingScoreHundredths / 100, ratingCount: row.ratingCount };
     });
   }
 
@@ -237,6 +237,6 @@ export class SearchService {
       Prisma.sql`SELECT a.id as "areaId", a.name FROM provider_service_areas psa JOIN areas a ON a.id = psa.area_id WHERE psa.provider_id = ${providerId}::uuid ORDER BY a.name`
     );
 
-    return { ...profile, services: servicesRaw.map(row => ({ ...row, pricePaisa: Number(row.pricePaisa) })), areas, reputation: await this.reputation.reputation(this.prisma, providerId) };
+    return { ...profile, services: servicesRaw.map(row => ({ ...row, pricePaisa: paisaToNumber(row.pricePaisa) })), areas, reputation: await this.reputation.reputation(this.prisma, providerId) };
   }
 }
