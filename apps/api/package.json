@@ -28,8 +28,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "dotenv -e ../../.env -- tsx watch src/main.ts",
-    "start": "dotenv -e ../../.env -- node dist/main.js",
+    "dev": "dotenv -e ../../.env -e ../../apps/web/.env -- tsx watch src/main.ts",
+    "start": "dotenv -e ../../.env -e ../../apps/web/.env -- node dist/main.js",
     "lint": "eslint src test",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
