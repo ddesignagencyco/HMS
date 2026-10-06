@@ -2,7 +2,7 @@
 
 import { AlertTriangle, CalendarClock, CheckCircle2, Clock3, MapPin } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { ButtonLink, Card, PageHeader, StatCard, StatusBadge } from '@/components/ui';
 import { useMyBookings } from '@/features/booking/queries';
 import type { Booking, BookingStatus } from '@/features/booking/api';
@@ -35,12 +35,19 @@ import { cn, formatDate, formatDateTime, formatMoney, localizedPath, type Locale
  * It still cannot show the address — see `BACKEND_REQUIREMENTS.md` §3.10. The area
  * is not on the booking either, so nothing here claims to know where the job is. */
 
-export function ProviderTodayScreen({ locale, dict }: { locale: Locale; dict: Dictionary }) {
+export function ProviderTodayScreen({ locale, dict, now }: { locale: Locale; dict: Dictionary; now?: Date }) {
   const bookings = useMyBookings(undefined, locale);
   const offers = useProviderOffers(locale);
   const availability = useAvailability(locale);
   const timeOff = useTimeOff(locale);
   const services = useAllServices(locale);
+
+  /* "Now" is injectable for tests: a day boundary is real, and a test computed
+     from the real clock can straddle it on a slow, heavily loaded run (exactly
+     the flake that made a past and a future booking count as the same kind, and
+     made a loaded run report the wrong weekday). The default is the wall clock. */
+  const nowDate = useMemo(() => now ?? new Date(), [now]);
+  const nowMs = nowDate.getTime();
 
   /** Bilingual service names, joined from `serviceId` by real lookup. */
   const names = useMemo(() => {
@@ -64,7 +71,7 @@ export function ProviderTodayScreen({ locale, dict }: { locale: Locale; dict: Di
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
-  }).format(new Date());
+  }).format(nowDate);
 
   const todays = useMemo(() => rows.filter((row) => localDay(row.scheduledStart) === platformDay), [rows, platformDay]);
   const later = useMemo(() => rows.filter((row) => localDay(row.scheduledStart) !== platformDay).sort((a, b) => a.scheduledStart.localeCompare(b.scheduledStart)), [rows, platformDay]);
@@ -78,18 +85,16 @@ export function ProviderTodayScreen({ locale, dict }: { locale: Locale; dict: Di
   const windows = availability.data?.items ?? [];
   /* `provider_availability.weekday` is 0 = Sunday … 6 = Saturday, the same numbering
      `Intl` uses with `weekday: 'short'` in the `en-US` locale. */
-  const todayWeekday = new Intl.DateTimeFormat('en-US', { timeZone: BUSINESS_TIMEZONE, weekday: 'short' }).format(new Date());
+  const todayWeekday = new Intl.DateTimeFormat('en-US', { timeZone: BUSINESS_TIMEZONE, weekday: 'short' }).format(nowDate);
   const todaysWindows = windows.filter((window) => WEEKDAY_INDEX[todayWeekday] === window.weekday);
 
-  /* Reading the clock during render is impure, so "am I on leave right now" is
-     answered from state seeded once. A day-scale question does not need a ticker. */
-  const [now] = useState(() => Date.now());
+  /* A day-scale question does not need a ticking clock — `nowMs` is seeded once,
+     consistent with `platformDay` above, and a leave period whose end has passed
+     does not cover today because `provider_time_off.period` is half-open. */
   const onLeave = (timeOff.data?.items ?? []).some((period) => {
-    /* `provider_time_off.period` is a half-open `tstzrange`, so a period ending
-       exactly at today's midnight does not cover today. */
     const start = new Date(period.start).getTime();
     const end = new Date(period.end).getTime();
-    return start <= now && now < end;
+    return start <= nowMs && nowMs < end;
   });
 
   return (
@@ -98,7 +103,7 @@ export function ProviderTodayScreen({ locale, dict }: { locale: Locale; dict: Di
         eyebrow={dict.portal.provider}
         title={dict.portal.today}
         description={dict.portal.todayText}
-        action={<p className="text-sm text-muted">{formatDate(new Date().toISOString(), locale)}</p>}
+        action={<p className="text-sm text-muted">{formatDate(nowDate.toISOString(), locale)}</p>}
       />
 
       {/* Whether today is even a working day is a fact from the availability and
@@ -142,7 +147,7 @@ export function ProviderTodayScreen({ locale, dict }: { locale: Locale; dict: Di
             {/* Titled with the date rather than the word "Today", which the page
                 header already says — and a date is what a professional actually
                 checks against their own diary. */}
-            <DaySection title={formatDate(new Date().toISOString(), locale)} rows={todays} locale={locale} dict={dict} names={names} />
+            <DaySection title={formatDate(nowDate.toISOString(), locale)} rows={todays} locale={locale} dict={dict} names={names} />
 
             {later.length > 0 ? <DaySection title={dict.portal.laterJobs} rows={later.slice(0, 8)} locale={locale} dict={dict} names={names} /> : null}
           </>

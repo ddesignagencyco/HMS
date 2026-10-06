@@ -234,6 +234,8 @@ Option 1 needs a rate limit and must not leak provider identity or the address.
   - [3.11 S1 — Nothing reads a booking's checklist](#311-s1--nothing-reads-a-bookings-checklist)
   - [3.10 S1 — A provider cannot read the address they are travelling to](#310-s1--a-provider-cannot-read-the-address-they-are-travelling-to)
   - [3.11 S1 — Nothing reads a booking's checklist](#311-s1--nothing-reads-a-bookings-checklist)
+  - [3.12 S2 — `favourites` exists and nothing reads it](#312-s2--favourites-exists-in-the-schema-and-nothing-reads-or-writes-it)
+  - [3.13 S2 — Four plan tables and no endpoint](#313-s2--four-plan-tables-and-no-endpoint)
 - [Module 4 — Notifications](#module-4--notifications)
   - [3.1 SMS gateway routing and failover](#31-sms-gateway-routing-and-failover)
   - [3.2 Localized notification templates](#32-localized-notification-templates)
@@ -1125,6 +1127,90 @@ says plainly that the steps themselves are driven by the service definition, whi
 the API does not publish to a provider. It does **not** render steps from catalogue
 mock data and then post invented `itemId` values; that would produce 422s the
 provider cannot diagnose.
+
+---
+
+## 3.12 S2 — `favourites` exists in the schema and nothing reads or writes it
+
+**Found while building `/account/favourites`.**
+
+The table is fully modelled and migrated:
+
+```prisma
+model favourites {
+  customer_id String   @db.Uuid
+  provider_id String   @db.Uuid
+  created_at  DateTime @default(now())
+  @@id([customer_id, provider_id])
+}
+```
+
+But `grep -ri favourite apps/api/src` returns **zero hits**. There is no
+`FavouritesService`, no `FavouritesController`, and no module in `app.module.ts`
+that could hold one. So a customer can never save a professional, and the list
+screen has nothing to render.
+
+**Ask** — the minimum that makes the screen work:
+
+```
+GET    /customer/favourites
+POST   /customer/favourites      { providerId }
+DELETE /customer/favourites/:providerId
+→ { items: [{ providerId, createdAt }] }
+```
+
+Three details the client will hold it to:
+
+- **`GET` must return enough to render a card.** A bare `providerId` would give
+  the screen a column of UUIDs. Join the same fields `GET /search/providers`
+  already publishes — name, trade, area, rating, `distanceM` — so a favourite can
+  be shown as a professional rather than an identifier.
+- **The composite primary key is the idempotency.** `POST` on an existing pair
+  must be a no-op rather than a 500 on the key constraint. The screen can then
+  treat the heart as idempotent without tracking what it already sent.
+- **`DELETE` is keyed on `providerId`, not a row id**, because the table has no
+  surrogate id. The screen must not invent one.
+
+## 3.13 S2 — Four plan tables and no endpoint
+
+**Found at the same time. `/account/plans` has no backend of any kind.**
+
+`plans`, `subscriptions`, `plan_visits` and `plan_services` are all migrated and
+fully modelled — `plans` even carries `name_en`/`name_ur`, and `subscriptions`
+carries `status`, `starts_at`, `ends_at`, `cancelled_at`, `address_id` and
+`preferred_provider_id`. Nothing reads or writes any of them:
+
+- no `SubscriptionModule` in `app.module.ts`
+- no controller anywhere under `apps/api/src` with a `subscription` or `plan`
+  route
+- the catalogue controller, which is where a public plan catalogue would
+  naturally live, has no plan route either
+
+Meanwhile the web app has a `/plans` public page and an `/account/plans` screen,
+both of which can only show invented prices and invented allowances. Inventing
+them is the worst option available: a customer could reasonably book against a
+plan that does not exist.
+
+**Ask**, split by who needs it:
+
+| Route | Audience | Returns |
+| --- | --- | --- |
+| `GET /plans` | public | active plans with price, duration, included services, visit count |
+| `GET /customer/subscription` | signed in | the caller's plan, status, window, visits used/remaining |
+| `POST /customer/subscription` | signed in | start one against a paid-for payment |
+| `POST /customer/subscription/cancel` | signed in | cancel, with the reason |
+
+Two contract points, both from the schema rather than invented here:
+
+- **`plan_services` is many-to-many**, so "what's included" is a list, not a
+  single service id. The catalogue route must join it or the screen cannot show
+  what a plan actually buys.
+- **`subscriptions.preferred_provider_id` is nullable** — a plan can have no
+  preferred professional, and the screen must not render a slot for one.
+
+**Interim behaviour.** Both screens say the feature is not available and explain
+what is missing, rather than rendering invented prices. A plan card with a made-up
+price is worse than an honest absence, because the number looks authoritative.
 
 ---
 

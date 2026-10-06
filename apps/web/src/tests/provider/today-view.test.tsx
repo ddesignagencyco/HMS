@@ -30,10 +30,16 @@ const locale: Locale = 'en';
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 
+/* A pinned "now", so the screen's day boundary and the fixtures below can never
+   straddle a midnight on a slow, heavily loaded run: the component defaults to
+   the wall clock and these tests hand it this. 12:00 in Asia/Karachi on a known
+   day, comfortably clear of a boundary either way. */
+const NOW = new Date('2026-10-06T07:00:00.000Z');
+
 const renderScreen = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0, gcTime: 0 } } });
   const Component = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  return render(<ProviderTodayScreen locale={locale} dict={dict} />, { wrapper: Component });
+  return render(<ProviderTodayScreen locale={locale} dict={dict} now={NOW} />, { wrapper: Component });
 };
 
 const booking = (over: Record<string, unknown> = {}) => ({
@@ -69,9 +75,9 @@ const booking = (over: Record<string, unknown> = {}) => ({
   ...over
 });
 
-/** Today in Asia/Karachi, in the shape `Intl` produces with `en-CA`. */
+/** The pinned "now", in the shape `Intl` produces with `en-CA`. */
 const karachiDay = (offsetDays = 0): string => {
-  const now = Date.now() + offsetDays * 86_400_000;
+  const now = NOW.getTime() + offsetDays * 86_400_000;
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now));
 };
 
@@ -103,8 +109,13 @@ let offers = [
 
 beforeEach(() => {
   rows = [booking()];
-  windows = [{ id: 'w1', weekday: new Date().getDay(), startTime: '09:00', endTime: '18:00' }];
+  /* The component computes today's weekday in Asia/Karachi, so the fixture window
+     must be set that way too — a test runner west of the dateline would otherwise
+     disagree with it by a day. */
+  const short = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Karachi', weekday: 'short' }).format(NOW);
+  const weekday = ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[short];
   leave = [];
+  windows = [{ id: 'w1', weekday, startTime: '09:00', endTime: '18:00' }];
   offers = [
     {
       id: 'o1',
@@ -210,14 +221,14 @@ describe('what counts as earned', () => {
 
 describe('whether today is a working day', () => {
   it('says so when there is recorded leave covering now', async () => {
-    const now = Date.now();
+    const now = NOW.getTime();
     leave = [{ id: 't1', start: new Date(now - 86_400_000).toISOString(), end: new Date(now + 86_400_000).toISOString(), reason: 'Eid', createdAt: new Date(now).toISOString() }];
     renderScreen();
     expect(await screen.findByText(dict.portal.todayOnLeave)).toBeDefined();
   });
 
   it('treats a leave period that has ended as no leave', async () => {
-    const now = Date.now();
+    const now = NOW.getTime();
     /* `provider_time_off.period` is a half-open `tstzrange`, so a period whose end
        has passed does not cover today. */
     leave = [{ id: 't1', start: new Date(now - 4 * 86_400_000).toISOString(), end: new Date(now - 86_400_000).toISOString(), reason: null, createdAt: new Date(now - 5 * 86_400_000).toISOString() }];
