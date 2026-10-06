@@ -26,8 +26,37 @@ describe('strict environment validation', () => {
     expect(values.LOG_LEVEL).toBe('info');
     expect(values.CORS_ORIGINS).toEqual(['http://localhost:3000']);
     expect(values.STORAGE_BUCKETS).toEqual(['evidence', 'documents', 'recordings', 'reports']);
-    expect(values.DEV_INBOX_ENABLED).toBe(true);
+    // The dev inbox is opt-in. It serves every OTP the platform has sent, so it is
+    // off unless an environment asks for it by name -- see the DEV_INBOX_ENABLED tests
+    // below for why that matters.
+    expect(values.DEV_INBOX_ENABLED).toBe(false);
+    expect(parseEnvironment({ ...base(), DEV_INBOX_ENABLED: 'true' }).DEV_INBOX_ENABLED).toBe(true);
     expect(values.OUTBOX_POLL_INTERVAL_MS).toBe(1_000);
+  });
+
+  describe('the dev inbox is opt-in, not opt-out', () => {
+    // `/dev/inbox` serves every OTP the platform has ever sent and
+    // `/dev/payments/{id}/complete` captures arbitrary payments, both unauthenticated.
+    // It used to default to on, so any deployment that set NODE_ENV to `development`
+    // or `test` -- which is what a preview, demo or shared box usually does -- had it
+    // live without anyone asking for it. `NODE_ENV` has only three legal values, so
+    // the fix is not to refuse it in some other environment name: it is to require
+    // it to be switched on deliberately.
+
+    it('defaults to off', () => {
+      expect(parseEnvironment(base()).DEV_INBOX_ENABLED).toBe(false);
+    });
+
+    it('is available when a developer explicitly asks for it', () => {
+      expect(parseEnvironment({ ...base(), NODE_ENV: 'development', DEV_INBOX_ENABLED: 'true' }).DEV_INBOX_ENABLED).toBe(true);
+      expect(parseEnvironment({ ...base(), NODE_ENV: 'test', DEV_INBOX_ENABLED: 'true' }).DEV_INBOX_ENABLED).toBe(true);
+    });
+
+    it('is refused in production even when asked for', () => {
+      const result = environmentSchema.safeParse({ ...base(), NODE_ENV: 'production', DEV_INBOX_ENABLED: 'true' });
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues.map(issue => issue.path.join('.'))).toContain('DEV_INBOX_ENABLED');
+    });
   });
 
   it('fails fast when a required secret is missing or too short', () => {
@@ -50,7 +79,7 @@ describe('strict environment validation', () => {
   });
 
   it('rejects a development inbox and development secrets in production', () => {
-    const production = { ...base(), NODE_ENV: 'production', JWT_ACCESS_SECRET: 'development-access-secret-change-me-32-chars' };
+    const production = { ...base(), NODE_ENV: 'production', DEV_INBOX_ENABLED: 'true', JWT_ACCESS_SECRET: 'development-access-secret-change-me-32-chars' };
     const result = environmentSchema.safeParse(production);
     expect(result.success).toBe(false);
     if (!result.success) {

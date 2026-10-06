@@ -65,7 +65,14 @@ export const environmentSchema = z
 
     STORAGE_BUCKETS: csv.default('evidence,documents,recordings,reports'),
 
-    DEV_INBOX_ENABLED: booleanFromEnv.default('true'),
+    // Opt-in, not opt-out. This flag opens `/dev/inbox`, which serves every OTP the
+  // system has ever sent, and `/dev/payments/{id}/complete`, which can capture an
+  // arbitrary payment. Both were reachable with no token and no configuration in any
+  // deployment whose NODE_ENV was not literally `production` -- staging, a preview
+  // environment, a demo box. The production guard below is not enough on its own,
+  // because "not production" is exactly the case that leaks. So it has to be asked
+  // for by name. CI sets it explicitly; `.env.example` does too.
+  DEV_INBOX_ENABLED: booleanFromEnv.default('false'),
     OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(1_000)
   })
   .superRefine((value, context) => {
@@ -81,6 +88,19 @@ export const environmentSchema = z
       if (value[key] !== 'mock') add(key, `Only the mock adapter is wired in this increment; ${key} must be "mock"`);
     }
     if (value.STORAGE_BUCKETS.length === 0) add('STORAGE_BUCKETS', 'At least one storage bucket is required');
+
+    // The dev inbox is the single most dangerous flag in the system: `/dev/inbox`
+    // serves every OTP the platform has sent, unauthenticated, and
+    // `/dev/payments/{id}/complete` captures an arbitrary payment. It now defaults to
+    // off, which is the actual fix -- `NODE_ENV` has only three legal values, so a
+    // preview or demo box that sets `development` or `test` (as those usually do) used
+    // to get the inbox live without anyone asking for it. On top of that it is refused
+    // unless the environment is explicitly `development` or `test`, so enabling it
+    // anywhere else fails the boot instead of quietly serving every customer's
+    // one-time code to whoever asks.
+    if (value.DEV_INBOX_ENABLED && value.NODE_ENV !== 'development' && value.NODE_ENV !== 'test') {
+      add('DEV_INBOX_ENABLED', `The development inbox may only be enabled when NODE_ENV is "development" or "test" (this is "${value.NODE_ENV}"). It exposes every OTP the platform has sent.`);
+    }
   });
 
 export type Environment = z.infer<typeof environmentSchema>;
