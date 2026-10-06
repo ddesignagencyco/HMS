@@ -19,7 +19,8 @@ export const MAX_EVIDENCE_EDGE_PX = 1600;
 /** Matches `evidence.photo_max_bytes`. Rejecting above this is a last resort. */
 export const MAX_EVIDENCE_BYTES = 5 * 1024 * 1024;
 
-const fileToBase64 = (file: Blob): Promise<string> =>
+/** How a FileReader failure and an oversized read both read to the person at the keyboard. */
+export const fileToBase64 = (file: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('That file could not be read.'));

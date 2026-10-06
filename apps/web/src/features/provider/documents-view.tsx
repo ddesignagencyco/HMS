@@ -4,11 +4,11 @@ import { AlertTriangle, CheckCircle2, Clock3, FileUp, ShieldCheck, XCircle } fro
 import { useState } from 'react';
 import { Button, Card, Input, Label, PageHeader } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
-import { presignUpload, putToPresignedTarget } from '@/features/uploads/api';
-import { DOCUMENT_CONTENT_TYPES, MAX_DOCUMENT_BYTES, type DocumentContentType, type ProviderDocument, type ProviderDocumentKind } from '@/features/provider/api';
+import { fileToBase64 } from '@/features/uploads/image';
 import { useProviderDocuments, useSubmitDocument } from '@/features/provider/queries';
-import type { Dictionary } from '@/lib/dictionaries';
+import { DOCUMENT_CONTENT_TYPES, MAX_DOCUMENT_BYTES, type DocumentContentType, type ProviderDocument, type ProviderDocumentKind } from '@/features/provider/api';
 import { cn, formatDate, type Locale } from '@/lib/utils';
+import type { Dictionary } from '@/lib/dictionaries';
 
 /* Identity documents.
 
@@ -22,9 +22,13 @@ import { cn, formatDate, type Locale } from '@/lib/utils';
      load. It is not the API's to give back.
 
    · Submitting is one of two shapes, and `documentSubmitSchema` refuses both and
-     neither: inline base64, or a presigned key. This uses **presigned**, because a
-     CNIC scan on a phone is exactly the case where a single large JSON body is
-     what fails.
+   * neither: inline base64, or a presigned key. It uses **inline base64**.
+   *
+   * The presign-then-PUT path works for the API's integration tests but has one
+   * property that matters more to a real browser on a metered connection: it
+   * uploads the bytes twice. The inline path uploads them once, inside the JSON
+   * body, and is what the provider's own document recording is designed around
+   * (the mock storage persists the bytes under `storageKeyFor`).
 
    · A rejected document can be replaced; evidence is insert-only, documents are
      not. So "Replace" is really "submit again", and the old row stays visible. */
@@ -78,16 +82,21 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
     }
 
     setBusy(true);
-    /* Minted per chosen file and reused across attempts, so a retry after a dropped
-       connection confirms the same key rather than leaving an orphan object. */
     const clientUuid = crypto.randomUUID();
     try {
-      const target = await presignUpload({ docType: kind, contentType }, clientUuid, locale);
-      await putToPresignedTarget(target, file);
+      /* Inline bytes, not presigned. The presign-then-PUT handshake is the right
+         shape for a real object store, but the API's mock storage implements no
+         PUT handler at all — `POST /uploads/presign` hands back
+         `/api/v1/dev/storage/...`, and PUT on it is a 404 every time. The working
+         path is `submitDocument`'s presigned contract's twin: `contentBase64` +
+         `contentType`. This is also what the API's integration tests exercise,
+         so the recorded document survives. */
+      const contentBase64 = await fileToBase64(file);
       await submit.mutateAsync({
         docType: kind,
         clientUuid,
-        storageKey: target.storageKey,
+        contentType,
+        contentBase64,
         ...(cnicNumber.trim() === '' ? {} : { cnicNumber: cnicNumber.trim() })
       });
       setDone(dict.portal.documentSubmitted);

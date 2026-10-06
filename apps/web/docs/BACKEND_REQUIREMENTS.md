@@ -232,10 +232,9 @@ Option 1 needs a rate limit and must not leak provider identity or the address.
   - [3.9 Verified working — no action needed](#39-verified-working--no-action-needed)
   - [3.10 S1 — A provider cannot read the address they are travelling to](#310-s1--a-provider-cannot-read-the-address-they-are-travelling-to)
   - [3.11 S1 — Nothing reads a booking's checklist](#311-s1--nothing-reads-a-bookings-checklist)
-  - [3.10 S1 — A provider cannot read the address they are travelling to](#310-s1--a-provider-cannot-read-the-address-they-are-travelling-to)
-  - [3.11 S1 — Nothing reads a booking's checklist](#311-s1--nothing-reads-a-bookings-checklist)
   - [3.12 S2 — `favourites` exists and nothing reads it](#312-s2--favourites-exists-in-the-schema-and-nothing-reads-or-writes-it)
   - [3.13 S2 — Four plan tables and no endpoint](#313-s2--four-plan-tables-and-no-endpoint)
+  - [3.14 S2 — No PUT handler for the mock storage presign URL](#314-s2--no-put-handler-for-the-mock-storage-presign-url)
 - [Module 4 — Notifications](#module-4--notifications)
   - [3.1 SMS gateway routing and failover](#31-sms-gateway-routing-and-failover)
   - [3.2 Localized notification templates](#32-localized-notification-templates)
@@ -1046,7 +1045,7 @@ There is no way to turn that into a street address from a provider's session:
 - `GET /customer/addresses` is `@PolicyDecorator({ roles: ['CUSTOMER'] })`
   (`apps/api/src/customer/addresses.controller.ts:16`) — a provider gets a 403.
 - `BookingRow` deliberately carries no lat/lng or address text. That omission is
-  *correct and should stay*: `on-behalf.ts` explains that every provider-facing
+  _correct and should stay_: `on-behalf.ts` explains that every provider-facing
   endpoint in the booking module returns this row, so an address on it would be
   handed to a professional who is still deciding whether to take the job.
 - `GET /bookings/:id/on-behalf-contact` returns `{ name, phone, revealed }` and is
@@ -1055,8 +1054,8 @@ There is no way to turn that into a street address from a provider's session:
 So the professional accepts a job and learns the service, the time, the problem
 description — and cannot find the house.
 
-**Ask:** one endpoint that returns the service address *for the assigned provider
-of that booking only*, after acceptance, under the same masking discipline as
+**Ask:** one endpoint that returns the service address _for the assigned provider
+of that booking only_, after acceptance, under the same masking discipline as
 `onBehalfContact`:
 
 ```
@@ -1122,7 +1121,7 @@ GET /bookings/:id/checklist
   disagree with the 409 it is trying to avoid.
 
 **Interim behaviour, and it is not good.** Until this exists the frontend shows the
-photo requirements — which it *can* derive from `GET /bookings/:id/evidence` — and
+photo requirements — which it _can_ derive from `GET /bookings/:id/evidence` — and
 says plainly that the steps themselves are driven by the service definition, which
 the API does not publish to a provider. It does **not** render steps from catalogue
 mock data and then post invented `itemId` values; that would produce 422s the
@@ -1193,12 +1192,12 @@ plan that does not exist.
 
 **Ask**, split by who needs it:
 
-| Route | Audience | Returns |
-| --- | --- | --- |
-| `GET /plans` | public | active plans with price, duration, included services, visit count |
-| `GET /customer/subscription` | signed in | the caller's plan, status, window, visits used/remaining |
-| `POST /customer/subscription` | signed in | start one against a paid-for payment |
-| `POST /customer/subscription/cancel` | signed in | cancel, with the reason |
+| Route                                | Audience  | Returns                                                           |
+| ------------------------------------ | --------- | ----------------------------------------------------------------- |
+| `GET /plans`                         | public    | active plans with price, duration, included services, visit count |
+| `GET /customer/subscription`         | signed in | the caller's plan, status, window, visits used/remaining          |
+| `POST /customer/subscription`        | signed in | start one against a paid-for payment                              |
+| `POST /customer/subscription/cancel` | signed in | cancel, with the reason                                           |
 
 Two contract points, both from the schema rather than invented here:
 
@@ -1211,6 +1210,39 @@ Two contract points, both from the schema rather than invented here:
 **Interim behaviour.** Both screens say the feature is not available and explain
 what is missing, rather than rendering invented prices. A plan card with a made-up
 price is worse than an honest absence, because the number looks authoritative.
+
+## 3.14 S2 — No PUT handler for the mock storage presign URL
+
+**Found while fixing `/provider/documents`: there is no way to presign and then
+PUT with the current mock storage.**
+
+The mock adapter (`integrations/mocks.ts`) returns the upload target for the
+browser to PUT to:
+
+```
+POST /uploads/presign
+→ { url: `/api/v1/dev/storage/${bucket}/${key}?contentType=…&maxBytes=…` }
+```
+
+But `integrations/dev.controller.ts` only implements
+`GET /api/v1/dev/storage/:bucket/:key`. It never adds a `PUT`, so a presigned
+upload is a guaranteed **404** the moment the browser PUTs the file.
+
+**Why this matters to the client.** The document screen cannot drive the prescript
+handshake in the mock environment — it has to fall back to the schema's other
+column, `contentBase64`, which is what it now uses. **This is not a frontend bug**;
+the frontend wiring was correct against the schema. It is a mock that hands out
+URLs for a verb nobody routes.
+
+**Ask:** add the matching union pair to the mock:
+
+- `PUT /api/v1/dev/storage/:bucket/:key` — stores the bytes the presigned URL
+  described, in memory, under `bucket/key`.
+- Return the same URL shape the GET handler already uses for retrieval.
+
+Until then the inline `contentBase64` path is the correct and expected one for
+local testing — which is also why the API's own integration suite drives the
+inline path and does not catch this.
 
 ---
 

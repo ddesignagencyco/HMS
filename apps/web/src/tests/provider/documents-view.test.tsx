@@ -14,9 +14,10 @@ import type { Locale } from '@/lib/utils';
      `{ hasCnic, cnicVerified }`. **The CNIC number is never returned by any
      endpoint.** A test asserts the number never reaches the DOM even when the
      person typed one — the screen submits it and must never read it back.
-   · Submitting is presigned: `POST /uploads/presign` → PUT the bytes → `POST
-     /provider/documents` with `storageKey`. `documentSubmitSchema` refuses both
-     `contentBase64` and `storageKey`, and refuses neither.
+   · Submitting is **inline base64**: one POST to `/provider/documents` carrying
+     `contentBase64`. The mock storage implements no PUT handler, so the
+     presigned handshake would 404 — the test asserts the inline path and that
+     `storageKey` is *not* sent, per the schema's either/or.
    · Only JPEG, PNG and PDF are accepted; `documentContentTypes` has no
      octet-stream, so an unsupported file is refused before the round trip.
    · A CNIC number may only accompany a CNIC front or back scan. */
@@ -140,7 +141,7 @@ describe('provider documents', () => {
     expect(callsTo('/uploads/presign', 'POST')).toHaveLength(0);
   });
 
-  it('uploads through the presigned handshake, not an inline body', async () => {
+  it('uploads a single inline body, not a presigned round trip', async () => {
     renderScreen();
     const input = (await screen.findByLabelText(dict.portal.chooseFileLabel)) as HTMLInputElement;
     fireEvent.change(input, { target: { files: [pngFile()] } });
@@ -148,23 +149,17 @@ describe('provider documents', () => {
 
     await waitFor(() => expect(screen.getByText(dict.portal.documentSubmitted)).toBeDefined());
 
-    // 1. presign, 2. PUT the bytes to the storage host, 3. confirm the key.
+    // One POST to /provider/documents with contentBase64, no presign call.
     const presign = callsTo('/uploads/presign', 'POST');
-    expect(presign).toHaveLength(1);
-    expect(JSON.parse(String((presign[0][1] as RequestInit).body))).toEqual({
-      docType: 'CNIC_FRONT',
-      contentType: 'image/png'
-    });
-    expect(callsTo('https://storage.example/put', 'PUT')).toHaveLength(1);
+    expect(presign).toHaveLength(0);
 
-    // The confirm carries a storageKey and NOT contentBase64 — the schema
-    // refuses both and neither.
     const confirm = callsTo('/provider/documents', 'POST');
     expect(confirm).toHaveLength(1);
     const body = JSON.parse(String((confirm[0][1] as RequestInit).body)) as Record<string, unknown>;
-    expect(body.storageKey).toBe('provider/x/cnic-front.png');
-    expect(body.contentBase64).toBeUndefined();
+    expect(body.contentBase64).toBeTruthy();
+    expect(body.contentType).toBe('image/png');
     expect(body.docType).toBe('CNIC_FRONT');
+    expect(body.storageKey).toBeUndefined();
   });
 
   it('sends the CNIC number only with a CNIC scan', async () => {
@@ -186,21 +181,16 @@ describe('provider documents', () => {
   it('reports a failure without claiming the document was recorded', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.startsWith('https://storage.example/')) {
-          return new Response('no', { status: 403 });
-        }
-        if (url.includes('/uploads/presign')) {
-          return json({
-            storageKey: 'k',
-            url: 'https://storage.example/put/k',
-            method: 'PUT',
-            expiresAt: '2026-10-01T00:05:00.000Z',
-            maxBytes: 5 * 1024 * 1024
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : String(input);
+        if ((init?.method ?? 'GET').toUpperCase() === 'POST') {
+          return new Response(JSON.stringify({ type: 'about:blank', title: 'x', status: 500, code: 'INTERNAL_ERROR', detail: 'could not store', errors: [] }), {
+            status: 500,
+            headers: { 'content-type': 'application/problem+json' }
           });
         }
-        return json(list);
+        if (url.includes('/provider/documents')) return json(list);
+        throw new Error(`unrouted ${url}`);
       })
     );
     renderScreen();

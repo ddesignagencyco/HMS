@@ -135,18 +135,27 @@ export function ProviderServicesScreen({ locale, dict }: { locale: Locale; dict:
             />
             <Button
               type="button"
+              disabled={addingId === null || setPrice.isPending}
               onClick={() => {
-                if (addingId !== null) {
-                  /* Starting from the catalogue base price keeps the first save
-                     inside the band — the API rejects anything outside it. */
-                  const service = byId.get(addingId);
-                  setDraftPrice(String((service?.basePricePaisa ?? 0) / 100));
-                  setEditingId(addingId);
-                  setAdding(false);
-                  setAddingId(null);
-                }
+                if (addingId === null) return;
+                /* One PUT upserts the binding; the catalogue's base price is always
+                   inside the band, so the API accepts it and the provider can
+                   change it afterwards through the row's own editor.
+
+                   The previous implementation only closed the card and set an
+                   edit id for a service that was not yet a row, so nothing was
+                   rendered and the click looked like a no-op. */
+                const service = byId.get(addingId);
+                const pricePaisa = service?.basePricePaisa ?? 0;
+                setLocalError('');
+                setPrice
+                  .mutateAsync({ serviceId: addingId, pricePaisa })
+                  .then(() => {
+                    setAdding(false);
+                    setAddingId(null);
+                  })
+                  .catch((error: unknown) => setLocalError(error instanceof Error ? error.message : dict.portal.priceSaveFailed));
               }}
-              disabled={addingId === null}
             >
               {dict.portal.addService}
             </Button>

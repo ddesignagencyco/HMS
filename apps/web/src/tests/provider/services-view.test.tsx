@@ -52,6 +52,15 @@ const leakRepair = catalogueService({
   maxPricePaisa: 150000
 });
 
+const tapReset = catalogueService({
+  id: 22,
+  slug: 'tap-reset',
+  nameEn: 'Tap Reset',
+  basePricePaisa: 200000,
+  minPricePaisa: 150000,
+  maxPricePaisa: 300000
+});
+
 const binding = (input: { serviceId: number; pricePaisa: number; status: string }) => ({
   providerId: '00000000-0000-4000-8000-000000000098',
   serviceId: input.serviceId,
@@ -83,10 +92,11 @@ beforeEach(() => {
       const method = (init?.method ?? 'GET').toUpperCase();
 
       if (method === 'PUT' && url.includes('/provider/services/11')) return json(bindings[0]);
+      if (method === 'PUT' && url.includes('/provider/services/22')) return json(binding({ serviceId: 22, pricePaisa: 200000, status: 'PENDING' }));
       if (method === 'DELETE' && url.includes('/provider/services/11')) return new Response(null, { status: 204 });
       if (method === 'GET' && url.includes('/provider/services')) return json({ items: bindings });
       if (method === 'GET' && /\/catalogue\/categories\/[^/]+\/services/.test(url)) {
-        return json({ items: [leakRepair] });
+        return json({ items: [leakRepair, tapReset] });
       }
       if (method === 'GET' && url.includes('/catalogue/categories')) {
         return json({
@@ -132,6 +142,30 @@ describe('the services a provider offers', () => {
     renderScreen();
     expect(await screen.findByText(dict.portal.serviceApproval.PENDING)).toBeDefined();
     expect(screen.getByText(dict.portal.servicePendingNote)).toBeDefined();
+  });
+
+  it('adds a service chosen from the catalogue and opens its editor', async () => {
+    bindings = [binding({ serviceId: 11, pricePaisa: 100000, status: 'APPROVED' })];
+    renderScreen();
+    await screen.findByText('Leak Repair');
+
+    /* Open the add console, pick the unbound catalogue service, confirm.
+       React-select is driven by mouseDown on its control — a plain change event
+       does not reach its onChange. The confirm repeats the header label, so it is
+       picked as the button *after* the card opens. */
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.addService }));
+    const combobox = (await screen.findByRole('combobox')) as HTMLInputElement;
+    fireEvent.mouseDown(combobox);
+    fireEvent.click(await screen.findByText('Tap Reset'));
+
+    const confirms = screen.getAllByRole('button', { name: dict.portal.addService });
+    fireEvent.click(confirms[confirms.length - 1]);
+
+    await waitFor(() => {
+      const put = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find(([url, init]) => String(url).includes('/provider/services/22') && (init as RequestInit | undefined)?.method === 'PUT');
+      expect(put).toBeDefined();
+      expect(JSON.parse(String((put?.[1] as RequestInit).body))).toEqual({ pricePaisa: 200000 });
+    });
   });
 
   it('shows a rejected binding as not approved, without hiding it', async () => {
