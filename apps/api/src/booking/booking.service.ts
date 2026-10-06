@@ -338,6 +338,7 @@ export class BookingService {
       await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
       const updated = await tx.$queryRaw<BookingRowRaw[]>(
         // A rework visit is a new visit: visit_no moves on, so its checklist, photos and verification are separate records from the first.
+        // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingService.start (FR-EX-02), transition_ctx set above
         Prisma.sql`UPDATE bookings SET status = 'IN_PROGRESS'::booking_status, start_otp_verified_at = now(), start_otp_attempts = 0, start_otp_locked_until = NULL,
             visit_no = CASE WHEN ${row.status} = 'REWORK_REQUIRED' THEN visit_no + 1 ELSE visit_no END
           WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`
@@ -410,7 +411,7 @@ export class BookingService {
             VALUES (${bookingId}::uuid, 'SCHEDULED'::booking_status, 'SCHEDULED'::booking_status, 'reschedule', ${actorUserId}::uuid, 'CUSTOMER'::actor_role,
               ${JSON.stringify({ previousStart: row.scheduledStart.toISOString(), previousEnd: row.scheduledEnd.toISOString() })}::jsonb)`
         );
-        await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.reschedule', payload: { previousStart: row.scheduledStart.toISOString(), newStart: start.toISOString() } });
+        await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.reschedule', payload: { bookingId, previousStart: row.scheduledStart.toISOString(), newStart: start.toISOString() } });
 
         return toBookingRow(next);
       });
@@ -444,6 +445,7 @@ export class BookingService {
 
       await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
       const updated = await tx.$queryRaw<BookingRowRaw[]>(
+        // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingService.raiseQuoteRevision (FR-EX-05), transition_ctx set above
         Prisma.sql`UPDATE bookings SET status = 'QUOTE_REVISION'::booking_status WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`
       );
       const next = updated[0];
@@ -495,6 +497,7 @@ export class BookingService {
         await tx.$executeRaw(Prisma.sql`UPDATE payments SET status = 'EXPIRED'::payment_status WHERE id = ${revision.topupPaymentId}::uuid AND status = 'INITIATED'`);
       }
       await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
+      // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingService.rejectQuoteRevision (FR-EX-05), transition_ctx set above
       const updated = await tx.$queryRaw<BookingRowRaw[]>(Prisma.sql`UPDATE bookings SET status = 'IN_PROGRESS'::booking_status WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`);
       const next = updated[0];
       if (next === undefined) throw new Error('Booking update did not return a row');
@@ -502,7 +505,7 @@ export class BookingService {
         Prisma.sql`INSERT INTO booking_status_history(booking_id, from_status, to_status, event, actor_user_id, actor_role, metadata)
           VALUES (${bookingId}::uuid, 'QUOTE_REVISION'::booking_status, 'IN_PROGRESS'::booking_status, 'rejectQuoteRevision', ${customerId}::uuid, 'CUSTOMER'::actor_role, ${JSON.stringify({ revisionId: revision.id })}::jsonb)`
       );
-      await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.rejectQuoteRevision', payload: { revisionId: revision.id } });
+      await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.rejectQuoteRevision', payload: { revisionId: revision.id, bookingId } });
 
       // FR-EX-11: an inspection-first job whose extra work is refused ends here, at the visit fee.
       const services = await tx.$queryRaw<{ pricingModel: string }[]>(Prisma.sql`SELECT pricing_model as "pricingModel" FROM services WHERE id = ${row.serviceId}`);
@@ -537,6 +540,7 @@ export class BookingService {
     await tx.$executeRaw(Prisma.sql`UPDATE quote_revisions SET status = 'APPROVED'::revision_status, decided_by = ${customerId}::uuid, decided_at = now() WHERE id = ${revisionId}::uuid`);
     await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
     const updated = await tx.$queryRaw<BookingRowRaw[]>(
+      // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingService.approveRevisionInTx (FR-EX-05), transition_ctx set above
       Prisma.sql`UPDATE bookings SET status = 'IN_PROGRESS'::booking_status, approved_total_paisa = approved_total_paisa + ${revision.deltaPaisa} WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`
     );
     const next = updated[0];
@@ -549,7 +553,7 @@ export class BookingService {
       Prisma.sql`INSERT INTO booking_status_history(booking_id, from_status, to_status, event, actor_user_id, actor_role, metadata)
         VALUES (${bookingId}::uuid, 'QUOTE_REVISION'::booking_status, 'IN_PROGRESS'::booking_status, 'approveQuoteRevision', ${customerId}::uuid, 'CUSTOMER'::actor_role, ${JSON.stringify({ revisionId })}::jsonb)`
     );
-    await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.approveQuoteRevision', payload: { revisionId } });
+    await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.approveQuoteRevision', payload: { revisionId, bookingId } });
     return toBookingRow(next);
   }
 

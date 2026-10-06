@@ -92,6 +92,12 @@ export const BOOKING_TRANSITIONS: Partial<Record<BookingStatus, Partial<Record<B
   SCHEDULED: {
     cancel: { to: 'CANCELLED_CUSTOMER', allowedRoles: ['CUSTOMER', 'PROVIDER'] },
     reschedule: { to: 'SCHEDULED', allowedRoles: ['CUSTOMER'] },
+    // SRS T13 allows a no-show to be reported from SCHEDULED as well as EN_ROUTE:
+    // a provider who never taps "depart" and simply does not turn up has still failed
+    // the visit, and the customer is otherwise left with a booking they cannot close.
+    // The BR-04 grace window in `BookingStateService` is what stops this being
+    // reportable the instant the visit was due to start.
+    noShow: { to: 'NO_SHOW', allowedRoles: ['CUSTOMER', 'PROVIDER'] },
     depart: { to: 'EN_ROUTE', allowedRoles: ['PROVIDER'] }
   },
   EN_ROUTE: {

@@ -39,6 +39,7 @@ export const applySystemEvent = async (tx: Prisma.TransactionClient, bookingId: 
 
   await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
   const updated = await tx.$queryRaw<BookingRowRaw[]>(
+    // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingStateService/applySystemEvent, transition_ctx set above
     Prisma.sql`UPDATE bookings SET status = ${to}::booking_status,
       payment_status = COALESCE(${options.paymentStatus ?? null}::booking_payment_status, payment_status),
       provider_id = COALESCE(${options.providerId ?? null}::uuid, provider_id)

@@ -8,6 +8,7 @@ import { ConductService } from '../conduct/conduct.service.js';
 import { LedgerService } from '../payment/ledger.service.js';
 import { PaymentsService } from '../payment/payments.service.js';
 import { appendOutboxEvent } from '../platform/audit.service.js';
+import { AppClock } from '../platform/app-clock.js';
 import { SettingsService } from '../platform/settings.service.js';
 import { BOOKING_COLUMNS, toBookingRow, type BookingRow, type BookingRowRaw } from './booking.row.js';
 
@@ -33,6 +34,7 @@ export class BookingStateService {
     @Inject(PaymentsService) private readonly payments: PaymentsService,
     @Inject(LedgerService) private readonly ledger: LedgerService,
     @Inject(SettingsService) private readonly settings: SettingsService,
+    @Inject(AppClock) private readonly clock: AppClock,
     @Inject(ConductService) private readonly conduct: ConductService
   ) {}
 
@@ -64,12 +66,17 @@ export class BookingStateService {
     const transition = canTransition(row.status as BookingStatus, event, actorRole);
     if (transition === null) throw new DomainError('ILLEGAL_TRANSITION', `Cannot ${event} a booking in status ${row.status}`);
 
+    // Checked before the status is written, so a refused report leaves no history row
+    // and no half-applied change behind.
+    if (event === 'noShow') await this.assertNoShowIsReportable(row);
+
     // `cancel`'s target depends on which role fired it — see the comment on
     // BOOKING_TRANSITIONS in @smart-home/domain for why the table can't encode this.
     const to = event === 'cancel' ? (actorRole === 'CUSTOMER' ? 'CANCELLED_CUSTOMER' : 'CANCELLED_PROVIDER') : transition.to;
 
     await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
     const updated = await tx.$queryRaw<BookingRowRaw[]>(
+      // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingStateService.apply, transition_ctx set above
       Prisma.sql`UPDATE bookings SET status = ${to}::booking_status,
         cancel_reason = COALESCE(${options.reason ?? null}, cancel_reason),
         no_show_party = COALESCE(${options.noShowParty ?? null}::no_show_party, no_show_party)
@@ -121,7 +128,8 @@ export class BookingStateService {
       return { refundIds, metadata };
     }
 
-    if (event !== 'cancel' || actorRole !== 'CUSTOMER') return { refundIds, metadata };
+    if (event !== 'cancel' && event !== 'noShow') return { refundIds, metadata };
+    if (event === 'noShow') return this.refundForNoShow(tx, row, actorUserId);
 
     if (row.status === 'PENDING_PAYMENT') {
       // Nothing has been captured; release the hold and let a late capture be refused.
@@ -175,6 +183,48 @@ export class BookingStateService {
     }
     void options;
     return { refundIds, metadata };
+  }
+
+  /**
+   * SRS §7.4: a no-show is settled as "full refund + fixed penalty".
+   *
+   * Whichever party failed to show, the customer did not receive the service, so the
+   * full captured amount goes back. Without this an online no-show left the whole
+   * amount sitting in escrow with no transition, endpoint or sweep able to move it --
+   * `NO_SHOW` is terminal, so that money was stranded permanently and the nightly
+   * reconciliation could not see it, because it only flags escrow on statuses it
+   * considers finished.
+   *
+   * The penalty side is the conduct path (`proposeBreach`), not a ledger posting: the
+   * fixed fine is only proposed, never applied, because applying one is a human
+   * decision. A cash booking has nothing captured, so there is nothing to return.
+   */
+  private async refundForNoShow(tx: Prisma.TransactionClient, row: BookingRowRaw, actorUserId: string): Promise<{ refundIds: string[]; metadata: Record<string, unknown> }> {
+    if (row.paymentMode !== 'ONLINE' || row.approvedTotalPaisa <= 0n) return { refundIds: [], metadata: { noShowRefundPaisa: '0' } };
+    const queued = await this.payments.queueRefund(tx, {
+      bookingId: row.id,
+      amountPaisa: row.approvedTotalPaisa,
+      reasonCode: 'NO_SHOW',
+      idempotencyKey: `booking:${row.id}:no-show`,
+      requestedBy: actorUserId
+    });
+    return { refundIds: queued, metadata: { noShowRefundPaisa: row.approvedTotalPaisa.toString() } };
+  }
+
+  /**
+   * BR-04 / SRS T13: a no-show can only be reported once the grace window after the
+   * slot start has passed. `booking.no_show_grace_min` existed in the seed the whole
+   * time with no reader, so either party could report a no-show the instant the
+   * provider tapped *depart* -- and a provider-only report triggers an automatic
+   * penalty proposal worth demerit points and a fine, which is not something to raise
+   * off a race with the traffic.
+   */
+  private async assertNoShowIsReportable(row: BookingRowRaw): Promise<void> {
+    const graceMin = await this.settings.getNumber('booking.no_show_grace_min');
+    const earliestReportAt = row.scheduledStart.getTime() + graceMin * 60_000;
+    if (this.clock.now().getTime() < earliestReportAt) {
+      throw new DomainError('BAD_REQUEST', `A no-show can only be reported ${graceMin} minutes after the visit was due to start`);
+    }
   }
 
   /** SHM-080: a provider no-show, or a provider cancelling inside the free-cancel window, is a breach on the schedule. Proposed, never applied. */
