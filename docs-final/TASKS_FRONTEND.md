@@ -39,9 +39,9 @@ Public pages, auth, provider onboarding, admin approval
 
 ### Provider (onboarding slice)
 
-- [ ] Documents screen: CNIC / trade certificate / optional character certificate upload, approval status shown — ⬜ **no backend at all** (BACKEND_REQUIREMENTS §6.1)
+- [x] Documents screen: CNIC / trade certificate / optional character certificate upload, approval status shown — ✅ `GET`/`POST /provider/documents` + `POST /uploads/presign`. Uploads go through the presigned handshake, because a CNIC scan on a phone is exactly the case where one large JSON body fails. `GET` returns `{ items, cnic }` and `cnic` is only `{ hasCnic, cnicVerified }` — **the number is never returned by any endpoint**, so the screen submits it and never reads it back
 - [x] Service & price list: pick catalogue services, set price within admin band — ✅ `GET`/`PUT`/`DELETE /provider/services`. The row carries no band, so the screen joins the catalogue for min/max, the Urdu name and the duration; the server refuses a price outside the band regardless
-- [ ] Availability calendar: weekly slots + leave days — ⬜ typed against the real schemas. The endpoint is `{ items: [{ weekday, startTime, endTime }] }` — recurring blocks, not a booked/free grid — so the view has to be rebuilt
+- [x] Availability calendar: weekly slots + leave days — ✅ `GET`/`PUT /provider/availability` + `/provider/time-off`. Rebuilt as **recurring weekly blocks**, since the endpoint owns availability and the old booked/free month grid had no source for "booked". The PUT is a full replace and its schema is `.strict()`, so a save sends `{ items: [{ weekday, startTime, endTime }] }` with no `id` even though the GET returns one. `provider_time_off.period` is a half-open `tstzrange`, so one picked day is 00:00 → next-day 00:00
 - [x] Profile — ✅ `GET`/`PATCH /provider/profile` + `GET /provider/service-areas`. No provider id is in the route — the API reads the caller from the access token, which is what replaced the hardcoded `providers[0]` every professional used to see
 - [x] Service areas — ✅ `GET`/`PUT /provider/service-areas` + the places API. The endpoint returns bare `areaId`s, so the picker is built from `/places/cities` → `/areas`. Save stays disabled until something changes, because PUT deletes and re-inserts
 
@@ -117,10 +117,15 @@ Agent console, finance screens, customer/provider money views
 
 ### Provider
 
-- [ ] Earnings dashboard: held / releasable / paid, commission deducted, weekly/monthly totals — ✅ `GET /provider/earnings` + `GET /provider/wallet`. `commissionPaisa` is read from the API, never computed as a browser-side percentage
-- [ ] Payout request screen — ⬜ `/provider/payouts` exists and is unused
-- [ ] Ratings & remarks view (read-only, published-from-verified-call only) — ⬜
-- [ ] Reply to a remark (one reply, not editable after posting) — ⬜ `POST /provider/remarks/:id/reply` exists and is unused
+- [x] Earnings dashboard: held / releasable / paid, commission deducted, weekly/monthly totals — ✅ `GET /provider/earnings` + `GET /provider/wallet`. `commissionPaisa` is read from the API, never computed as a browser-side percentage
+- [x] Payout request screen — ✅ `GET /provider/payouts` + `/provider/payout-accounts` + `POST`. The minimum payout is an admin-owned setting with **no provider-readable endpoint**, so the screen quotes no figure and shows the server's own refusal instead. An account number is encrypted and never returned — only `accountLast4` — so the form is the only place it exists
+- [x] Ratings & remarks view (read-only, published-from-verified-call only) — ✅ `GET /provider/ratings`. A remark an admin has since **unpublished is still listed**, per FR-SP-05, labelled *Withdrawn* rather than hidden — hiding it would look like the customer never wrote it. `reply` on this endpoint is a **plain string**, not the `{ body, createdAt }` the public remarks route returns
+- [x] Reply to a remark (one reply, not editable after posting) — ✅ `POST /provider/remarks/:id/reply`. The control disappears after a successful reply rather than becoming an edit, because the API is a 409 on the second attempt
+- [x] Dashboard: what needs you, money, and what is outstanding — ✅ `GET /bookings` + offers + earnings + wallet + ratings + conduct + documents. Jobs are grouped by **the next move**, not by raw status: a `QUOTE_REVISION` sits with the ones needing nothing because the next move is the customer's. Releasable and wallet are shown separately and never summed
+- [x] Today's schedule — ✅ `GET /bookings` + availability + time-off. "Today" is the business's day in Asia/Karachi, not the viewer's, because `scheduledStart` is an instant and the screen's subject is a day. Only settled money counts as earned; an in-progress job is still held
+- [x] Job screen: accept → en route → start code → checklist → photos → complete — ✅ `/bookings/:id` and every provider action. **Rebuilt.** It kept the whole job in `useState` and compared the start code against a literal `"482913"` in the browser bundle. Every step now derives from `booking.status`, and only the actions legal from that status are offered
+- [x] Conduct record: current demerit points, expiry dates, penalty schedule reference — ✅ `GET /provider/conduct`. The **schedule comes from the API**, bilingual with `name_ur`; the old screen hardcoded it in the dictionary, so it could drift from `breach_types` and could never show a breach an admin had just activated. `activePoints` is never the length of the award list — points decay, expire and get voided, and the history is still shown
+- [x] Penalty appeal form — ✅ `POST /provider/penalties/:id/reply` and `/appeal`, both once-only. A **proposed penalty is not a charge**: nothing is fined until an admin applies it, so a proposal is not styled as one and no appeal is offered — that is only possible once `APPLIED`
 
 **Definition of done — Phase 3:** every screen a verification agent needs is on one page;
 customers and providers can see money move (held → released) without contacting support.
@@ -138,8 +143,8 @@ Complaints, disputes, penalties, notifications
 ### Provider
 
 - [ ] Complaint form (unsafe premises / non-payment / abusive conduct) — ⬜ `POST /complaints` exists and is unused
-- [ ] Conduct record: current demerit points, expiry dates, penalty schedule reference — ⬜ `/provider/conduct` exists and is unused
-- [ ] Penalty appeal form — ⬜ `POST /provider/penalties/:id/appeal` exists and is unused
+- [x] Conduct record: current demerit points, expiry dates, penalty schedule reference — ✅ see Phase 3 above
+- [x] Penalty appeal form — ✅ see Phase 3 above
 
 ### Admin
 
