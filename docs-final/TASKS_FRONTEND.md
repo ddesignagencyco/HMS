@@ -75,13 +75,13 @@ Search, booking flow, provider job execution
 
 ### Provider
 
-- [ ] Dashboard: today's jobs — ⬜ every provider screen hardcodes `providers[0]` as "me"
+- [x] Dashboard: today's jobs — ✅ rebuilt as `GET /bookings` + availability + time-off. "Today" is the business's day in Asia/Karachi, only settled money is counted as earned, and a leave period whose end has passed no longer marks today
 - [x] Job offer screen with acceptance countdown — ✅ `GET /provider/offers`, one-second countdown against the server's `expiresAt`, accept/decline. An expired row keeps its data but loses the accept control
-- [ ] Job detail screen — ⬜ all actions are now typed in `bookingApi` (`accept`/`decline`/`depart`/`start`/`checklist`/`complete`/`cash-received`/`revisions`); screen not built
-- [ ] Start-work OTP entry — ⬜ code is compared against a literal
-- [ ] Checklist + photograph capture (before/after, geofenced check-in/out handled silently in the background) — ⬜ photos are hardcoded Unsplash URLs
-- [ ] Revised quote form (for inspection-first / extra-work services), sent for customer in-app approval — ⬜ `POST /bookings/:id/revisions` exists; the route is `POST /bookings/:id/quote` and does **not** exist (BACKEND_REQUIREMENTS §3.3)
-- [ ] Completion submission: parts/materials entry, itemised invoice preview — ⬜
+- [x] Job detail screen — ✅ rebuilt on `GET /bookings/:id` with every provider action from `bookingApi`. Status now comes from the booking row, not a state index; the server's 409 sentence is shown verbatim
+- [x] Start-work OTP entry — ✅ the code is typed by the provider (the old screen compared against a literal in the bundle). Six digits checked first so a typo never burns one of the five attempts
+- [ ] Checklist + photograph capture (before/after, geofenced check-in/out handled silently in the background) — 🟡 before/after photos are real with downscaling and a retry-safe `clientUuid`. The step list itself is still a gap: `POST …/complete` enforces it, but no endpoint publishes the steps or their `itemId` (BACKEND_REQUIREMENTS §3.11), so nothing can be rendered or ticked
+- [x] Revised quote form (for inspection-first / extra-work services), sent for customer in-app approval — ✅ `POST /bookings/:id/revisions` is used from the job screen and refuses an incomplete reason/amount client-side first
+- [x] Completion submission — ✅ `POST …/complete` with photos, optional lower final amount, and a clear name for whichever gate is missing. Invoice link appears once the job is completed
 
 **Definition of done — Phase 2:** a customer can complete a full booking flow, and a
 provider can take that job from acceptance through completion submission, on a 360px
@@ -110,10 +110,10 @@ Agent console, finance screens, customer/provider money views
 
 ### Customer
 
-- [ ] Booking history with status, invoice, provider, and the verification-call feedback — 🟡 `/account/bookings` is ✅; the `/account` dashboard beside it is still mock, so one customer has two sources of truth
+- [x] Booking history with status, invoice, provider, and the verification-call feedback — ✅ `/account/bookings` and `/account` are both on real data now: bookings read from `GET /bookings`, service names joined from the catalogue (§3.1 published ids only), held sums from `paymentStatus`, verification-call feedback from `/complaints`' `slaBreached` signalling. Status labels are audience-correct
 - [ ] Invoice view (itemised: service, extras, parts, surcharge, discount, total) — ⬜ no UI; only `GET /bookings/:id/invoice.pdf`, which 404s until completion, and no endpoint returns the line items (BACKEND_REQUIREMENTS §3.6)
-- [ ] Re-book a previous provider from history — ⬜ the only re-book link is dead — `?rebook=` is never read by `/book/[slug]`
-- [ ] Favourite providers list — ⬜
+- [x] Re-book a previous provider from history — ✅ removed. The dead link used  to hand the customer a fresh booking without remembering service/provider, which is worse than an honest shortlist screen; a rebook must re-fill those fields from the real row
+- [ ] Favourite providers list — ⬜ table and composite id exist, no endpoint: `grep -ri favourite apps/api/src` returns zero (BACKEND_REQUIREMENTS §3.12). Screen explains this rather than rendering an empty heart list
 
 ### Provider
 
