@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BookingFlow } from '@/features/booking/booking-flow';
+import { addDays, SLOT_WINDOW_DAYS, toApiDate } from '@/features/search/types';
 import { getDictionary } from '@/lib/dictionaries';
 import type { Locale } from '@/lib/utils';
 import type { CatalogueService } from '@/features/catalogue/api';
@@ -213,9 +214,32 @@ const renderFlow = (props: Partial<React.ComponentProps<typeof BookingFlow>> = {
       <SessionProvider locale={locale}>{children}</SessionProvider>
     </QueryClientProvider>
   );
-  return render(<BookingFlow locale={locale} dict={dict} service={service} initialProviderId={null} initialDate={null} initialStart={null} {...props} />, {
-    wrapper: Component
-  });
+  render(
+    <BookingFlow
+      locale={locale}
+      dict={dict}
+      service={service}
+      initialProviderId={null}
+      /*
+       * The schedule step derives its offered windows from the real clock: any
+       * hour already past, plus the one inside the notice period, is removed
+       * rather than disabled. So a test that leaves the date at "today" can
+       * legitimately find **zero** window buttons whenever the run happens
+       * after nine-ish in the business timezone — which is every one of the
+       * 15 `booking-flow` failures, all traced to `timeButtons` being empty.
+       *
+       * Default to tomorrow instead. It is inside the 14-day slot window, and it
+       * always offers the full 09:00–19:00 set regardless of when the suite runs.
+       * Several surface tests assert their own `initialDate`; passing a prop
+       * through this default only changes the path that otherwise defaulted to
+       * "today".
+       */
+      initialDate={toApiDate(addDays(new Date(), 1))}
+      initialStart={null}
+      {...props}
+    />,
+    { wrapper: Component }
+  );
 };
 
 /** Times look like `9:00 am`; the stepper's dots read `3Schedule`, so a bare
@@ -470,16 +494,14 @@ describe('step four — the problem, chosen from the API', () => {
     fireEvent.click(screen.getByRole('radio', { name: new RegExp(dict.booking.cash) }));
     fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.booking.confirm, 'i') }));
 
-    await waitFor(() =>
-      expect(api.sent.some((call) => call.url.endsWith('/bookings') && (call.body as { paymentMode?: string }).paymentMode === 'CASH')).toBe(true),
-    );
+    await waitFor(() => expect(api.sent.some((call) => call.url.endsWith('/bookings') && (call.body as { paymentMode?: string }).paymentMode === 'CASH')).toBe(true));
     /* `resolveIssueOption` validates this against the service, so an id that is
        not the one the list offered would be refused at checkout. */
     const create = api.sent.find((call) => call.url.endsWith('/bookings') && (call.body as { paymentMode?: string }).paymentMode === 'CASH');
     expect(create?.body.issueOptionId).toBe(11);
   });
 
-  it('shows the chosen fault in the customer\'s own words on the review step', async () => {
+  it("shows the chosen fault in the customer's own words on the review step", async () => {
     await reachDetails();
     await chooseIssue();
     fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
@@ -711,7 +733,8 @@ describe('step six — payment and the outcome', () => {
       vi.fn(async (url: string, init?: RequestInit) => {
         const path = String(url);
         const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-        if (path.includes('/auth/session')) return ok({ authenticated: true, user: { id: 'c1', firstName: 'Test', lastName: 'Customer', roles: ['CUSTOMER'], status: 'ACTIVE', providerStatus: null } });
+        if (path.includes('/auth/session'))
+          return ok({ authenticated: true, user: { id: 'c1', firstName: 'Test', lastName: 'Customer', roles: ['CUSTOMER'], status: 'ACTIVE', providerStatus: null } });
         if (path.includes('/customer/addresses')) return ok({ items: [address] });
         if (path.includes('/places/cities/1/areas')) return ok({ items: [] });
         if (path.includes('/places/cities')) return ok({ items: [{ id: 1, name: 'Lahore', timezone: 'Asia/Karachi', lat: 31.5204, lng: 74.3587 }] });
