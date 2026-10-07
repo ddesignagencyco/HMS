@@ -93,6 +93,15 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/api/v1/admin/audit",
+      "operationId": "AdminAuditController_query",
+      "summary": "Query the audit log",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
       "method": "POST",
       "path": "/api/v1/admin/catalogue/categories",
       "operationId": "CatalogueAdminController_createCategory",
@@ -216,6 +225,24 @@
       "summary": "Move a complaint along, or decide it",
       "tags": [
         "complaints"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/customers",
+      "operationId": "AdminCustomersController_list",
+      "summary": "List customer accounts",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/customers/{customerId}/deactivate",
+      "operationId": "AdminCustomersController_deactivate",
+      "summary": "Deactivate a customer",
+      "tags": [
+        "admin"
       ]
     },
     {
@@ -354,6 +381,24 @@
       ]
     },
     {
+      "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/block",
+      "operationId": "ProviderAdminController_block",
+      "summary": "Block a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/deactivate",
+      "operationId": "ProviderAdminController_deactivate",
+      "summary": "Deactivate a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
       "method": "GET",
       "path": "/api/v1/admin/providers/{providerId}/documents",
       "operationId": "ProviderDocumentsAdminController_listForProvider",
@@ -382,11 +427,29 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/unblock",
+      "operationId": "ProviderAdminController_unblock",
+      "summary": "Unblock a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/admin/remarks/{id}/unpublish",
       "operationId": "ReputationController_unpublish",
       "summary": "Unpublish an abusive remark",
       "tags": [
         "reputation"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/roles",
+      "operationId": "AdminRolesController_listRoles",
+      "summary": "List roles and their permissions",
+      "tags": [
+        "admin"
       ]
     },
     {
@@ -414,6 +477,33 @@
       "summary": "Change a setting's value",
       "tags": [
         "settings"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/staff-conflicts",
+      "operationId": "AdminStaffConflictsController_list",
+      "summary": "List declared staff conflicts",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/staff-conflicts",
+      "operationId": "AdminStaffConflictsController_declare",
+      "summary": "Declare a staff conflict",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/staff-conflicts/{id}",
+      "operationId": "AdminStaffConflictsController_remove",
+      "summary": "Withdraw a declared conflict",
+      "tags": [
+        "admin"
       ]
     },
     {
@@ -459,6 +549,69 @@
       "summary": "Preview a template",
       "tags": [
         "notifications"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/users",
+      "operationId": "AdminUsersController_list",
+      "summary": "List user accounts",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/block",
+      "operationId": "AdminUsersController_block",
+      "summary": "Block a user",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/deactivate",
+      "operationId": "AdminUsersController_deactivate",
+      "summary": "Deactivate a user",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/users/{userId}/roles/{roleCode}",
+      "operationId": "AdminRolesController_revoke",
+      "summary": "Revoke a role",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/roles/{roleCode}",
+      "operationId": "AdminRolesController_grant",
+      "summary": "Grant a role",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/send-reset",
+      "operationId": "AdminUsersController_sendReset",
+      "summary": "Send a password reset",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/unblock",
+      "operationId": "AdminUsersController_unblock",
+      "summary": "Unblock a user",
+      "tags": [
+        "admin"
       ]
     },
     {
@@ -1201,6 +1354,69 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/me",
+      "operationId": "MeController_get",
+      "summary": "Get your own profile",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me",
+      "operationId": "MeController_update",
+      "summary": "Update your own profile",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/deactivate",
+      "operationId": "MeController_deactivate",
+      "summary": "Deactivate your account",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/favourites",
+      "operationId": "MeController_listFavourites",
+      "summary": "List your favourite providers",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/me/favourites/{providerId}",
+      "operationId": "MeController_removeFavourite",
+      "summary": "Remove a provider from your favourites",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/favourites/{providerId}",
+      "operationId": "MeController_addFavourite",
+      "summary": "Add a provider to your favourites",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me/password",
+      "operationId": "MeController_changePassword",
+      "summary": "Change your password",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/notifications",
       "operationId": "NotificationController_own",
       "summary": "My notification centre",
@@ -1512,6 +1728,15 @@
       "summary": "Offer a service at your price",
       "tags": [
         "catalogue"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/submit",
+      "operationId": "ProviderController_submit",
+      "summary": "Submit my profile for approval",
+      "tags": [
+        "provider"
       ]
     },
     {

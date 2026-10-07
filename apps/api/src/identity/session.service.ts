@@ -103,6 +103,17 @@ export class SessionService {
     return this.prisma.$executeRaw(Prisma.sql`UPDATE sessions SET revoked_at = now() WHERE user_id = ${userId}::uuid AND revoked_at IS NULL`);
   }
 
+  /**
+   * FR-CU-04 in SHM-020: after an authenticated password change every *other*
+   * session is signed out, but the caller keeps the one they are using, so the
+   * change does not sign the person out of the browser they just typed in.
+   */
+  async revokeOthersForUser(userId: string, keepSessionId: string): Promise<number> {
+    return this.prisma.$executeRaw(
+      Prisma.sql`UPDATE sessions SET revoked_at = now() WHERE user_id = ${userId}::uuid AND id <> ${keepSessionId}::uuid AND revoked_at IS NULL`
+    );
+  }
+
   private async insert(userId: string, familyId: string, meta: SessionMeta): Promise<IssuedSession> {
     const issued = issueRefreshToken(this.secrets);
     const [row] = await this.prisma.$queryRaw<{ id: string }[]>(
