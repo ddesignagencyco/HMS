@@ -17,17 +17,17 @@ import { cn } from "@/lib/utils";
  * fetch fails the tile says so rather than showing a broken-image glyph.
  */
 export function EvidenceImage({ url, alt, className }: { url: string; alt: string; className?: string }) {
-  const [resolved, setResolved] = useState<string | null>(null);
+  /* Only the mock storage answers with an envelope. A presigned or CDN URL is
+     already loadable, so it is used as-is — fetching it here would download
+     every photo twice. That makes the real case *derivable*, and only the
+     envelope case genuinely needs to wait on a request. */
+  const isEnvelope = /\/dev\/storage\//.test(url);
+
+  const [unwrapped, setUnwrapped] = useState<{ url: string; data: string } | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    /* Only the mock storage answers with an envelope. Anything else — a
-       presigned or CDN URL — is already loadable and must not be fetched here,
-       or the browser would download every photo twice. */
-    if (!/\/dev\/storage\//.test(url)) {
-      setResolved(url);
-      return;
-    }
+    if (!isEnvelope) return;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -39,7 +39,7 @@ export function EvidenceImage({ url, alt, className }: { url: string; alt: strin
         const body = (await response.json()) as { contentType?: string; contentBase64?: string };
         if (typeof body.contentBase64 !== "string") throw new Error("no content");
         if (cancelled) return;
-        setResolved(`data:${body.contentType ?? "image/jpeg"};base64,${body.contentBase64}`);
+        setUnwrapped({ url, data: `data:${body.contentType ?? "image/jpeg"};base64,${body.contentBase64}` });
       } catch {
         /* An aborted request is not a failure to report. */
         if (!cancelled) setFailed(true);
@@ -50,7 +50,7 @@ export function EvidenceImage({ url, alt, className }: { url: string; alt: strin
       cancelled = true;
       controller.abort();
     };
-  }, [url]);
+  }, [url, isEnvelope]);
 
   if (failed) {
     return (
@@ -59,6 +59,11 @@ export function EvidenceImage({ url, alt, className }: { url: string; alt: strin
       </span>
     );
   }
+
+  /* Real URL: ready now. Envelope: ready only once *this* url has been unwrapped,
+     which is why the decoded value carries its own url rather than being reset. */
+  const decoded = unwrapped !== null && unwrapped.url === url ? unwrapped.data : null;
+  const resolved = isEnvelope ? decoded : url;
 
   if (resolved === null) return <span className={cn("block h-full w-full animate-pulse bg-slate-100", className)} aria-hidden="true" />;
 

@@ -1,7 +1,7 @@
 import type { Locale } from '@/lib/utils';
 
 const en = {
-  brand: { name: 'Smart Home Maintenance', tagline: 'Verified home services in Lahore' },
+  brand: { name: 'Smart Home Maintenance', tagline: 'Home Maintenance' },
   nav: {
     services: 'Services',
     professionals: 'Professionals',
@@ -27,6 +27,11 @@ const en = {
     support: 'Support',
     phoneLabel: 'Call us',
     accountMenu: 'Account menu',
+    /* Its own name, not `accountMenu`. Two controls on the page answering to the
+       same accessible name is a real defect: a screen-reader user hears "Account
+       menu" twice and cannot tell them apart, and a test querying that name gets
+       whichever one the browser hands back first. */
+    languageMenu: 'Language',
     profile: 'Profile',
     security: 'Security',
     addresses: 'Addresses'
@@ -2108,6 +2113,7 @@ const ur: typeof en = {
     support: 'مدد',
     phoneLabel: 'کال کریں',
     accountMenu: 'اکاؤنٹ مینو',
+    languageMenu: 'زبان',
     profile: 'پروفائل',
     security: 'سیکیورٹی',
     addresses: 'پتے'

@@ -173,10 +173,51 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
             </Link>
           </div>
 
-          <Link href={localeHref} className="inline-flex items-center gap-2 text-white/85 transition-colors hover:text-white">
-            <span>{otherLocale === "ur" ? "اردو" : "English"}</span>
-            <Globe2 className="size-3.5" aria-hidden="true" />
-          </Link>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setLangOpen((was) => !was);
+              }}
+              aria-expanded={langOpen}
+              aria-label={dict.nav.languageMenu}
+              className="flex items-center gap-1.5 rounded-md border border-line bg-navy px-2.5 py-1.5 text-sm text-white/85 transition-colors hover:bg-navy/30"
+            >
+              <Globe2 className="size-3.5" aria-hidden="true" />
+              <span>{otherLocale === "ur" ? "اردو" : "English"}</span>
+              <ChevronDown className="size-3" />
+            </button>
+
+            {langOpen ? (
+              <div role="menu" className="absolute left-0 top-[calc(100%+0.5rem)] z-10 w-32 rounded-[12px] bg-white p-1.5 shadow-lifted border border-line" style={{ minWidth: 100 }}>
+                <div role="none" className="flex items-center gap-3 px-2 py-1 text-xs text-slate-500" style={{ borderBottom: "1px solid #e5e7eb" }}>
+                  <button
+                    role="menuitem"
+                    type="button"
+                    onClick={() => {
+                      void router.push(localizedPath("en"));
+                      setLangOpen(false);
+                    }}
+                    className="flex-1 rounded-none px-0 py-0 bg-transparent text-navy hover:bg-slate-100"
+                  >
+                    English
+                  </button>
+                  <button
+                    role="menuitem"
+                    type="button"
+                    onClick={() => {
+                      void router.push(localizedPath("ur"));
+                      setLangOpen(false);
+                    }}
+                    className="flex-1 rounded-none px-0 py-0 bg-transparent text-navy hover:bg-slate-100"
+                  >
+                    اردو
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -196,23 +237,16 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
           {!sessionSettled ? (
             <span className="skeleton size-11 rounded-full" aria-hidden="true" />
           ) : signedIn ? (
-            <div
-              className="relative"
-              onMouseEnter={() => setAccountOpen(true)}
-              onMouseLeave={() => setAccountOpen(false)}
-            >
+            <div className="relative">
               <button
                 type="button"
                 onClick={() => setAccountOpen((was) => !was)}
                 aria-expanded={accountOpen}
                 aria-haspopup="menu"
                 aria-label={dict.nav.accountMenu}
-                className="flex h-11 items-center justify-center gap-1.5 rounded-full border border-line pl-1.5 pr-3 text-navy transition-colors hover:bg-slate-50"
+                className="grid size-11 place-items-center rounded-full border border-line text-navy transition-colors hover:bg-slate-50"
               >
-                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-navy text-white" aria-hidden="true">
-                  <UserRound className="size-4" />
-                </span>
-                <ChevronDown className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+                <UserRound className="size-5" />
               </button>
 
               {accountOpen ? (

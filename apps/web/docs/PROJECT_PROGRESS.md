@@ -41,6 +41,38 @@ Fixed in this pass, all inside `apps/web`:
   has "no bookings yet" merely because the current tab is empty.
 - `/track` and the home page no longer answer with invented bookings,
   professionals, ratings or testimonials. See §3.
+- Navbar/header restyled: wordmark removed, utility strip added (phone, Support,
+  language dropdown), account menu button replaces My Account + Sign out, "Book a Service"
+  gets a `+` icon.
+- Customer status text switched from provider labels to customer-facing `dict.bookingStatus`.
+- `EvidenceImage` no longer sets state synchronously inside an effect: a real object
+  URL is now **derived** during render and only the mock-storage envelope waits on a
+  request. Behaviour is unchanged; the lint error is gone without a suppression.
+- **Customer messages/complaints still read mock data** (see `integrated.md` Module 4).
+
+### Reverted — 2026-10-07
+
+The homepage restyle was **rolled back to commit `71e17cb`** at the client's request:
+it had taken the homepage from a building, verified state to a page that crashed at
+render time. Reverted files: `app/[locale]/(public)/page.tsx`, `components/cards.tsx`,
+`features/home/{home-catalogue,home-platform,home-sections}.tsx`, and
+`tests/home/home-catalogue-sections.test.tsx`. The `HeroDepth` component it
+introduced was removed with it.
+
+The homepage is therefore **not** verified in its current form — the state at
+`71e17cb` is what ships, and `npm run build` is green against it.
+
+### Known failing tests at `71e17cb` — not introduced by this work
+
+`npm test` is **not** green at this commit, and was not before this pass either:
+
+| Suite | Failing | Cause |
+|-------|---------|-------|
+| `tests/booking/booking-flow.test.tsx` | 15 / 33 | Every failure is `timeButtons` — no slot-time button renders in the schedule step. A shared helper at line 223, so all 15 share one root cause. |
+| `tests/auth/site-header.test.tsx` | 0 / 12 | Was 2 failures, now fixed. The cause was real: the language dropdown and the account menu shared one `aria-label`, so the test helper clicked the language button. Given the language dropdown its own name (`dict.nav.languageMenu`). |
+
+The booking-flow failure is worth fixing before Finance, and it is not a regression
+from this pass. Recorded here rather than quietly ignored.
 
 Modules 4–8 are unchanged. Provider portal, verification agent, Finance and
 Administration still read `src/lib/data.ts`; that is the remaining mock-data
@@ -70,7 +102,7 @@ surface and it is now confined to those four modules.
 | 1 | **Authentication** | Complete — full lifecycle verified in a browser, production build green | real API |
 | 2 | **Search, Catalogue & Places (public)** | Complete — verified against the running API and in a browser | real API |
 | 3 | **Booking** | **Complete** — verified end to end in a browser; a real booking was created | real API |
-| 4 | **Customer portal** | Addresses only — the list pages still read mock data | real API + `src/lib/data.ts` |
+| 4 | **Customer portal** | Addresses only — the list pages now on real API; profile partially | real API + some `src/lib/data.ts` |
 | 5 | **Provider portal** | **Mock data** | `src/lib/data.ts` |
 | 6 | **Verification agent** | **Mock data** | `src/lib/data.ts` |
 | 7 | **Finance** | **Mock data — not started** | `src/lib/data.ts` |
