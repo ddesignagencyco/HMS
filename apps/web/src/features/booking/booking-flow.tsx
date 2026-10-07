@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, localizedPath, type Locale } from "@/lib/utils";
 import { Button, ButtonLink, Card, Checkbox, Container, Label, PageBanner, RadioGroup, RadioGroupItem, Section, Textarea, buttonStyles } from "@/components/ui";
+import { SelectField } from "@/components/select-field";
 import { money } from "@/features/catalogue/pricing";
 import { formatSlotTime } from "@/features/search/location";
 import { addDays, SLOT_WINDOW_DAYS, toApiDate } from "@/features/search/types";
@@ -15,6 +16,7 @@ import { BookingStepper } from "@/features/booking/booking-stepper";
 import { AddressStep } from "@/features/booking/address-step";
 import { DayPicker, ProviderChoiceStep, RequestedWindowPicker, formatDay, isAutoAssign, type ProviderChoice, type ScheduleRequest } from "@/features/booking/provider-choice";
 import { useCreateBooking, useQuote } from "@/features/booking/queries";
+import { useIssueOptions } from "@/features/catalogue/queries";
 import { isAwaitingProvider, isHeldPayment } from "@/features/booking/status";
 import type { CreatedBooking, PaymentMode, Quote } from "@/features/booking/api";
 import type { CatalogueService } from "@/features/catalogue/api";
@@ -42,6 +44,9 @@ type Basket = {
   slot: { start: string; end: string } | null;
   /** Only used when auto-assigning. */
   request: ScheduleRequest | null;
+  /** One of the service's own faults, from the API. Null until one is chosen. */
+  issueOptionId: number | null;
+  /** Anything the customer adds beyond the chosen fault. Optional. */
   problem: string;
   emergency: boolean;
   agreed: boolean;
@@ -53,6 +58,7 @@ const EMPTY: Basket = {
   choice: null,
   slot: null,
   request: null,
+  issueOptionId: null,
   problem: "",
   emergency: false,
   agreed: false,
@@ -177,7 +183,9 @@ export function BookingFlow({
     /* A named professional must have a real slot; auto-assign needs a requested
        window. Neither falls back to the other's rule. */
     if (step === 2 && effectiveSlot === null && basket.request === null) return dict.booking.requiredSlot;
-    if (step === 3 && basket.problem.trim().length < 10) return dict.booking.requiredProblem;
+    /* The chosen fault is the required answer. The free-text box is the extra
+       detail on top of it, so it cannot stand in for a missing choice. */
+    if (step === 3 && basket.issueOptionId === null) return dict.booking.requiredIssueOption;
     if (step === 4 && (!basket.agreed || quote.data === null)) return dict.booking.requiredAgreement;
     if (step === 5 && basket.paymentMode === null) return dict.booking.requiredPayment;
     return "";
@@ -217,6 +225,7 @@ export function BookingFlow({
         scheduledStart: scheduled.start,
         scheduledEnd: scheduled.end,
         paymentMode: basket.paymentMode,
+        ...(basket.issueOptionId === null ? {} : { issueOptionId: basket.issueOptionId }),
         ...(basket.problem.trim() === "" ? {} : { problemText: basket.problem.trim() }),
         ...(chosenProviderId === null ? {} : { providerId: chosenProviderId }),
         ...(emergencyAllowed && basket.emergency ? { isEmergency: true } : {}),
@@ -355,22 +364,20 @@ export function BookingFlow({
               ) : null}
 
               {step === 3 ? (
-                <div>
-                  <h2 className="text-xl font-semibold text-navy">{dict.booking.detailsTitle}</h2>
-                  <p className="mt-1 text-sm text-secondary">{dict.booking.detailsText}</p>
-                  <div className="mt-6 grid gap-2">
-                    <Label htmlFor="booking-problem">{dict.booking.problemLabel}</Label>
-                    <Textarea
-                      id="booking-problem"
-                      className="min-h-32"
-                      value={basket.problem}
-                      onChange={(event) => update({ problem: event.target.value })}
-                      placeholder={dict.booking.problemPlaceholder}
-                    />
-                    <p className="text-xs text-muted">{dict.booking.problemHint}</p>
-                  </div>
-<p className="mt-4 rounded-[9px] border border-line bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.booking.photosAfterBooking}</p>
-                </div>
+                <ProblemStep
+                  locale={locale}
+                  dict={dict}
+                  serviceSlug={service.slug}
+                  issueOptionId={basket.issueOptionId}
+                  notes={basket.problem}
+                  onSelect={(issueOptionId) => {
+                    update({ issueOptionId });
+                    /* The complaint on screen was "choose the problem"; they just
+                       did. Leaving it up would argue with the answer. */
+                    setLocalError("");
+                  }}
+                  onNotes={(value) => update({ problem: value })}
+                />
               ) : null}
 
               {step === 4 ? (
@@ -491,6 +498,104 @@ export function BookingFlow({
         </Container>
       </Section>
     </>
+  );
+}
+
+/**
+ * The problem, chosen from the list the API publishes for this service.
+ *
+ * `GET /catalogue/services/:slug/issue-options` exists precisely so a customer
+ * who cannot describe a fault in technical terms does not have to try: the old
+ * version of this step was a free-text box and a minimum character count, which
+ * made the platform's own vocabulary optional and the customer's phrasing
+ * mandatory. Picking an option sends `issueOptionId`, which the server validates
+ * against the service, so a booking records a machine-readable fault as well as
+ * the words.
+ *
+ * The options are the API's, never a local list: a hardcoded fault the catalogue
+ * does not sell would send an id the server rejects at checkout, and an invented
+ * one the service does not define is a promise nobody can keep. A service with
+ * no published faults says so and falls back to the description alone.
+ */
+function ProblemStep({
+  locale,
+  dict,
+  serviceSlug,
+  issueOptionId,
+  notes,
+  onSelect,
+  onNotes,
+}: {
+  locale: Locale;
+  dict: Dictionary;
+  serviceSlug: string;
+  issueOptionId: number | null;
+  notes: string;
+  onSelect: (issueOptionId: number | null) => void;
+  onNotes: (value: string) => void;
+}) {
+  const options = useIssueOptions(serviceSlug, locale);
+  const list = options.data?.items ?? [];
+  const failed = options.isError;
+
+  const optionList = [
+    { value: "", label: dict.booking.issueChoose },
+    ...list.map((option) => ({ value: String(option.id), label: locale === "ur" ? option.labelUr : option.labelEn })),
+  ];
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-navy">{dict.booking.detailsTitle}</h2>
+      <p className="mt-1 text-sm text-secondary">{dict.booking.detailsText}</p>
+
+      <div className="mt-6 grid gap-2">
+        <Label htmlFor="booking-issue">{dict.booking.issueLabel}</Label>
+        {failed ? (
+          /* The fault list is the required answer here, so a failure to load it
+             has to be visible and retryable rather than falling through to a text
+             box that silently books something the API never offered. */
+          <div role="alert" className="rounded-[9px] bg-rose-50 p-3.5 text-sm text-rose-700">
+            {dict.booking.issueLoadFailed}
+            <Button type="button" variant="secondary" size="sm" className="ms-3" onClick={() => void options.refetch()}>
+              {dict.catalogue.retry}
+            </Button>
+          </div>
+        ) : options.isPending ? (
+          <p className="text-sm text-secondary" aria-busy="true">
+            {dict.booking.issueLoading}
+          </p>
+        ) : list.length === 0 ? (
+          /* A service the administrator published no faults for. The description is
+             then the only answer, and the step says which one is required. */
+          <p className="rounded-[9px] border border-line bg-surface-2 p-4 text-sm leading-6 text-secondary">
+            {dict.booking.issueNone}
+          </p>
+        ) : (
+          <SelectField
+            id="booking-issue"
+            value={issueOptionId === null ? "" : String(issueOptionId)}
+            onChange={(value) => onSelect(value === "" ? null : Number(value))}
+            options={optionList}
+            placeholder={dict.booking.issueChoose}
+          />
+        )}
+        <p className="text-xs text-muted">{dict.booking.issueHint}</p>
+      </div>
+
+      <div className="mt-5 grid gap-2">
+        <Label htmlFor="booking-problem">{dict.booking.problemLabel}</Label>
+        <Textarea
+          id="booking-problem"
+          className="min-h-28"
+          value={notes}
+          onChange={(event) => onNotes(event.target.value)}
+          placeholder={dict.booking.problemPlaceholder}
+        />
+        <p className="text-xs text-muted">{dict.booking.problemHint}</p>
+      </div>
+
+      <p className="mt-4 rounded-[9px] border border-line bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.booking.photosAfterBooking}</p>
+    </div>
   );
 }
 
@@ -648,6 +753,11 @@ function ReviewStep({
 }) {
   const autoAssign = isAutoAssign(basket.choice);
   const scheduled = basket.slot ?? basket.request;
+  /* The fault's own words, not its id. Reading it back off the options query is
+     what keeps the review honest: an id would be a number the customer cannot
+     check, and a locally retyped label would be a second source of truth. */
+  const issues = useIssueOptions(service.slug, locale);
+  const issueLabel = basket.issueOptionId === null ? null : (issues.data?.items.find((option) => option.id === basket.issueOptionId) ?? null);
 
   return (
     <div>
@@ -671,6 +781,12 @@ function ReviewStep({
             {describeSchedule(scheduled, locale)}
           </dd>
         </div>
+        {issueLabel !== null ? (
+          <div className="flex flex-col gap-1 py-3">
+            <dt className="text-muted">{dict.booking.issueLabel}</dt>
+            <dd className="text-end text-secondary">{locale === "ur" ? issueLabel.labelUr : issueLabel.labelEn}</dd>
+          </div>
+        ) : null}
         {basket.problem.trim() !== "" ? (
           <div className="flex flex-col gap-1 py-3">
             <dt className="text-muted">{dict.booking.problemLabel}</dt>

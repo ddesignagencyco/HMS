@@ -7,6 +7,7 @@ import { getDictionary } from '@/lib/dictionaries';
 import type { Locale } from '@/lib/utils';
 import type { CatalogueService } from '@/features/catalogue/api';
 import type { Booking, Quote } from '@/features/booking/api';
+import { SessionProvider } from '@/features/auth/session';
 
 /* The booking flow, driven through the steps a customer actually takes.
 
@@ -116,6 +117,8 @@ type Routes = {
   providers?: unknown;
   slots?: unknown;
   quote?: unknown;
+  issueOptions?: unknown;
+  issueOptionsFailed?: boolean;
   create?: { status: number; body: unknown };
   slotTaken?: boolean;
 };
@@ -125,8 +128,17 @@ const problem = (status: number, code: string, detail = 'x') => ({ type: 'about:
 /** One router over the endpoints this flow touches, recording what was sent. */
 const stubApi = (routes: Routes = {}) => {
   const sent: { url: string; body: Record<string, unknown> }[] = [];
-  const areas = { items: [{ id: 1, cityId: 1, name: 'Gulberg' }] };
-  const cities = { items: [{ id: 1, name: 'Lahore', timezone: 'Asia/Karachi' }] };
+  const areas = { items: [{ id: 1, cityId: 1, name: 'Gulberg', lat: 31.5204, lng: 74.3587 }] };
+  const cities = { items: [{ id: 1, name: 'Lahore', timezone: 'Asia/Karachi', lat: 31.5204, lng: 74.3587 }] };
+  /* The fault list the booking step now picks from. It is a real endpoint in the
+     contract, so the fixture models it rather than letting the step fall through
+     to free text. */
+  const issueOptions = routes.issueOptions ?? {
+    items: [
+      { id: 11, slug: 'tap-dripping', labelEn: 'A tap is dripping', labelUr: 'نکاس ٹپک رہا ہے', position: 1 },
+      { id: 12, slug: 'pipe-burst', labelEn: 'A pipe has burst', labelUr: 'پائپ پھٹ گئی ہے', position: 2 }
+    ]
+  };
   const providers = routes.providers ?? {
     items: [
       {
@@ -136,7 +148,7 @@ const stubApi = (routes: Routes = {}) => {
         qualification: 'Licensed plumber',
         pricePaisa: 240000,
         distanceM: 1200,
-        ratingScore: 3.5,
+        ratingScore: null,
         ratingCount: 0,
         badge: null
       }
@@ -153,11 +165,24 @@ const stubApi = (routes: Routes = {}) => {
     sent.push({ url: path, body: init?.body === undefined ? {} : (JSON.parse(String(init.body)) as Record<string, unknown>) });
     const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 
+    /* The session question, answered the way the API answers it for a signed-in
+       browser: 200 with the user. Without it the address step's read is disabled
+       and the flow cannot get past step one. */
+    if (path.includes('/auth/session')) return ok({ authenticated: true, user: { id: 'c1', firstName: 'Test', lastName: 'Customer', roles: ['CUSTOMER'], status: 'ACTIVE', providerStatus: null } });
+    if (path.endsWith('/auth/refresh')) return ok({ accessToken: 'harness', expiresInSeconds: 900, totpRequired: false });
+
     if (path.includes('/customer/addresses')) return ok(routes.addresses ?? { items: [address] });
     if (path.includes('/places/cities/1/areas')) return ok(areas);
     if (path.includes('/places/cities')) return ok(cities);
     if (path.includes('/search/providers') && path.includes('/slots')) return ok(slots);
     if (path.includes('/search/providers')) return ok(providers);
+    if (path.includes('/issue-options')) {
+      if (routes.issueOptionsFailed === true) {
+        return new Response(JSON.stringify(problem(500, 'INTERNAL_ERROR')), { status: 500, headers: { 'content-type': 'application/json' } });
+      }
+      return ok(issueOptions);
+    }
+    if (path.endsWith('/catalogue/services/leak-repair')) return ok({ ...service, checklist: [] });
     if (path.endsWith('/bookings/quote')) return ok(routes.quote ?? quote);
     if (path.endsWith('/bookings') && init?.method === 'POST') {
       if (routes.slotTaken === true) {
@@ -176,9 +201,18 @@ const stubApi = (routes: Routes = {}) => {
   return { sent, fetchMock };
 };
 
+/* `BookingFlow` reaches into the session for one thing: the address step must not
+     fire its authenticated read before the session is known, or it races the
+     session's own refresh. So the harness mounts a real `SessionProvider` and
+     seeds `GET /auth/session` as authenticated — the same answer the live API
+     gives a signed-in browser — rather than mocking the hook away. */
 const renderFlow = (props: Partial<React.ComponentProps<typeof BookingFlow>> = {}) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  const Component = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const Component = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>
+      <SessionProvider locale={locale}>{children}</SessionProvider>
+    </QueryClientProvider>
+  );
   return render(<BookingFlow locale={locale} dict={dict} service={service} initialProviderId={null} initialDate={null} initialStart={null} {...props} />, {
     wrapper: Component
   });
@@ -187,6 +221,13 @@ const renderFlow = (props: Partial<React.ComponentProps<typeof BookingFlow>> = {
 /** Times look like `9:00 am`; the stepper's dots read `3Schedule`, so a bare
     /^\d/ would match the progress rail instead of the picker. */
 const timeButtons = (): HTMLElement[] => screen.getAllByRole('button', { name: /^\d{1,2}:\d{2}/ });
+
+/** The chosen fault, from the API's own list for this service. */
+const chooseIssue = async (): Promise<void> => {
+  await screen.findByLabelText(dict.booking.issueLabel);
+  fireEvent.mouseDown(screen.getByLabelText(dict.booking.issueLabel));
+  fireEvent.click(await screen.findByText('A tap is dripping'));
+};
 
 /** Walks steps 1–3 for an auto-assign booking, which needs no live availability. */
 const reachReview = async (): Promise<void> => {
@@ -202,7 +243,7 @@ const reachReview = async (): Promise<void> => {
   fireEvent.click(timeButtons()[0]);
   fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
 
-  await screen.findByLabelText(dict.booking.problemLabel);
+  await chooseIssue();
   fireEvent.change(screen.getByLabelText(dict.booking.problemLabel), { target: { value: 'The kitchen tap has been leaking since Monday.' } });
   fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
 };
@@ -242,13 +283,17 @@ describe('step one — the address', () => {
   });
 
   it('reports an address load failure instead of showing an empty picker', async () => {
+    const signedIn = { authenticated: true, user: { id: 'c1', firstName: 'Test', lastName: 'Customer', roles: ['CUSTOMER'], status: 'ACTIVE', providerStatus: null } };
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string) =>
-        String(url).includes('/customer/addresses')
+      vi.fn(async (url: string) => {
+        /* The session still has to answer, or the address read never runs and the
+           failure this test is about never happens. */
+        if (String(url).includes('/auth/session')) return new Response(JSON.stringify(signedIn), { status: 200, headers: { 'content-type': 'application/json' } });
+        return String(url).includes('/customer/addresses')
           ? new Response(JSON.stringify(problem(500, 'INTERNAL_ERROR')), { status: 500, headers: { 'content-type': 'application/json' } })
-          : new Response(JSON.stringify({ items: [] }), { status: 200 })
-      )
+          : new Response(JSON.stringify({ items: [] }), { status: 200 });
+      })
     );
     renderFlow();
     /* A 500 earns one bounded retry, so this waits past the retry delay. */
@@ -376,6 +421,94 @@ describe('step three — the time', () => {
   });
 });
 
+describe('step four — the problem, chosen from the API', () => {
+  const reachDetails = async (routes: Routes = {}): Promise<{ sent: { url: string; body: Record<string, unknown> }[] }> => {
+    const api = stubApi(routes);
+    renderFlow();
+    await screen.findByText('Home');
+    fireEvent.click(screen.getByRole('radio', { name: /Home/ }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
+    await screen.findByText(dict.booking.autoAssignTitle);
+    fireEvent.click(screen.getByRole('radio', { name: new RegExp(dict.booking.autoAssignTitle) }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
+    await screen.findByText(dict.booking.requestedTimeTitle);
+    fireEvent.click(timeButtons()[0]);
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
+    return api;
+  };
+
+  /* The step used to be a free-text box with a ten-character minimum, which made
+     the customer's own phrasing mandatory and the platform's vocabulary
+     optional. The list below is `GET /catalogue/services/:slug/issue-options`. */
+  it('offers the faults the API published, and no others', async () => {
+    await reachDetails();
+    await screen.findByLabelText(dict.booking.issueLabel);
+    fireEvent.mouseDown(screen.getByLabelText(dict.booking.issueLabel));
+    expect(await screen.findByText('A tap is dripping')).toBeDefined();
+    expect(screen.getByText('A pipe has burst')).toBeDefined();
+    /* Not something invented locally to fill the list out. */
+    expect(screen.queryByText('Something else entirely')).toBeNull();
+  });
+
+  it('refuses to continue until a fault is chosen, because the free-text box cannot stand in for it', async () => {
+    await reachDetails();
+    await screen.findByLabelText(dict.booking.problemLabel);
+    /* A description alone is not the answer the API validates. */
+    fireEvent.change(screen.getByLabelText(dict.booking.problemLabel), { target: { value: 'The kitchen tap has been leaking since Monday.' } });
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
+    expect(text()).toContain(dict.booking.requiredIssueOption);
+  });
+
+  it('sends the chosen fault id to the API', async () => {
+    const api = await reachDetails();
+    await chooseIssue();
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
+    await screen.findByText(dict.booking.reviewTitle);
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
+    await screen.findByText(dict.booking.paymentTitle);
+    fireEvent.click(screen.getByRole('radio', { name: new RegExp(dict.booking.cash) }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.booking.confirm, 'i') }));
+
+    await waitFor(() =>
+      expect(api.sent.some((call) => call.url.endsWith('/bookings') && (call.body as { paymentMode?: string }).paymentMode === 'CASH')).toBe(true),
+    );
+    /* `resolveIssueOption` validates this against the service, so an id that is
+       not the one the list offered would be refused at checkout. */
+    const create = api.sent.find((call) => call.url.endsWith('/bookings') && (call.body as { paymentMode?: string }).paymentMode === 'CASH');
+    expect(create?.body.issueOptionId).toBe(11);
+  });
+
+  it('shows the chosen fault in the customer\'s own words on the review step', async () => {
+    await reachDetails();
+    await chooseIssue();
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
+    await screen.findByText(dict.booking.reviewTitle);
+    /* Not the id, which would be a number the customer cannot check. */
+    expect(text()).toContain('A tap is dripping');
+    expect(text()).not.toMatch(/issueOptionId|option 11/i);
+  });
+
+  it('reports a failure to load the faults instead of quietly falling back to free text', async () => {
+    await reachDetails({ issueOptionsFailed: true });
+    await waitFor(() => expect(screen.getByRole('alert')).toBeDefined(), { timeout: 5_000 });
+    expect(text()).toContain(dict.booking.issueLoadFailed);
+    /* No dropdown is rendered: the fault list is what failed, and rendering an
+       empty one would let the customer continue past a required answer. */
+    expect(screen.queryByLabelText(dict.booking.issueLabel)).toBeNull();
+    /* And a retry is offered, because this is a server fault rather than an
+       empty catalogue. */
+    expect(text()).toContain(dict.catalogue.retry);
+  });
+
+  it('says so when the service has no published faults at all', async () => {
+    await reachDetails({ issueOptions: { items: [] } });
+    expect(await screen.findByText(dict.booking.issueNone)).toBeDefined();
+    /* No dropdown is rendered rather than an empty one that cannot be opened. */
+    expect(screen.queryByLabelText(dict.booking.issueLabel)).toBeNull();
+  });
+});
+
 describe("step five — the review shows the server's price and nothing else", () => {
   it("renders the quote's own line items, total and policy", async () => {
     stubApi();
@@ -466,7 +599,7 @@ const reachPaymentForChosenProvider = async (routes: Routes = {}): Promise<{ sen
   fireEvent.click(screen.getAllByRole('button', { name: /^\d{1,2}:\d{2}/ })[0]);
   fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
 
-  await screen.findByLabelText(dict.booking.problemLabel);
+  await chooseIssue();
   fireEvent.change(screen.getByLabelText(dict.booking.problemLabel), { target: { value: 'The kitchen tap has been leaking since Monday.' } });
   fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.common.continue, 'i') }));
 
@@ -578,10 +711,12 @@ describe('step six — payment and the outcome', () => {
       vi.fn(async (url: string, init?: RequestInit) => {
         const path = String(url);
         const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+        if (path.includes('/auth/session')) return ok({ authenticated: true, user: { id: 'c1', firstName: 'Test', lastName: 'Customer', roles: ['CUSTOMER'], status: 'ACTIVE', providerStatus: null } });
         if (path.includes('/customer/addresses')) return ok({ items: [address] });
         if (path.includes('/places/cities/1/areas')) return ok({ items: [] });
-        if (path.includes('/places/cities')) return ok({ items: [{ id: 1, name: 'Lahore', timezone: 'Asia/Karachi' }] });
+        if (path.includes('/places/cities')) return ok({ items: [{ id: 1, name: 'Lahore', timezone: 'Asia/Karachi', lat: 31.5204, lng: 74.3587 }] });
         if (path.includes('/search/providers')) return ok({ items: [] });
+        if (path.includes('/issue-options')) return ok({ items: [{ id: 11, slug: 'tap-dripping', labelEn: 'A tap is dripping', labelUr: 'x', position: 1 }] });
         if (path.endsWith('/bookings/quote')) return ok(quote);
         if (path.endsWith('/bookings') && init?.method === 'POST')
           return new Response(JSON.stringify(problem(400, 'BAD_REQUEST', 'The booking must start in the future')), {

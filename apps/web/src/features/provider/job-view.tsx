@@ -19,6 +19,7 @@ import {
 } from '@/features/booking/queries';
 import type { Booking, BookingStatus, Evidence, EvidenceKind } from '@/features/booking/api';
 import { prepareEvidenceImage } from '@/features/uploads/image';
+import { EvidenceImage } from '@/components/evidence-image';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDateTime, formatMoney, type Locale } from '@/lib/utils';
 
@@ -43,7 +44,7 @@ import { cn, formatDateTime, formatMoney, type Locale } from '@/lib/utils';
  * server's own sentence is shown rather than a paraphrase.
  *
  * Three things this screen deliberately does **not** do, each because the API
- * cannot support it (both written up in `docs/BACKEND_REQUIREMENTS.md` §3.10–3.11):
+ * cannot support it (both written up in `docs/backend_requirement.md` §3.10–3.11):
  *
  * 1. **It shows no address.** `GET /bookings/:id` returns `addressId` and nothing
  *    else; `GET /customer/addresses` is CUSTOMER-only. A professional cannot learn
@@ -322,7 +323,7 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
           {/*
             The checklist cannot be shown. `complete` refuses with 409 until every
             step is done, and nothing publishes the steps or their `itemId`
-            (BACKEND_REQUIREMENTS §3.11). Saying so — and saying what the gate
+            (backend_requirement.md §3.11). Saying so — and saying what the gate
             actually is — is better than a list of untickable boxes, and much better
             than inventing `itemId`s that would 422.
           */}
@@ -500,9 +501,10 @@ function PhotosCard({
         <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {mine.map((photo) => (
             <li key={photo.id} className="overflow-hidden rounded-[10px] border border-line">
-              {/* A plain `img`: these are signed, short-lived URLs from the object
-                  store, so next/image's loader would have nothing to optimise. */}
-              <img src={photo.url} alt={dict.job.photoAlt.replace('{kind}', dict.job.photoKinds[photo.kind])} className="aspect-4/3 w-full object-cover" />
+              {/* Signed, short-lived object-store URLs in production, which next/image's
+                  loader has nothing to optimise; `EvidenceImage` also unwraps the
+                  mock storage's JSON envelope in development. */}
+              <EvidenceImage url={photo.url} alt={dict.job.photoAlt.replace('{kind}', dict.job.photoKinds[photo.kind])} className="aspect-4/3 w-full" />
               <p className="px-2.5 py-2 text-xs text-muted">
                 {dict.job.photoKinds[photo.kind]} · {formatDateTime(photo.receivedAt, locale)}
               </p>

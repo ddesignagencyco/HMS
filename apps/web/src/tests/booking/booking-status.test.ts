@@ -13,7 +13,8 @@ import {
   isUpcomingBooking,
   rescheduleBlockReason
 } from '@/features/booking/status';
-import type { Booking } from '@/features/booking/api';
+import type { Booking, BookingStatus } from '@/features/booking/api';
+import { getDictionary } from '@/lib/dictionaries';
 
 /* `booking/status.ts` is a presentation copy of `BOOKING_TRANSITIONS` in
    packages/domain. It decides which buttons appear and — more importantly — which
@@ -228,5 +229,71 @@ describe('lifecycle labels', () => {
     const cancelled = booking({ status: 'CANCELLED_CUSTOMER', scheduledStart: '2026-10-20T04:00:00.000Z' });
     expect(isLiveBooking(cancelled.status)).toBe(false);
     expect(isUpcomingBooking(cancelled, NOW)).toBe(false);
+  });
+});
+
+describe('enum coverage', () => {
+  /* The backend now derives its status list from the database enum rather than a
+     hand-written array, so a status cannot go missing on the server by accident.
+     The frontend still has three hand-written places that could drift from it, and
+     each fails differently and quietly:
+
+       · `status.ts` decides live vs closed — a status in neither list makes a
+         finished booking look like it is still going.
+       · the dictionary supplies the badge label — a missing key falls back to the
+         raw enum name, so a customer reads "PARTIALLY_REFUNDED".
+       · `BookingStatus` itself must contain every value the API can send, or a
+         real response would not type-check against what the UI expects. */
+
+  const ALL: readonly BookingStatus[] = [
+    'PENDING_PAYMENT',
+    'ABANDONED',
+    'REQUESTED',
+    'UNFULFILLED',
+    'ACCEPTED',
+    'SCHEDULED',
+    'EN_ROUTE',
+    'IN_PROGRESS',
+    'QUOTE_REVISION',
+    'WORK_COMPLETED',
+    'AWAITING_VERIFICATION',
+    'REWORK_REQUIRED',
+    'VERIFIED',
+    'AUTO_RELEASED',
+    'DISPUTED',
+    'PAYMENT_RELEASED',
+    'PARTIALLY_REFUNDED',
+    'REFUNDED',
+    'CANCELLED_CUSTOMER',
+    'CANCELLED_PROVIDER',
+    'NO_SHOW',
+    'CLOSED',
+  ];
+
+  it('classifies every status as exactly one of live or closed', () => {
+    for (const status of ALL) {
+      const live = isLiveBooking(status);
+      const closed = isClosedBooking(status);
+      expect(`${status}:${live ? 'live' : closed ? 'closed' : 'NEITHER'}`).not.toBe(`${status}:NEITHER`);
+      /* The two lists must not overlap, or a status would render as both. */
+      expect(live && closed).toBe(false);
+    }
+  });
+
+  it('has a readable label for every status, in both languages', () => {
+    const en = getDictionary('en').bookingStatus as Record<string, string>;
+    const ur = getDictionary('ur').bookingStatus as Record<string, string>;
+    for (const status of ALL) {
+      expect(en[status], `en label for ${status}`).toBeTruthy();
+      expect(ur[status], `ur label for ${status}`).toBeTruthy();
+      /* A raw enum name is the visible symptom of a missing label. */
+      expect(en[status]).not.toBe(status);
+    }
+  });
+
+  it('can filter the list by every status the API accepts', () => {
+    /* `GET /bookings?status=` is the full enum now, so no status may be
+       unreachable from the customer's own list. */
+    expect(ALL.every((status) => (ALL as readonly BookingStatus[]).includes(status))).toBe(true);
   });
 });

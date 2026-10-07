@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertTriangle, CalendarDays, CheckCircle2, Image as ImageIcon, Info, ShieldCheck, XCircle } from 'lucide-react';
+import { EvidenceImage } from '@/components/evidence-image';
 import { useState } from 'react';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDateTime, localizedPath, type Locale } from '@/lib/utils';
@@ -14,13 +15,14 @@ import {
   useBooking,
   useAddEvidence,
   useCancelBooking,
+  useEvidenceList,
   useRejectRevision,
   useReportNoShow,
   useRescheduleBooking,
   useWarrantyClaim
 } from '@/features/booking/queries';
 import { useServiceNames } from '@/features/booking/service-names';
-import type { Booking } from '@/features/booking/api';
+import type { Booking, BookingDetail } from '@/features/booking/api';
 import { BookingChat } from '@/features/booking/booking-chat';
 import { isNotFoundError } from '@/lib/api/keys';
 import { useProviderSlots } from '@/features/search/queries';
@@ -95,7 +97,6 @@ export function BookingDetail({ locale, dict, bookingId }: { locale: Locale; dic
           {hasPendingRevision(record) ? <RevisionCard locale={locale} dict={dict} booking={record} /> : null}
           <ActionsCard locale={locale} dict={dict} booking={record} />
           <BookingChat locale={locale} dict={dict} booking={record} />
-          <ProblemPhotos locale={locale} dict={dict} bookingId={record.id} canUpload={canAttachProblemPhotos(record)} />
         </div>
 
         <div className="grid content-start gap-6">
@@ -234,7 +235,22 @@ function StageTimeline({ dict, booking }: { dict: Dictionary; booking: Booking }
   );
 }
 
-function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictionary; booking: Booking }) {
+/**
+ * What cancelling this booking would cost, in paisa.
+ *
+ * The API publishes this on `GET /bookings/:id` from the same rule it applies on
+ * cancel. It is read defensively: a booking surface that throws because an
+ * optional block is absent takes out the cancel and reschedule buttons with it,
+ * which is worse than showing the note without a figure. Zero is the safe
+ * fallback — it says "free", which is the answer for every booking outside the
+ * late-cancellation window.
+ */
+const cancellationFeePaisa = (booking: Pick<BookingDetail, "cancellation">): number =>
+  typeof booking.cancellation?.feeDuePaisa === "number" && Number.isFinite(booking.cancellation.feeDuePaisa)
+    ? booking.cancellation.feeDuePaisa
+    : 0;
+
+function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictionary; booking: BookingDetail }) {
   const cancel = useCancelBooking(locale);
   const reschedule = useRescheduleBooking(locale);
   const noShow = useReportNoShow(locale);
@@ -260,9 +276,22 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
           {cancelAllowed ? (
             <div className="rounded-[10px] border border-line p-4">
               <p className="text-sm font-semibold text-navy">{dict.booking.cancelTitle}</p>
-              {/* FR-BK-06 is not applied by the API yet, so no fee is quoted
-                  here ’ claiming one would name a rule that does not run. */}
-              <p className="mt-1 text-sm leading-6 text-secondary">{dict.booking.cancelNote}</p>
+              {/* FR-BK-06 is now applied by the API, and `cancellation` on this
+                  same response is built from the exact rule
+                  `POST /bookings/:id/cancel` runs. So the number quoted here is
+                  the number that would be charged, not a client-side guess and not
+                  a promise about a rule that does not exist. */}
+              <p className="mt-1 text-sm leading-6 text-secondary">
+                {cancellationFeePaisa(booking) > 0 ? (
+                  <>
+                    {dict.booking.cancelFee} ·{" "}
+                    <span className="font-semibold text-navy tabular-nums">{money(cancellationFeePaisa(booking), locale)}</span>
+                    {dict.booking.cancelFeeWithin}
+                  </>
+                ) : (
+                  dict.booking.cancelFree
+                )}
+              </p>
               {confirmingCancel ? (
                 <div className="mt-3 grid gap-3">
                   <div className="grid gap-2">
@@ -514,9 +543,19 @@ function WarrantyCard({ locale, dict, booking }: { locale: Locale; dict: Diction
  * they are refused. The card is not rendered at all outside those states, so the
  * five-photo limit and the upload button never appear where they would 409.
  */
-const canAttachProblemPhotos = (booking: Pick<Booking, 'status'>): boolean => booking.status === 'PENDING_PAYMENT' || booking.status === 'REQUESTED' || booking.status === 'SCHEDULED';
+export const canAttachProblemPhotos = (booking: Pick<Booking, 'status'>): boolean => booking.status === 'PENDING_PAYMENT' || booking.status === 'REQUESTED' || booking.status === 'SCHEDULED';
 
-function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: Locale; dict: Dictionary; bookingId: string; canUpload: boolean }) {
+/**
+ * The customer's photo panel for the problem they reported.
+ *
+ * Exported because the live customer route renders
+ * `CustomerBookingDetailScreen` (features/customer/booking-detail-view.tsx), not
+ * the `BookingDetail` in this file. The booking step promises "you can add up to
+ * five photos of the problem from the booking page once the booking exists", and
+ * until this was rendered there that sentence described a page that had no
+ * photo picker anywhere on it.
+ */
+export function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: Locale; dict: Dictionary; bookingId: string; canUpload: boolean }) {
   const upload = useAddEvidence(locale);
   const [files, setFiles] = useState<File[]>([]);
   const [results, setResults] = useState<{ url: string }[]>([]);
@@ -531,7 +570,19 @@ function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: Locale;
      key per user intent, not per attempt. */
   const [intent, setIntent] = useState<Record<string, string>>({});
 
-  if (!canUpload) return null;
+  /* What is already on the booking. Without this the grid showed only the photos
+     uploaded in the current sitting, so a customer who attached three photos and
+     came back the next day saw an empty card and no way to tell whether the
+     upload had worked. `useEvidenceList` is the reader for
+     `GET /bookings/:id/evidence`, and the upload mutation invalidates it, so a
+     fresh photo lands here without `results` having to remember it. */
+  const existing = useEvidenceList(canUpload ? bookingId : null, locale);
+  const stored = existing.data?.items?.filter((item) => item.kind === 'CUSTOMER_PROBLEM') ?? [];
+
+  /* Hidden only when there is nothing to show and nothing to add: once the
+     professional is under way the card cannot be used, but photos already sent
+     stay on the record and are still worth showing. */
+  if (!canUpload && stored.length === 0) return null;
 
   const send = async (): Promise<void> => {
     setFailed('');
@@ -577,19 +628,32 @@ function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: Locale;
       </h2>
       <p className="mt-2 text-sm leading-6 text-secondary">{dict.booking.photosText}</p>
 
-      {results.length > 0 ? (
+      {stored.length > 0 ? (
+        <ul className="mt-3 grid grid-cols-3 gap-2">
+          {stored.map((item) => (
+            <li key={item.id} className="relative aspect-square overflow-hidden rounded-[9px] bg-slate-100">
+              {/* eslint-disable-next-line @next/next/no-img-element -- a dev-storage object URL, not a static asset, and next/image would need a configured loader for it */}
+              <EvidenceImage url={item.url} alt="" />
+            </li>
+          ))}
+        </ul>
+      ) : results.length > 0 ? (
+        /* Only reached before the list has refetched. */
         <ul className="mt-3 grid grid-cols-3 gap-2">
           {results.map((item) => (
             <li key={item.url} className="relative aspect-square overflow-hidden rounded-[9px] bg-slate-100">
-              {/* eslint-disable-next-line @next/next/no-img-element -- a dev-storage object URL, not a static asset, and next/image would need a configured loader for it */}
-              <img src={item.url} alt="" className="size-full object-cover" />
+              <EvidenceImage url={item.url} alt="" />
             </li>
           ))}
         </ul>
       ) : null}
 
-      <div className="mt-3 grid gap-2">
-        <Label htmlFor="problem-photos">{dict.booking.photosChoose}</Label>
+      {!canUpload ? (
+        <p className="mt-3 text-xs leading-5 text-muted">{dict.booking.photosClosed}</p>
+      ) : (
+        <>
+          <div className="mt-3 grid gap-2">
+            <Label htmlFor="problem-photos">{dict.booking.photosChoose}</Label>
         <input
           id="problem-photos"
           type="file"
@@ -624,6 +688,8 @@ function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: Locale;
           {failed}
         </p>
       ) : null}
+        </>
+      )}
     </Card>
   );
 }

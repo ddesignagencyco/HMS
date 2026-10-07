@@ -121,25 +121,46 @@ describe("rating distribution", () => {
     expect(screen.getByText(dict.profile.verifiedJobs.replace("{count}", "12"))).toBeDefined();
   });
 
-  it("shows no rating at all when the count is zero, even though the API sends a score", async () => {
-    /* The live case: score is the 3.5 prior and ratingCount is 0. */
-    const priorOnly: Reputation = {
-      score: 3.5,
+  it("shows no rating at all when the API returns a null score", async () => {
+    /* The live case: score is null and ratingCount is 0. */
+    const unratedReputation: Reputation = {
+      score: null,
       ratingCount: 0,
       distribution: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 },
       verifiedJobs: 0,
       badge: null,
     };
-    vi.stubGlobal("fetch", vi.fn(async () => json(priorOnly)));
-    render(<ReputationSection locale={locale} dict={dict} providerId={providerId} reputation={priorOnly} />, {
+    vi.stubGlobal("fetch", vi.fn(async () => json(unratedReputation)));
+    render(<ReputationSection locale={locale} dict={dict} providerId={providerId} reputation={unratedReputation} />, {
       wrapper: wrapperFor(client()),
     });
 
     await waitFor(() => expect(screen.getByText(dict.profile.noRatingsYet)).toBeDefined());
-    /* The prior must never reach the screen as a rating. */
+    /* Nothing may be printed in place of the absent score. */
+    expect(screen.queryByText("NaN")).toBeNull();
+    expect(screen.queryByText("0.00")).toBeNull();
     expect(screen.queryByText("3.50")).toBeNull();
-    expect(screen.queryByText("3.5")).toBeNull();
     expect(screen.queryByText(dict.profile.ratingBreakdown)).toBeNull();
+  });
+
+  /* A count with a null score is a legitimate answer from this API, so the branch
+     has to be on the score. Gating on the count would render the breakdown bars
+     with no score above them. */
+  it("shows no rating when the score is null even if a count is reported", async () => {
+    const countOnly: Reputation = {
+      score: null,
+      ratingCount: 2,
+      distribution: { "1": 0, "2": 0, "3": 0, "4": 1, "5": 1 },
+      verifiedJobs: 4,
+      badge: null,
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => json(countOnly)));
+    render(<ReputationSection locale={locale} dict={dict} providerId={providerId} reputation={countOnly} />, {
+      wrapper: wrapperFor(client()),
+    });
+
+    await waitFor(() => expect(screen.getByText(dict.profile.noRatingsYet)).toBeDefined());
+    expect(screen.queryByText("NaN")).toBeNull();
   });
 });
 
@@ -158,7 +179,7 @@ describe("superseded search requests", () => {
         qualification: slug,
         pricePaisa: 100000,
         distanceM: 10,
-        ratingScore: 3.5,
+        ratingScore: null,
         ratingCount: 0,
         badge: null,
       },

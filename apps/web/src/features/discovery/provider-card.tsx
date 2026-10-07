@@ -5,7 +5,7 @@ import { BadgeCheck, BriefcaseBusiness, MapPin, Star } from "lucide-react";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, formatNumber, localizedPath, type Locale } from "@/lib/utils";
 import { money } from "@/features/catalogue/pricing";
-import { formatDistance } from "@/features/search/location";
+import { formatDistance, ratingOf } from "@/features/search/location";
 import type { ProviderSearchResult } from "@/features/search/api";
 
 /* A provider card can show only what the API returns, and that is less than a
@@ -33,7 +33,11 @@ export function ProviderCard({
   serviceName: string;
   className?: string;
 }) {
-  const hasRating = provider.ratingCount > 0;
+  /* `ratingScore` is null when nobody has rated this professional, and the API
+     ranks them on it regardless. A count alone is no longer a safe guard — the
+     server may answer with a count and a null score — so the score itself decides,
+     and `ratingOf` also swallows a non-finite value that would print as "NaN". */
+  const rating = ratingOf(provider.ratingScore);
   const href = localizedPath(locale, `/providers/${provider.providerId}`);
 
   return (
@@ -66,11 +70,13 @@ export function ProviderCard({
           </h3>
 
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondary">
-            {hasRating ? (
+            {rating.rated ? (
               <span className="inline-flex items-center gap-1">
                 <Star className="size-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
-                <span className="font-semibold text-navy tabular-nums">{provider.ratingScore.toFixed(2)}</span>
-                <span className="text-muted">({formatNumber(provider.ratingCount, locale)})</span>
+                <span className="font-semibold text-navy tabular-nums">{rating.score.toFixed(2)}</span>
+                {provider.ratingCount > 0 ? (
+                  <span className="text-muted">({formatNumber(provider.ratingCount, locale)})</span>
+                ) : null}
               </span>
             ) : (
               <span className="text-muted">{dict.profile.noRatingsYet}</span>

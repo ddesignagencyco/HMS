@@ -55,12 +55,31 @@ export function SessionProvider({ locale, children }: { locale: Locale; children
 
   const meQuery = useQuery({
     queryKey: sessionKeys.me,
+    /* `GET /auth/session` first, then the refresh it implies.
+     *
+       `me` cannot be the first question: it needs a bearer token, and a reload
+       throws the token away. Asking it anyway meant every public page, for every
+       signed-out visitor, logged a 401 and then a refused refresh — and made
+       "signed in" and "signed out" indistinguishable at the moment the header
+       renders. `session` answers 200 either way from the httpOnly cookie, so it
+       establishes the state without an error; the refresh that follows mints the
+       access token every other request needs, and is a no-op nobody can see when
+       there was no session to begin with.
+
+       The user written by `adoptSession` is a cache *write*, so it satisfies this
+       query and neither call happens again until something invalidates it. */
     queryFn: async (): Promise<{ user: AuthUser } | null> => {
       try {
-        return await authApi.me({ locale });
+        const state = await authApi.session({ locale });
+        if (!state.authenticated || state.user === null) return null;
+        /* The cookie is evidence of a session, not the token for it. Without this
+           the first authenticated request after a reload would 401 and start its
+           own refresh anyway — one round trip later, and one error in the log. */
+        await refreshSession(locale);
+        return { user: state.user };
       } catch (error) {
-        /* An unauthenticated session is a normal answer, not a failure to show
-           anyone: the gate sends the visitor to sign-in and nothing else. */
+        /* Offline or a transport fault is not a signed-out visitor, so it is left
+           to fail visibly rather than being reported as "nobody is signed in". */
         if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return null;
         if (error instanceof TypeError || (error instanceof Error && error.message.toLowerCase().includes("fetch"))) return null;
         throw error;
@@ -70,8 +89,10 @@ export function SessionProvider({ locale, children }: { locale: Locale; children
     /* The one query that is allowed to re-check itself when the tab comes back.
        A session can be signed in or out in another tab, and this is what the
        header renders its sign-in/sign-out controls from — a cached answer that
-       is never revisited leaves the header wrong until the next full load. The
-       staleTime still bounds it to one cheap request per minute per tab. */
+       is never revisited leaves the header wrong until the next full load.
+       `GET /auth/session` is one cheap read either way, so re-checking costs a
+       signed-out visitor nothing they would not have paid in errors. The
+       staleTime still bounds it to one request per minute per tab. */
     refetchOnWindowFocus: true,
     staleTime: 60_000,
   });

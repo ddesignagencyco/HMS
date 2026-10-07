@@ -26,7 +26,7 @@ import { localizedPath, type Locale } from '@/lib/utils';
  * have a shortlist, come back to find it empty, and conclude the platform lost
  * their data. So the screen states the absence and points somewhere useful.
  *
- * The requirement is written up in `docs/BACKEND_REQUIREMENTS.md` §3.12: three
+ * The requirement is written up in `docs/backend_requirement.md` §3.12: three
  * routes, with `GET` returning enough to render a card rather than a column of
  * UUIDs, `POST` idempotent because the composite primary key already makes it so,
  * and `DELETE` keyed on `providerId` because the table has no surrogate id. */

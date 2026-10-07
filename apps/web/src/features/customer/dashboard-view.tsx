@@ -127,20 +127,25 @@ export function CustomerDashboardScreen({ locale, dict }: { locale: Locale; dict
 /**
  * The customer's bookings.
  *
- * `GET /bookings` publishes no readable names — only ids — which is the subject of
- * BACKEND_REQUIREMENTS §3.1. So the service name is joined here from the
- * catalogue by `serviceId`, and the **booking code stands in when the catalogue is
- * unreadable**. Showing a made-up name would be worse than showing a reference the
- * customer can quote on the phone.
+* `GET /bookings` publishes ids only, not the readable names `GET /bookings/:id`
+ * returns (recorded in `docs/backend_requirement.md`), so the service name is
+ * joined here from the catalogue by `serviceId`, and the **booking code stands in
+ * when the catalogue is unreadable**. Showing a made-up name would be worse than
+ * showing a reference the customer can quote on the phone.
  *
  * There is deliberately no "re-book" column. The old screen linked to
  * `/book/[slug]?rebook=<id>`, and nothing ever reads `?rebook=`, so it was a
  * button that went to a fresh booking form having silently forgotten which
  * provider and service were being re-booked.
  */
-export function BookingTable({ locale, dict, items, names }: { locale: Locale; dict: Dictionary; items: Booking[]; names: Map<number, string> }) {
+export function BookingTable({ locale, dict, items, names, total = items.length }: { locale: Locale; dict: Dictionary; items: Booking[]; names: Map<number, string>; /** What the API returned in total, before the tabs split it. */ total?: number }) {
   if (items.length === 0) {
-    return <p className="p-6 text-sm text-secondary">{dict.portal.noBookingsYet}</p>;
+    /* Distinguishes "you have never booked" from "nothing in this tab".
+       They used to share one sentence, so an account with four finished bookings
+       opening on "In play" was told it had never booked anything — a false
+       statement about real records. `total` is what the API returned; anything
+       above zero means the tabs are what is empty, not the history. */
+    return <p className="p-6 text-sm text-secondary">{total > 0 ? dict.portal.noBookingsInTab : dict.portal.noBookingsYet}</p>;
   }
   return (
     <div className="overflow-x-auto">
@@ -172,7 +177,7 @@ export function BookingTable({ locale, dict, items, names }: { locale: Locale; d
               </td>
               <td className="p-4 text-secondary">{formatDateTime(booking.scheduledStart, locale)}</td>
               <td className="p-4">
-                <StatusBadge status={booking.status} label={dict.job.statuses[booking.status]} />
+                <StatusBadge status={booking.status} label={dict.bookingStatus[booking.status]} />
               </td>
               <td className="p-4 font-semibold text-navy tabular-nums">{formatMoney(booking.finalAmountPaisa ?? booking.approvedTotalPaisa, locale)}</td>
             </tr>

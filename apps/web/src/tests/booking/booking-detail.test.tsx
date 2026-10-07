@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BookingDetail } from '@/features/booking/booking-detail';
 import { getDictionary } from '@/lib/dictionaries';
 import type { Locale } from '@/lib/utils';
-import type { Booking } from '@/features/booking/api';
+/* Aliased: the screen component is also called `BookingDetail`, and these
+   fixtures model the `GET /bookings/:id` payload rather than the component. */
+import type { BookingDetail as BookingDetailRow } from '@/features/booking/api';
 
 /* One booking, seen by the customer who made it.
 
@@ -19,19 +21,24 @@ import type { Booking } from '@/features/booking/api';
      the status was — so a cancelled booking showed progress. Here the stages are
      derived from the status, and a booking that will never move again says so.
 
-   · **A cancellation fee that is never charged.** FR-BK-06 is not applied by the
-     API yet, so no fee is quoted. Claiming one would name a rule that does not
-     run, and a customer shown "Rs 500 fee" would expect to be charged it.
+· **A cancellation fee the API has not published.** FR-BK-06 is applied now,
+     and `GET /bookings/:id` publishes what cancelling *this* booking would cost
+     under `cancellation`, built from the same rule `POST /cancel` runs. So the
+     figure on screen is the server's, and it is quoted in both directions: free
+     before the window closes, the real amount inside it.
 
    · **Actions that cannot work.** A button the API will refuse is worse than no
-     button, so cancel and reschedule appear only where the transition table
-     allows them. */
+      button, so cancel and reschedule appear only where the transition table
+      allows them. */
 
 const dict = getDictionary('en');
 const locale: Locale = 'en';
 const text = () => document.body.textContent ?? '';
 
-const booking = (over: Partial<Booking>): Booking => ({
+/** Zero-fee is the normal answer: outside the late-cancellation window. */
+const freeCancellation = { freeCancelHours: 12, lateCancelFeePaisa: 50000, hoursUntilStart: 48, isLate: false, feeDuePaisa: 0 };
+
+const booking = (over: Partial<BookingDetailRow>): BookingDetailRow => ({
   id: 'b1',
   code: 'SHM-0000001',
   customerId: 'c1',
@@ -63,13 +70,25 @@ const booking = (over: Partial<Booking>): Booking => ({
   issueOptionId: null,
   isOnBehalf: false,
   onBehalfName: null,
+  /* Everything `GET /bookings/:id` publishes on top of the row. */
+  serviceName: 'Leak Repair',
+  serviceNameUr: 'x',
+  serviceSlug: 'leak-repair',
+  providerQualification: null,
+  addressLabel: 'Home',
+  addressLine1: 'House 24, Street 7',
+  addressLine2: null,
+  areaName: 'Gulistan-e-Jauhar',
+  items: [],
+  cancellationPolicy: 'Free up to 12 hours before.',
+  cancellation: freeCancellation,
   ...over
 });
 
 const problem = (status: number, code: string) => ({ type: 'about:blank', title: 'x', status, code, detail: 'x', errors: [] });
 
 /** The catalogue names are joined onto `serviceId`; the API row has no name. */
-const stubApi = (over: Partial<Booking> = {}, overrides: { chat?: unknown; create?: { status: number; body: unknown } } = {}) => {
+const stubApi = (over: Partial<BookingDetailRow> = {}, overrides: { chat?: unknown; create?: { status: number; body: unknown } } = {}) => {
   const record = booking(over);
   const sent: { url: string; body: Record<string, unknown> }[] = [];
   const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -127,7 +146,7 @@ const stubApi = (over: Partial<Booking> = {}, overrides: { chat?: unknown; creat
   return { sent };
 };
 
-const renderDetail = (over: Partial<Booking> = {}, overrides?: Parameters<typeof stubApi>[1]) => {
+const renderDetail = (over: Partial<BookingDetailRow> = {}, overrides?: Parameters<typeof stubApi>[1]) => {
   const api = stubApi(over, overrides);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const Component = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -232,14 +251,38 @@ describe('only actions the API will accept are offered', () => {
     expect(text()).toContain(dict.booking.rescheduleAction);
   });
 
-  it('never quotes a cancellation fee, because the API does not apply one', async () => {
+  it('says cancelling is free while the API quotes no fee', async () => {
     renderDetail({ status: 'SCHEDULED' });
     await screen.findByRole('heading', { name: 'Leak Repair' });
     fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.booking.cancelAction) }));
-    /* FR-BK-06 is not implemented server-side. A figure shown here would be a
-       promise of a charge that never happens. */
-    expect(text()).toContain(dict.booking.cancelNote);
-    expect(text()).not.toContain('Rs 500');
+    /* `cancellation.feeDuePaisa` is 0 outside the free window, and the screen
+       says so rather than leaving the customer to guess. */
+    expect(text()).toContain(dict.booking.cancelFree);
+    expect(text()).not.toContain(dict.booking.cancelFee);
+  });
+
+  it('quotes the API’s own fee when the free-cancellation window has closed', async () => {
+    /* The server owns this figure: it is built by the same rule that runs on
+       `POST /cancel`, so the screen must show it rather than compute its own. */
+    renderDetail({
+      status: 'SCHEDULED',
+      cancellation: { freeCancelHours: 12, lateCancelFeePaisa: 50000, hoursUntilStart: 3, isLate: true, feeDuePaisa: 50000 },
+    });
+    await screen.findByRole('heading', { name: 'Leak Repair' });
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.booking.cancelAction) }));
+
+    expect(text()).toContain(dict.booking.cancelFee);
+    expect(text()).toContain('Rs 500');
+    expect(text()).not.toContain(dict.booking.cancelFree);
+  });
+
+  /* A missing `cancellation` block must not take the cancel and reschedule
+     buttons down with it — that would remove the customer's only way out. */
+  it('still offers cancellation when the API omits the quote', async () => {
+    renderDetail({ status: 'SCHEDULED', cancellation: undefined as never });
+    await screen.findByRole('heading', { name: 'Leak Repair' });
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.booking.cancelAction) }));
+    expect(text()).toContain(dict.booking.cancelFree);
   });
 
   it('sends the cancellation with no reason when none was typed', async () => {
@@ -308,28 +351,13 @@ describe('only actions the API will accept are offered', () => {
   });
 });
 
-describe("the photo allowance matches the server's rule", () => {
-  it('offers the uploader only before the visit begins', async () => {
-    renderDetail({ status: 'REQUESTED' });
-    await screen.findByRole('heading', { name: 'Leak Repair' });
-    expect(text()).toContain(dict.booking.photosTitle);
-  });
-
-  it('removes it once the job is under way, because the API would refuse', async () => {
-    renderDetail({ status: 'IN_PROGRESS' });
-    await screen.findByRole('heading', { name: 'Leak Repair' });
-    /* CUSTOMER_PROBLEM evidence is only accepted in PENDING_PAYMENT, REQUESTED
-       and SCHEDULED. A uploader outside that window is a guaranteed 409. */
-    expect(text()).not.toContain(dict.booking.photosTitle);
-    expect(screen.queryByLabelText(dict.booking.photosChoose)).toBeNull();
-  });
-
-  it("states the five-photo limit, which is the server's, not a guess", async () => {
-    renderDetail({ status: 'REQUESTED' });
-    await screen.findByRole('heading', { name: 'Leak Repair' });
-    expect(text()).toContain('five');
-  });
-});
+/* The photo panel used to be asserted here, against this component. It is not
+   rendered here: `/account/bookings/[id]` serves `CustomerBookingDetailScreen`
+   (features/customer/booking-detail-view.tsx), and this `BookingDetail` is
+   imported by no route — so these tests were passing against a screen a customer
+   can never reach. The coverage lives in
+   `tests/customer/account-views.test.tsx`, on the screen that is actually served,
+   and covers the read-back this one never could. */
 
 describe('the chat', () => {
   it('is offered while a professional is on the job', async () => {

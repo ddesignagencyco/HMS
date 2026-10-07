@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProviderRatingsScreen } from '@/features/provider/ratings-view';
+import type { Reputation } from '@/features/search/api';
 import { getDictionary } from '@/lib/dictionaries';
 import type { Locale } from '@/lib/utils';
 
@@ -37,7 +38,7 @@ const rating = (over: Record<string, unknown> = {}) => ({
   ...over
 });
 
-let payload = {
+let payload: { reputation: Reputation; items: unknown[] } = {
   reputation: { score: 4.5, ratingCount: 2, distribution: { '1': 0, '2': 0, '3': 0, '4': 1, '5': 1 }, verifiedJobs: 12, badge: null },
   items: [rating()]
 };
@@ -96,18 +97,31 @@ describe('provider ratings', () => {
     expect(rowScores('4.5')).toHaveLength(1);
   });
 
-  it('withholds the score while ratingCount is zero, because it is only the prior', async () => {
+  it('withholds the score while the API returns null, because nobody has rated yet', async () => {
     payload = {
-      reputation: { score: 3.5, ratingCount: 0, distribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }, verifiedJobs: 0, badge: null },
+      reputation: { score: null, ratingCount: 0, distribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }, verifiedJobs: 0, badge: null },
       items: []
     };
     renderScreen();
     expect(await screen.findByText(dict.portal.noRatingsYet)).toBeDefined();
-    /* 3.5 is the prior — showing it would claim somebody rated them. */
-    expect(screen.queryByText('3.5')).toBeNull();
+    /* The score is null, so nothing may stand in for it. */
+    expect(screen.queryByText('NaN')).toBeNull();
+    expect(screen.queryByText('0.0')).toBeNull();
     /* The list says when one will appear instead of repeating the summary's
        own "no ratings yet" a second time. */
     expect(screen.getByText(dict.portal.noRatingsListHint)).toBeDefined();
+  });
+
+  /* The count is not the guard: this API can answer with a count and a null
+     score, and the prior note belongs to a score that exists. */
+  it('withholds the score even when a count is reported alongside a null', async () => {
+    payload = {
+      reputation: { score: null, ratingCount: 3, distribution: { '1': 0, '2': 0, '3': 0, '4': 1, '5': 2 }, verifiedJobs: 5, badge: null },
+      items: []
+    };
+    renderScreen();
+    expect(await screen.findByText(dict.portal.noRatingsYet)).toBeDefined();
+    expect(screen.queryByText('NaN')).toBeNull();
   });
 
   it('renders the remark and its display name', async () => {

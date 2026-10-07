@@ -23,7 +23,7 @@ import type { Locale } from '@/lib/utils';
      already renders.
 
    · **It offers no password change.** There is no authenticated password-update
-     route on the API — see BACKEND_REQUIREMENTS.md §1. The security screen carries
+     route on the API — see backend_requirement.md §1. The security screen carries
      TOTP enrolment, which is the only self-service credential change that exists.
      A disabled button labelled "change password" would be a promise the backend
      cannot keep. */
@@ -56,8 +56,9 @@ export function ProfileDetails({ dict }: { dict: Dictionary }) {
     { label: dict.auth.phone, value: user.phoneE164 === null ? null : maskPhone(user.phoneE164) },
     { label: dict.auth.email, value: user.email === null ? null : maskEmail(user.email) },
     { label: dict.portal.language, value: user.locale.toUpperCase() },
-    /* `providerStatus` is hardcoded to `null` by the API today (BACKEND_REQUIREMENTS
-       §1.2), so for a professional it renders "unknown" rather than a guess. */
+    /* `providerStatus` is published by the API on the authenticated user, and it is
+       null for anyone who is not a professional. A null is shown as such rather
+       than being turned into a guess at an approval state. */
     {
       label: dict.portal.providerStatus,
       value: user.providerStatus === null ? dict.portal.notPublished : user.providerStatus.replaceAll('_', ' ').toLowerCase()

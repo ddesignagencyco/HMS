@@ -16,13 +16,14 @@ import type { ProviderSearchFilters } from "./types";
 
 export type Reputation = {
   /**
-   * The published score on the 1–5 scale. **Never null** — it is a Bayesian
-   * mean pulled toward `rating.bayesian_prior`, so a provider with no ratings
-   * at all still scores the prior (3.5 with the shipped settings). That is a
-   * ranking input, not a rating: gate every rendering on `ratingCount`, or the
-   * UI will claim an unrated provider is rated 3.5 out of 5.
+   * The published score on the 1–5 scale, or **null** when nobody has rated this
+   * provider. `reputation.service.ts` returns null rather than the Bayesian
+   * prior precisely so an unrated professional cannot be rendered as a 3.5 — the
+   * prior remains a ranking input only. Every rendering must branch on this
+   * being null and say "no ratings yet"; `ratingCount` alone is no longer a
+   * sufficient guard, because a count with a null score is a legitimate answer.
    */
-  score: number;
+  score: number | null;
   ratingCount: number;
   distribution: Record<"1" | "2" | "3" | "4" | "5", number>;
   verifiedJobs: number;
@@ -36,8 +37,9 @@ export type ProviderSearchResult = {
   qualification: string | null;
   pricePaisa: number;
   distanceM: number;
-  /** Bayesian score, pulled toward the prior — read it only when `ratingCount > 0`. */
-  ratingScore: number;
+  /** Null when nobody has rated this provider yet. Render "no ratings yet" for
+      it — the search row is ranked on it, but it is not a rating to display. */
+  ratingScore: number | null;
   ratingCount: number;
   badge: string | null;
 };

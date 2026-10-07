@@ -14,7 +14,7 @@ import { isLocale } from "@/lib/utils";
    · **It carries no locale.** `src/proxy.ts` prefixes `/en` to anything that is
      not already localised, so a customer who paid in Urdu lands back in English.
      The locale is not recoverable from the URL as the API builds it — see
-     BACKEND_REQUIREMENTS.md §3.9.
+     backend_requirement.md §3.9.
    · **It is not a booking confirmation.** An online booking stays
      `PENDING_PAYMENT` until the gateway's signed webhook confirms capture, which
      this page cannot know. So it forwards to the booking, which re-reads the

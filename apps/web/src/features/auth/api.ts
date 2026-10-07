@@ -36,6 +36,9 @@ export type OtpRequestResult = { sent: true; purpose: OtpPurpose; expiresAt: str
 
 export type MeResult = { user: AuthUser };
 
+/** `GET /auth/session` — 200 either way; `user` is null when nobody is signed in. */
+export type SessionResultBody = { authenticated: boolean; user: AuthUser | null };
+
 export type TotpSetupResult = { secret: string; otpauthUri: string };
 
 export type AuthApiOptions = { signal?: AbortSignal; locale?: Locale };
@@ -88,6 +91,30 @@ export const authApi = {
     submit<SessionResult>("/auth/password/reset", input, options),
 
   me: (options?: AuthApiOptions) => authorised<MeResult>("/auth/me", options),
+
+  /**
+   * "Is this browser signed in?", answered from the httpOnly refresh cookie alone.
+   *
+   * `GET /auth/session` is `@Public()` and returns 200 either way, so a signed-out
+   * visitor is never an error and never a 401 to be retried. That matters on every
+   * page load: `me` needs a bearer token that a reload has thrown away, so asking
+   * it first means every public page for every signed-out visitor logs a 401 and
+   * then a refused refresh, and the two states are indistinguishable at the first
+   * question.
+   *
+   * Reading the cookie here does not rotate or consume it — the refresh that
+   * actually mints an access token happens afterwards and can still use it.
+   */
+  session: (options?: AuthApiOptions) =>
+    apiRequest<SessionResultBody>("/auth/session", {
+      method: "GET",
+      locale: options?.locale,
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+      /* Public by definition. Presenting the session here adds nothing, and a 401
+         on it must never start a refresh. */
+      auth: false,
+      refreshOnExpiry: false,
+    }),
 
   /** Returns the secret exactly once; it is never readable again. */
   totpSetup: (options?: AuthApiOptions) => authorised<TotpSetupResult>("/auth/totp/setup", { ...options, method: "POST" }),

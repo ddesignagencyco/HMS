@@ -18,6 +18,7 @@ export const publicKeys = {
   categories: ['public', 'categories'] as const,
   categoryServices: (slug: string) => ['public', 'categories', slug, 'services'] as const,
   service: (slug: string) => ['public', 'services', slug] as const,
+  issueOptions: (slug: string) => ['public', 'services', slug, 'issue-options'] as const,
   cities: ['public', 'places', 'cities'] as const,
   areas: (cityId: number) => ['public', 'places', 'cities', cityId, 'areas'] as const,
   /** Every effective filter, in a fixed order, so equivalent searches share a key. */

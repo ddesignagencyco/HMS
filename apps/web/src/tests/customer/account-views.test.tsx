@@ -148,6 +148,70 @@ const statValue = async (label: string): Promise<string | null> => {
 const renderList = () => render(<CustomerBookingsScreen locale={locale} dict={dict} />, { wrapper: wrap });
 const renderDetail = () => render(<CustomerBookingDetailScreen locale={locale} bookingId="bk-1" dict={dict} />, { wrapper: wrap });
 
+/* The problem-photo panel, which is on this screen and not on
+   `BookingDetail`. The booking step tells the customer they can attach up to five
+   photos "from the booking page once the booking exists", so this is that page —
+   and for a while it had no picker on it at all, because the panel had been
+   written into a component no route renders. */
+describe('the problem photos on the booking page', () => {
+  const evidence = (items: unknown[]) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.includes('/dev/storage/evidence')) return json({ contentType: 'image/jpeg', contentBase64: 'mock' });
+        if (url.includes('/evidence')) return json({ items });
+        if (method === 'POST') return json({ id: 'e-1', kind: 'CUSTOMER_PROBLEM', url: '/api/v1/dev/storage/evidence/e-1' });
+        if (url.includes('/services')) return json({ items: [{ id: 1, nameEn: 'Leak repair', nameUr: '.leak', slug: 'leak-repair' }] });
+        if (url.includes('/on-behalf-contact')) return json({ contact: null });
+        if (url.includes('/bookings/bk-1')) return json(rows[0]);
+        if (url.includes('/bookings')) return json({ items: rows });
+        throw new Error(`unrouted ${method} ${url}`);
+      })
+    );
+
+  it('offers the picker while the visit has not begun, and names the server limit', async () => {
+    evidence([]);
+    renderDetail();
+    await screen.findByText(dict.portal.bookingProgress);
+    expect(screen.getByLabelText(dict.booking.photosChoose)).not.toBeNull();
+    /* Five is `MAX_PROBLEM_PHOTOS` in the API (ExecutionService). */
+    expect(screen.getAllByText(/five/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows photos already attached, not only ones uploaded in this sitting', async () => {
+    /* Evidence is insert-only, so the list is the record of what was sent. A
+       panel that only remembered its own POST would show an empty card to a
+       customer returning to the booking the next day. */
+    evidence([
+      { id: 'e-1', kind: 'CUSTOMER_PROBLEM', url: '/api/v1/dev/storage/evidence/e-1' },
+      { id: 'e-2', kind: 'BEFORE', url: '/api/v1/dev/storage/evidence/e-2' },
+    ]);
+    renderDetail();
+    await screen.findByText(dict.portal.bookingProgress);
+    /* `alt=""` makes an img presentational, so it has no implicit img role. */
+    const shown = await waitFor(() => {
+      const nodes = document.querySelectorAll('img');
+      if (nodes.length === 0) throw new Error('no photos rendered');
+      return nodes;
+    });
+    expect(shown[0].getAttribute('src')).toBe('data:image/jpeg;base64,mock');
+    /* The professional's own BEFORE photo is not shown in the customer's panel. */
+    expect(shown.length).toBe(1);
+  });
+
+  it('takes the picker away once the job is under way, because the API would refuse', async () => {
+    /* CUSTOMER_PROBLEM evidence is accepted only in PENDING_PAYMENT, REQUESTED
+       and SCHEDULED; ExecutionService throws UPLOAD_REJECTED after that. */
+    rows = [booking({ status: 'IN_PROGRESS' })];
+    evidence([]);
+    renderDetail();
+    await screen.findByText(dict.portal.bookingProgress);
+    expect(screen.queryByLabelText(dict.booking.photosChoose)).toBeNull();
+  });
+});
+
 describe('the customer dashboard', () => {
   it('counts upcoming visits against the real clock, not a literal date', async () => {
     /* Under the old literal, one past and one future booking counted identically
@@ -209,30 +273,37 @@ describe('the customer dashboard', () => {
 });
 
 describe('the bookings list', () => {
-  it('groups the tabs locally, because the server filter covers only ten statuses', async () => {
+  it('groups the tabs locally, over one response', async () => {
     rows = [booking({ id: 'a', status: 'SCHEDULED' }), booking({ id: 'b', status: 'VERIFIED' }), booking({ id: 'c', status: 'CANCELLED_CUSTOMER' })];
     renderList();
 
-    /* "In play" is the default: only the SCHEDULED one. VERIFIED cannot be reached
-       by a server filter at all (BACKEND_REQUIREMENTS 3.2 records ?status=VERIFIED
-       as a 422), which is exactly why the grouping is client-side. */
-    expect(await screen.findByText(dict.job.statuses.SCHEDULED)).toBeDefined();
-    expect(screen.queryByText(dict.job.statuses.VERIFIED)).toBeNull();
+    /* "In play" is the default: only the SCHEDULED one. The tabs are a grouping
+       of the single unfiltered response rather than five server queries, so a
+       verified booking is reachable from "Closed" without a filter round trip. */
+    expect(await screen.findByText(dict.bookingStatus.SCHEDULED)).toBeDefined();
+    expect(screen.queryByText(dict.bookingStatus.VERIFIED)).toBeNull();
 
     fireEvent.click(screen.getByRole('tab', { name: dict.portal.bookingsClosed }));
-    await waitFor(() => expect(screen.getByText(dict.job.statuses.VERIFIED)).toBeDefined());
-    expect(screen.queryByText(dict.job.statuses.SCHEDULED)).toBeNull();
+    await waitFor(() => expect(screen.getByText(dict.bookingStatus.VERIFIED)).toBeDefined());
+    expect(screen.queryByText(dict.bookingStatus.SCHEDULED)).toBeNull();
 
-    /* "All" is the only tab that reaches history in one read. */
+    /* "All" shows history and what is in play together. */
     fireEvent.click(screen.getByRole('tab', { name: dict.portal.bookingsAll }));
-    await waitFor(() => expect(screen.getByText(dict.job.statuses.SCHEDULED)).toBeDefined());
-    expect(screen.getByText(dict.job.statuses.VERIFIED)).toBeDefined();
+    await waitFor(() => expect(screen.getByText(dict.bookingStatus.SCHEDULED)).toBeDefined());
+    expect(screen.getByText(dict.bookingStatus.VERIFIED)).toBeDefined();
   });
 
-  it('says plainly that the grouping happens here rather than on the server', async () => {
+  it('groups the tabs in the browser, over one response', async () => {
     renderList();
-    /* Silently grouping client-side would let the filter look server-side. */
-    expect(await screen.findByText(/10 of the statuses/)).toBeDefined();
+    /* The old version of this screen carried a note saying the API could only
+       filter ten of the twenty-two statuses. That was true of the previous
+       backend schema and is not true now — `?status=` derives from the database
+       enum — so the note was a stale statement about the contract, and the tabs
+       are simply a grouping of the one response. Every tab is still present and
+       populated from a single read, and no stale claim is printed. */
+    await screen.findByRole('tab', { name: new RegExp(dict.portal.bookingsAll) });
+    expect(document.body.textContent).not.toMatch(/\d+ of the statuses/);
+    expect(document.body.textContent).not.toContain('10 of the statuses');
   });
 });
 
@@ -270,8 +341,8 @@ describe('one booking, from the customer side', () => {
     renderDetail();
     await screen.findByText(dict.portal.bookingProgress);
     /* Up to IN_PROGRESS. The old screen's fixed list omitted EN_ROUTE entirely. */
-    expect(screen.getByText(dict.job.statuses.EN_ROUTE)).toBeDefined();
-    expect(screen.queryByText(dict.job.statuses.QUOTE_REVISION)).toBeNull();
+    expect(screen.getByText(dict.bookingStatus.EN_ROUTE)).toBeDefined();
+    expect(screen.queryByText(dict.bookingStatus.QUOTE_REVISION)).toBeNull();
   });
 
   it('reports a status off the track as itself, not forced into a step', async () => {
@@ -279,7 +350,7 @@ describe('one booking, from the customer side', () => {
     renderDetail();
     await screen.findByText(dict.portal.bookingProgress);
     /* Twice: the status pill and the off-track explanation. Both correct. */
-    expect(screen.getAllByText(dict.job.statuses.CANCELLED_CUSTOMER).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(dict.bookingStatus.CANCELLED_CUSTOMER).length).toBeGreaterThanOrEqual(1);
   });
 
   it('files a real complaint with the category and description the schema wants', async () => {

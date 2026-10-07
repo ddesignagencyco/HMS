@@ -10,29 +10,51 @@
    Two rules are worth stating plainly because they are not what the copy in the
    old mock flow claimed:
 
-   · **A cancellation fee is not applied by the API.** `POST /bookings/:id/cancel`
-     records the cancellation and the reason only; the controller's own
-     description says the FR-BK-06 fee rules are not applied "until M8 exists".
-     So no fee is quoted at cancellation time. See BACKEND_REQUIREMENTS.md §3.3.
+   · **A cancellation fee is quoted by the server, never computed here.** FR-BK-06
+     is applied by the API: a customer cancelling inside `booking.free_cancel_hours`
+     pays `booking.late_cancel_fee_paisa`, capped at the booking total, taken from
+     escrow or booked as a receivable. `GET /bookings/:id` publishes exactly what
+     cancelling this booking would cost under `cancellation`, built from the same
+     rule, so the screen reads that figure instead of pricing it locally. See
+     `BookingDetail.cancellation`.
 
    · **One reschedule, free, up to 4 hours before the slot** — `rescheduleCount`
      and the scheduled start together decide it, and both are on the booking. */
 
 import type { Booking, BookingStatus } from "./api";
 
-/** A booking the job is still happening for. */
+/** A booking the job is still happening for.
+ *
+    Complete, and derived from the whole `booking_status` enum on the server side —
+    `BOOKING_STATUS_VALUES` is the database list rather than a hand-written array,
+    so a status cannot go missing there by accident. Here the omission was real:
+    `ACCEPTED` was in neither list, so a booking a professional had accepted was
+    classified as neither live nor closed and rendered with no stage and no
+    progress. `tests/booking/booking-status.test.ts` now asserts every value lands
+    in exactly one list. */
 const LIVE_STATUSES: readonly BookingStatus[] = [
   "PENDING_PAYMENT",
   "REQUESTED",
+  /* A professional has taken the job and the slot is agreed; it has not started
+     yet. Still very much happening. */
+  "ACCEPTED",
   "SCHEDULED",
   "EN_ROUTE",
   "IN_PROGRESS",
   "QUOTE_REVISION",
+  /* The provider has reported the work done and it is being checked. */
+  "WORK_COMPLETED",
   "AWAITING_VERIFICATION",
   "REWORK_REQUIRED",
 ];
 
-/** Nothing further will happen on these without a new booking. */
+/** Nothing further will happen on these without a new booking.
+ *
+    This list was also short: `VERIFIED`, `AUTO_RELEASED`, `PAYMENT_RELEASED`,
+    `PARTIALLY_REFUNDED` and `REFUNDED` were in neither list, so a finished,
+    verified and paid job rendered as neither live nor closed — which is what a
+    customer sees on their own history. They are the ordinary successful outcomes
+    of the lifecycle and belong here. */
 const CLOSED_STATUSES: readonly BookingStatus[] = [
   "ABANDONED",
   "UNFULFILLED",
@@ -40,6 +62,13 @@ const CLOSED_STATUSES: readonly BookingStatus[] = [
   "CANCELLED_PROVIDER",
   "NO_SHOW",
   "DISPUTED",
+  /* The work was checked and passed, by a call or by the automatic release. */
+  "VERIFIED",
+  "AUTO_RELEASED",
+  /* The money has moved, one way or the other. */
+  "PAYMENT_RELEASED",
+  "PARTIALLY_REFUNDED",
+  "REFUNDED",
   "CLOSED",
 ];
 

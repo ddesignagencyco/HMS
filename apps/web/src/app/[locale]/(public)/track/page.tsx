@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { PageBanner, Container, Section } from "@/components/ui";
 import { getDictionary } from "@/lib/dictionaries";
-import { bookings } from "@/lib/data";
 import { isLocale } from "@/lib/utils";
 import { TrackBooking } from "@/features/discovery/track-booking";
 
@@ -21,7 +20,10 @@ export default async function TrackPage({ params }: { params: Promise<{ locale: 
       />
       <Section tone="surface" size="default">
         <Container>
-          <TrackBooking locale={locale} dict={dict} bookings={bookings} />
+          {/* Reads the signed-in customer's own bookings from the API. It used to
+              be handed a hardcoded array, which answered every code typed into
+              it with an invented job. */}
+          <TrackBooking locale={locale} dict={dict} />
         </Container>
       </Section>
     </>

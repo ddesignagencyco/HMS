@@ -23,7 +23,7 @@ import { localizedPath, type Locale } from '@/lib/utils';
  * 4 visits included" is not a harmless placeholder: it is a specific, confident,
  * wrong number, and a customer could reasonably book against it or hold the
  * platform to it. The same applies to the public `/plans` page — the requirement
- * is written up in `docs/BACKEND_REQUIREMENTS.md` §3.13, and it asks for a public
+ * is written up in `docs/backend_requirement.md` §3.13, and it asks for a public
  * catalogue route precisely so that page can be fed from one source rather than
  * from a dictionary.
  *

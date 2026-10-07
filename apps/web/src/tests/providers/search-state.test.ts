@@ -11,7 +11,7 @@ import {
   parseApiDate,
   addDays,
 } from "@/features/search/types";
-import { cityCentre, formatDistance, formatSlotTime, isPlausibleCoordinate } from "@/features/search/location";
+import { areaCentroid, cityCentre, formatDistance, formatSlotTime, isPlausibleCoordinate, ratingOf } from "@/features/search/location";
 import { publicKeys } from "@/lib/api/keys";
 import { providerSearchQuery } from "@/features/search/api";
 
@@ -116,17 +116,37 @@ describe("dates and slots", () => {
 });
 
 describe("location", () => {
-  it("resolves a known city to its documented centre and refuses an unknown one", () => {
-    expect(cityCentre("Lahore")).toEqual({ lat: 31.5204, lng: 74.3587 });
-    expect(cityCentre("  lahore ")).toEqual({ lat: 31.5204, lng: 74.3587 });
-    /* An unknown city gets no invented point. */
-    expect(cityCentre("Quetta")).toBeNull();
+  /* The point is the API's, from `GET /places/cities`. There is no hardcoded
+     fallback any more: an unsurveyed city gets no invented point. */
+  it("takes a city's point from the API row and refuses an unsurveyed one", () => {
+    expect(cityCentre({ lat: 31.5204, lng: 74.3587 })).toEqual({ lat: 31.5204, lng: 74.3587 });
+    expect(cityCentre({ lat: null, lng: null })).toBeNull();
+    expect(cityCentre(null)).toBeNull();
+  });
+
+  it("takes an area's own centroid, and refuses a half-supplied pair", () => {
+    expect(areaCentroid({ lat: 31.4, lng: 74.3 })).toEqual({ lat: 31.4, lng: 74.3 });
+    /* Half a location is not a location: searching on it puts the customer in the
+       middle of the ocean, so it is refused rather than defaulted. */
+    expect(areaCentroid({ lat: 31.4, lng: null })).toBeNull();
+    expect(areaCentroid({ lat: null, lng: 74.3 })).toBeNull();
+    expect(areaCentroid({ lat: 999, lng: 74.3 })).toBeNull();
   });
 
   it("rejects impossible coordinates", () => {
     expect(isPlausibleCoordinate({ lat: 31.5, lng: 74.3 })).toBe(true);
     expect(isPlausibleCoordinate({ lat: 100, lng: 74.3 })).toBe(false);
     expect(isPlausibleCoordinate({ lat: Number.NaN, lng: 74.3 })).toBe(false);
+  });
+
+  /* An unrated provider's score is null and is still ranked on. Every screen has
+     to branch on that, and one unguarded `null` becomes "NaN" two frames later. */
+  it("treats a null or non-finite rating as unrated, never as 0.0 or NaN", () => {
+    expect(ratingOf(4.5)).toEqual({ rated: true, score: 4.5 });
+    expect(ratingOf(0)).toEqual({ rated: true, score: 0 });
+    expect(ratingOf(null)).toEqual({ rated: false });
+    expect(ratingOf(undefined)).toEqual({ rated: false });
+    expect(ratingOf(Number.NaN)).toEqual({ rated: false });
   });
 
   it("shows distance in metres below a kilometre and kilometres above", () => {

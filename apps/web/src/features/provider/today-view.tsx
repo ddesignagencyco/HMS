@@ -32,7 +32,7 @@ import { cn, formatDate, formatDateTime, formatMoney, localizedPath, type Locale
  * · **Availability and leave, from the real endpoints**, so the screen can say
  *   whether today is a working day at all instead of assuming it is.
  *
- * It still cannot show the address — see `BACKEND_REQUIREMENTS.md` §3.10. The area
+ * It still cannot show the address — see `backend_requirement.md` §3.10. The area
  * is not on the booking either, so nothing here claims to know where the job is. */
 
 export function ProviderTodayScreen({ locale, dict, now }: { locale: Locale; dict: Dictionary; now?: Date }) {
@@ -207,7 +207,7 @@ function DaySection({ title, rows, locale, dict, names }: { title: string; rows:
                 </p>
                 {/*
                   The area is not on the booking and the address is not readable by a
-                  provider (BACKEND_REQUIREMENTS §3.10), so nothing here claims to know
+                  provider (backend_requirement.md §3.10), so nothing here claims to know
                   where the job is. Offering a map pin that goes nowhere would be worse
                   than saying nothing.
                 */}

@@ -81,7 +81,7 @@ export type ProviderService = {
   providerId: string;
   serviceId: number;
   serviceSlug: string;
-  /** English only — see BACKEND_REQUIREMENTS "Known gaps". */
+  /** English only — see backend_requirement.md "Known gaps". */
   serviceNameEn: string;
   /** This provider's rate for this service. */
   pricePaisa: number;
@@ -405,7 +405,7 @@ export type ProviderDisputeDetail = ProviderDispute & {
 
 /* ---- Documents -----------------------------------------------------------
    Added by the backend in the 5 Oct handoff. This endpoint did **not** exist when
-   these screens were first written, and BACKEND_REQUIREMENTS §6.1 said so — that
+   these screens were first written, and backend_requirement.md §6.1 said so — that
    entry is now wrong and has been corrected.
 
    Two routes, and the schema is strict about the choice between them:

@@ -49,7 +49,7 @@ export function HeroSearch({ locale, dict }: { locale: Locale; dict: Dictionary 
     const params = new URLSearchParams();
     if (service !== "") params.set(SEARCH_PARAM.service, service);
     const chosen = cities.data?.items.find((item) => item.id === Number(city));
-    const centre = chosen === undefined ? null : cityCentre(chosen.name);
+    const centre = chosen === undefined ? null : cityCentre(chosen);
     if (chosen !== undefined) {
       params.set(SEARCH_PARAM.city, String(chosen.id));
       if (centre !== null) {

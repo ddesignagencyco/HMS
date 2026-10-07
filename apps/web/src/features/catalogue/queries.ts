@@ -43,6 +43,25 @@ export function useService(slug: string, locale: Locale) {
   });
 }
 
+/**
+ * The faults a customer can pick from when booking this service.
+ *
+ * Read from the dedicated `issue-options` route rather than off the service
+ * detail payload, because `issueOptions` on that payload is typed optional and a
+ * booking form that silently shows nothing when it is absent looks broken. The
+ * standalone endpoint is the contract for exactly this list, so it is asked for
+ * directly and a failure is a failure the screen can show and retry.
+ */
+export function useIssueOptions(slug: string, locale: Locale) {
+  return useQuery({
+    queryKey: publicKeys.issueOptions(slug),
+    queryFn: ({ signal }) => catalogueApi.getIssueOptions(slug, { signal, locale }),
+    staleTime: FRESHNESS.service.staleTime,
+    gcTime: FRESHNESS.service.gcTime,
+    retry: (failureCount, error) => !notFound(error) && publicRetry(failureCount, error),
+  });
+}
+
 export function useAllServices(locale: Locale) {
   return useQuery({
     queryKey: ["public", "all-catalogue-services", locale],

@@ -7,7 +7,7 @@ Last updated: 2026-10-03 · backend commit `08bf442` · **165 endpoints** on the
 already built, and what will I collide with?"
 
 - `docs/PROJECT_PROGRESS.md` — current state, how to run, conventions
-- `docs/BACKEND_REQUIREMENTS.md` — defects and asks for the backend team
+- `docs/backend_requirement.md` — defects and asks for the backend team
 
 ## Contents
 
@@ -80,7 +80,7 @@ Source: `src/features/auth/` · tests: `src/tests/auth/`
 | `DELETE /auth/totp`          | authenticated | `totp-form.tsx`                                                      |
 
 **Not built:** social sign-in. The Google/Facebook buttons render "Coming soon"
-because there is no OAuth surface on the API — see `BACKEND_REQUIREMENTS.md` §1.7.
+because there is no OAuth surface on the API — see `backend_requirement.md` §1.7.
 **Do not** wire them until those endpoints exist.
 
 **Known defect that affects this module:** email OTP delivery returns 500
@@ -165,7 +165,7 @@ payment-flow documentation.
 Plus one route that exists because the API names it: `app/[locale]/checkout/return`
 is the gateway's `returnUrl`, hardcoded server-side as
 `/checkout/return?bookingId=…`. It was a 404 until the frontend added it — see
-`BACKEND_REQUIREMENTS.md` §3.7.
+`backend_requirement.md` §3.7.
 
 ### Four decisions worth knowing before editing this module
 
@@ -192,7 +192,7 @@ is the gateway's `returnUrl`, hardcoded server-side as
    `serviceId` against the catalogue (`service-names.ts`); a service the catalogue
    no longer publishes shows an honest placeholder rather than a bare number. The
    detail page has **no** way to show the address — see
-   `BACKEND_REQUIREMENTS.md` §3.4.
+   `backend_requirement.md` §3.4.
 
 ### Not wired, deliberately
 
@@ -200,7 +200,7 @@ is the gateway's `returnUrl`, hardcoded server-side as
 | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | `POST /bookings/:id/accept` · `/decline` · `/depart` · `/start` · `/complete` · `/cash-received` | `PROVIDER`-role; these are the provider workspace, module 5                                                        |
 | `POST /bookings/:id/checklist/:itemId` · `/revisions`                                            | provider job execution, module 5                                                                                   |
-| `POST /bookings/:id/quote`                                                                       | listed in module 5's own docs; no route of that name exists on the controller — see `BACKEND_REQUIREMENTS.md` §3.3 |
+| `POST /bookings/:id/quote`                                                                       | listed in module 5's own docs; no route of that name exists on the controller — see `backend_requirement.md` §3.3 |
 
 ---
 
@@ -236,7 +236,7 @@ table but were built with module 3, since they are the same resource.
 1. **No password-change screen.** The API publishes no authenticated
    password-update route, so `/account/security` carries TOTP enrolment only.
    A disabled "change password" button would be a promise the backend cannot
-   keep — see `BACKEND_REQUIREMENTS.md` §1.
+   keep — see `backend_requirement.md` §1.
 2. **No pin drop on the address form.** `areas.centroid` is not selected by the
    places API (§2.2), so an area cannot become a point. The form offers exactly
    two labelled sources — the device's own location, or the city-centre
@@ -327,7 +327,7 @@ Source: `src/features/portal/provider-*.tsx` · pages: `/[locale]/provider/*`
 | ------------------------------------------------------------------------------------------------ | ------------- | --------------------------------------------------------------------------------------- |
 | `GET /provider/jobs`                                                                             | provider      | ⬜ `/provider`, `/provider/offers`, `/provider/today`                                   |
 | `POST /bookings/:id/accept` · `/decline` · `/depart` · `/start` · `/complete` · `/cash-received` | provider      | ⬜ with module 5 — typed in `bookingApi`, no UI yet                                     |
-| `POST /bookings/:id/quote`                                                                       | provider      | ⬜ `/provider/jobs/[id]` — **no such route exists**; see `BACKEND_REQUIREMENTS.md` §3.3 |
+| `POST /bookings/:id/quote`                                                                       | provider      | ⬜ `/provider/jobs/[id]` — **no such route exists**; see `backend_requirement.md` §3.3 |
 | `POST /bookings/:id/evidence` · `GET /bookings/:id/evidence`                                     | provider      | 🟡 typed in `bookingApi`; the customer side is built, the provider side is not          |
 | `POST /bookings/:id/checklist/:itemId` · `/revisions`                                            | provider      | ⬜                                                                                      |
 | `GET /bookings` · `/bookings/:id` · `/messages`                                                  | either        | ✅ built with module 3                                                                  |
@@ -502,7 +502,7 @@ than no trust figure, because it is the number a visitor checks first.
    instead of overwriting a newer one.
 5. **Never substitute data for a failure.** A 404 is a not-found state, a 5xx is an
    inline error with a retry. This was a real bug — see
-   `BACKEND_REQUIREMENTS.md` "Conflicts already found and resolved".
+   `backend_requirement.md` "Conflicts already found and resolved".
 6. **Add a freshness entry** to `lib/api/keys.ts` with a comment saying why.
 7. **Tests in `src/tests/<module>/`**, and `.tsx` tests need `afterEach(cleanup)`.
 8. **Update this file** as you go — it is the only place that says what is real.

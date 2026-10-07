@@ -1,33 +1,52 @@
 /* Where the point in a provider search comes from.
 
-   `/search/providers` takes `lat` and `lng`, and nothing in the public contract
-   hands us one: `GET /places/cities` returns an id, a name and a timezone, and
-   `GET /places/cities/:cityId/areas` returns an id, a city and a name — no
-   coordinates at all, even though `areas.centroid` exists in the database and
-   is simply not selected (apps/api/src/places/places.service.ts:20).
+   `/search/providers` takes `lat` and `lng`, and both are published by the places
+   module: `GET /places/cities` returns the centre of the areas it contains, and
+   `GET /places/cities/:cityId/areas` returns each area's own centroid — both as
+   nullable `lat`/`lng` (places.service.ts projects `ST_Y`/`ST_X` out of the
+   geometry). This file used to hold a hardcoded Lahore coordinate and a comment
+   claiming the API published no coordinates at all; both are now wrong, and the
+   coordinate is gone rather than kept as a fallback, because an invented point
+   silently searches the wrong place and looks authoritative.
 
-   So there are exactly two honest sources, and both are labelled in the UI:
+   So a search point comes from exactly two sources, and both are labelled in the
+   UI:
 
-   1. The person's own device location, asked for explicitly.
-   2. A city centre, held here as an approximation. Lahore's point is the one
-      the API's own OpenAPI description uses as its Lahore example. It is a
-      search centre, not a claim about anybody's address.
+     1. The person's own device location, asked for explicitly.
+     2. The API's own centre for the city or area they picked.
 
-   Closing this properly needs one line of SQL in the backend — see
-   docs/BACKEND_REQUIREMENTS.md §2.2 — not a guess here. */
+   A null centroid is not a reason to guess one. It means this area has not been
+   surveyed, and the caller shows that rather than searching somewhere else. */
 
 export type LatLng = { lat: number; lng: number };
 
-/** Approximate centres, keyed by the API's own city name. */
-const CITY_CENTRES: Record<string, LatLng> = {
-  // The point the API's OpenAPI description uses for its Lahore examples.
-  lahore: { lat: 31.5204, lng: 74.3587 },
-};
-
-export const cityCentre = (cityName: string): LatLng | null => CITY_CENTRES[cityName.trim().toLowerCase()] ?? null;
-
 export const isPlausibleCoordinate = (value: LatLng): boolean =>
   Number.isFinite(value.lat) && Number.isFinite(value.lng) && Math.abs(value.lat) <= 90 && Math.abs(value.lng) <= 180;
+
+/**
+ * The API's own point for a row, or null when it has none.
+ *
+ * Both coordinates must be present, finite and in range: a row with `lat` but a
+ * null `lng` is half a location, not a location, and searching on it would put
+ * the customer in the middle of the ocean.
+ */
+export const apiPoint = (lat: number | null | undefined, lng: number | null | undefined): LatLng | null => {
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  const point = { lat, lng };
+  return isPlausibleCoordinate(point) ? point : null;
+};
+
+/** `GET /places/cities` — the centre of a city, or null if it has no surveyed area. */
+export const cityCentre = (city: { lat: number | null; lng: number | null } | null | undefined): LatLng | null =>
+  city === null || city === undefined ? null : apiPoint(city.lat, city.lng);
+
+/**
+ * `GET /places/cities/:cityId/areas` — an area's own centroid, which is the
+ * smallest location a customer can name and therefore the point an address
+ * without an exact location should use.
+ */
+export const areaCentroid = (area: { lat: number | null; lng: number | null } | null | undefined): LatLng | null =>
+  area === null || area === undefined ? null : apiPoint(area.lat, area.lng);
 
 export type GeolocationOutcome =
   | { status: "granted"; point: LatLng }
@@ -76,3 +95,21 @@ export const formatSlotDay = (iso: string, locale: string): string =>
   new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Karachi" }).format(
     new Date(iso),
   );
+
+/* ---- Ratings -------------------------------------------------------------
+   `ratingScore` (search) and `Reputation.score` are both null for a provider
+   nobody has rated, and they are ranked on anyway. One helper decides what that
+   looks like, so no screen can invent its own: `0.0`, `NaN` and a bare star
+   would all be claims the API did not make. */
+
+export type RatingPresentation = { rated: true; score: number } | { rated: false };
+
+/**
+ * True only when there is a real score to show.
+ *
+ * `null`, `undefined` and `NaN` all mean "unrated" — the last two cannot come
+ * from a correct API but a single unguarded `null` in a JSON pipeline turns into
+ * `NaN` two frames later, and `NaN.toFixed(2)` is the string "NaN" on screen.
+ */
+export const ratingOf = (score: number | null | undefined): RatingPresentation =>
+  typeof score === "number" && Number.isFinite(score) ? { rated: true, score } : { rated: false };

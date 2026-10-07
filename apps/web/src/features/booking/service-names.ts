@@ -5,7 +5,7 @@ import type { Locale } from "@/lib/utils";
 /* Booking rows carry a `serviceId` and no readable name.
 
    `GET /bookings` projects `service_id` and nothing else — no service name, no
-   provider name, no address (BACKEND_REQUIREMENTS.md §3.4). So a booking list
+   provider name, no address (backend_requirement.md §3.4). So a booking list
    cannot render "Leak repair" from its own response; it has to join the id
    against the catalogue.
 

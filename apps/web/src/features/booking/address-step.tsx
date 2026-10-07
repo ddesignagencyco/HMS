@@ -10,23 +10,31 @@ import { cityCentre, requestDeviceLocation, type LatLng } from '@/features/searc
 import { useCities, useCityAreas } from '@/features/places/queries';
 import { addressLine, type Address, type CreateAddressInput } from '@/features/account/api';
 import { useAddresses, useCreateAddress, useUpdateAddress } from '@/features/booking/queries';
+import { useSession } from '@/features/auth/session';
 
 /* The address step. `POST /bookings` requires an `addressId`, so a saved address
    is not a convenience here — it is the only way the booking can be created at
    all. A customer with none saved gets an inline create form rather than a dead
    end pointing at a portal page.
 
-   The form cannot geocode anything: there is no geocoding endpoint, and
-   `areas.centroid` is not selected by the places API (BACKEND_REQUIREMENTS.md
-   §2.2). So the point comes from one of exactly two honest sources, both
-   labelled on screen — the device's own location, or the city centre the
-   provider search already uses as an approximation. Neither is presented as the
-   person's address. */
+   The point cannot be geocoded: there is no geocoding endpoint. It comes from one
+   of exactly two honest sources, both labelled on screen — the device's own
+   location, or the area's own centroid, which the places API now publishes
+   (nullable, because an unsurveyed area has none). Neither is presented as the
+   person's exact address. */
 
 type PointSource = 'none' | 'device' | 'city' | 'saved';
 
 export function AddressStep({ locale, dict, addressId, onSelect }: { locale: Locale; dict: Dictionary; addressId: string | null; onSelect: (addressId: string, point: LatLng) => void }) {
-  const addresses = useAddresses(locale);
+  const { status: sessionStatus } = useSession();
+  /* `/book/[slug]` is a *public* route, so this step can mount before the session
+     is known. Firing the authenticated read then produced a 401 for every
+     visitor and, for a signed-in one, raced the session's own refresh — two
+     requests to recover from a state that had not been asked yet. Waiting for
+     the answer removes both. A visitor who turns out to be signed out never
+     reaches this step at all: `book-service` redirects them to sign-in. */
+  const canReadAddresses = sessionStatus === 'authenticated';
+  const addresses = useAddresses(locale, canReadAddresses);
   const [creating, setCreating] = useState(false);
 
   if (addresses.isPending) {
@@ -173,7 +181,7 @@ export function AddressForm({ locale, dict, onCreated, onCancel, fallbackCityId,
 
   const useCityCentre = (): void => {
     const city = cities.data?.items.find((item) => item.id === effectiveCityId);
-    const centre = city === undefined ? null : cityCentre(city.name);
+    const centre = cityCentre(city);
     if (centre === null) {
       setPointSource('none');
       setPointNote(dict.booking.noCityCentre);

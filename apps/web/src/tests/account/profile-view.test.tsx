@@ -11,7 +11,7 @@ import { getDictionary } from '@/lib/dictionaries';
    The screen this replaced rendered "Ayesha Khan / 0300 1234567 / Gulberg III"
    for whoever was signed in. These tests pin the two properties that mattered:
 
-   · every field comes from `GET /auth/me`, so a different account renders
+   · every field comes from `GET /auth/session`, so a different account renders
      differently instead of the same literals;
    · the phone and email are **masked** (NFR-PR-01). The full number belongs to
      the person reading it, but a screen that prints one in full is a screen that
@@ -55,7 +55,7 @@ beforeEach(() => {
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : String(input);
-      if (url.includes('/api/v1/auth/me')) return meResponse({ user });
+      if (url.includes('/api/v1/auth/session')) return meResponse({ authenticated: true, user });
       throw new Error(`unrouted GET ${url}`);
     })
   );
@@ -100,7 +100,8 @@ describe('the profile screen', () => {
   it('says the provider status is unpublished instead of guessing it', async () => {
     renderProfile();
     await screen.findByText('Ayesha Khan');
-    /* `/auth/me` hardcodes providerStatus to null today — BACKEND_REQUIREMENTS §1.2 */
+    /* providerStatus is null for an account that is not a professional, and a null is
+       shown as "not published" rather than being turned into an approval state. */
     expect(screen.getAllByText(dict.portal.notPublished).length).toBeGreaterThan(0);
   });
 

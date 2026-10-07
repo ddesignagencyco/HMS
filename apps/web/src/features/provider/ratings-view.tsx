@@ -4,6 +4,7 @@ import { CheckCircle2, MessageSquare, Star, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { Button, Card, Label, PageHeader, Textarea } from '@/components/ui';
 import { useProviderRatings, useReplyToRemark, type ProviderRating } from '@/features/provider/queries';
+import { ratingOf } from '@/features/search/location';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDate, formatNumber, type Locale } from '@/lib/utils';
 
@@ -75,7 +76,11 @@ export function ProviderRatingsScreen({ locale, dict }: { locale: Locale; dict: 
   }
 
   const { reputation, items } = ratings.data;
-  const hasRatings = reputation.ratingCount > 0;
+  /* `score` is null until somebody rates this professional, so the branch is on
+     the score rather than on the count — a count with a null score is legitimate,
+     and the API no longer publishes the Bayesian prior as though it were a
+     rating. */
+  const rating = ratingOf(reputation.score);
 
   return (
     <div>
@@ -83,26 +88,27 @@ export function ProviderRatingsScreen({ locale, dict }: { locale: Locale; dict: 
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
         <Card className="p-6">
-          {/* The score is a Bayesian mean pulled toward the prior, so it is only
-              shown once there is at least one rating. Below that, 3.5 is an
-              artefact of the prior rather than anything a customer said. */}
+          {/* Null until there is a rating to show. An unrated professional reads
+              "no ratings yet" rather than a figure produced by a ranking prior. */}
           <p className="text-sm text-muted">{dict.portal.overallRating}</p>
           <p className="mt-2 flex items-center gap-2">
-            {hasRatings ? (
+            {rating.rated ? (
               <>
                 <span className="flex" aria-hidden="true">
                   {Array.from({ length: 5 }, (_unused, index) => (
-                    <Star key={index} className={cn('size-5', index < Math.round(reputation.score) ? 'fill-amber-400 text-amber-400' : 'text-slate-300')} />
+                    <Star key={index} className={cn('size-5', index < Math.round(rating.score) ? 'fill-amber-400 text-amber-400' : 'text-slate-300')} />
                   ))}
                 </span>
-                <span className="text-2xl font-semibold text-navy">{reputation.score.toFixed(1)}</span>
+                <span className="text-2xl font-semibold text-navy">{rating.score.toFixed(1)}</span>
               </>
             ) : (
               <span className="text-lg font-semibold text-muted">{dict.portal.noRatingsYet}</span>
             )}
           </p>
-          {hasRatings ? <p className="mt-1 text-sm text-muted">{dict.portal.fromRatings.replace('{count}', formatNumber(reputation.ratingCount, locale))}</p> : null}
-          <p className="mt-4 text-xs leading-5 text-muted">{dict.portal.scoreIsPriorNote}</p>
+          {rating.rated && reputation.ratingCount > 0 ? (
+            <p className="mt-1 text-sm text-muted">{dict.portal.fromRatings.replace('{count}', formatNumber(reputation.ratingCount, locale))}</p>
+          ) : null}
+          {rating.rated ? <p className="mt-4 text-xs leading-5 text-muted">{dict.portal.scoreIsPriorNote}</p> : null}
 
           <dl className="mt-5 grid gap-2 text-sm">
             <div className="flex justify-between">

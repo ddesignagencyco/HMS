@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Browser verification harnesses. Plain node scripts that drive Playwright
+    // against a running dev server; they are not app code and are run directly
+    // with `node e2e/<file>.cjs`.
+    "e2e/**",
   ]),
 ]);
 

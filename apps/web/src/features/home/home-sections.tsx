@@ -1,22 +1,22 @@
-import { ArrowRight, BadgeCheck, BriefcaseBusiness, CheckCircle2, FileCheck2, MapPin, MapPinned, ReceiptText, Camera, ShieldCheck, Star } from 'lucide-react';
+import { ArrowRight, BadgeCheck, CheckCircle2, FileCheck2, ReceiptText, Camera, ShieldCheck, Star } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Dictionary } from '@/lib/dictionaries';
-import { areas, heroImage, journeyImage, providers } from '@/lib/data';
-import { formatDateTime, formatNumber, getText, localizedPath, type Locale } from '@/lib/utils';
+/* Only the decorative photography remains. Everything on this page that used to be
+   a professional, a rating, a service or an area came from this import and was
+   fabricated; those sections are now in `home-platform.tsx`, reading the API. */
+import { heroImage, journeyImage } from '@/lib/data';
+import { getText, localizedPath, type Locale } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
 import { Container, Eyebrow, Section, SectionHeader, TextLink, buttonStyles } from '@/components/ui';
 import { AtmosphericBackground } from '@/components/layout/atmospheric-background';
-import { ServiceDocument, VerificationGeometry } from '@/components/decorative';
+import { ServiceDocument } from '@/components/decorative';
 import { DrawGraphic } from '@/components/motion/draw-graphic';
 import { HeroDepth } from '@/components/motion/hero-depth';
 import { ProcessJourney } from '@/components/motion/process-journey';
-import { CountUp } from '@/components/motion/count-up';
 import { Reveal } from '@/components/reveal';
-import { ProfessionalCard } from '@/components/cards';
 import { FaqAccordion } from '@/features/home/faq-accordion';
-import { ReviewsEditorial } from '@/features/home/reviews-editorial';
 
 const iconCard = 'size-[18px] shrink-0';
 const iconTone = (tone: string) => `size-4 shrink-0 ${tone}`;
@@ -115,71 +115,14 @@ export function HomeHero({ locale, dict, search }: { locale: Locale; dict: Dicti
  *   "Attempted to call useQuery() from the server but useQuery is on the
  *    client."
  *
- * They live in `home-catalogue.tsx` instead, which is `"use client"` and is
- * imported straight from `app/[locale]/(public)/page.tsx`. Marking this whole
- * file `"use client"` would work and would be wrong: it would push the hero,
- * the process band, the FAQ and the coverage map into the client bundle for the
- * sake of two sections.
+ * They live in `home-catalogue.tsx` and `home-platform.tsx` instead, which are
+ * `"use client"` and are imported straight from
+ * `app/[locale]/(public)/page.tsx`. Marking this whole file `"use client"` would
+ * work and would be wrong: it would push the hero, the process band and the FAQ
+ * into the client bundle for the sake of three sections.
  * ================================================================== */
 
-/* ================================================================== *
- * LEVEL 2 — TRUST / METRICS
- * Left-heavy wave: the navy arrives with its weight on the left, under
- * the brand statement, and lifts away to the right.
- * ================================================================== */
-export function BrandTrustSection({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const averageRating = providers.length > 0 ? providers.reduce((sum, provider) => sum + provider.rating, 0) / providers.length : 0;
-  const completedJobs = providers.reduce((sum, provider) => sum + provider.verifiedJobs, 0);
-  const metrics = [
-    { icon: BadgeCheck, value: providers.length, label: dict.home.metricProfessionals, decimals: 0 },
-    { icon: Star, value: averageRating, label: dict.home.metricRating, decimals: 1 },
-    { icon: BriefcaseBusiness, value: completedJobs, label: dict.home.metricJobs, decimals: 0 },
-    { icon: MapPinned, value: areas.length, label: dict.home.metricAreas, decimals: 0 }
-  ];
-
-  return (
-    <Section size="feature" tone="dark" waveTop={{ fill: WHITE, shape: 'left', depth: { sm: 22, md: 44, lg: 84 } }}>
-      <AtmosphericBackground variant="trust" />
-      <Container className="relative grid gap-14 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-center lg:gap-20">
-        <Reveal variant="from-start">
-          <p className="eyebrow eyebrow-dark">{dict.home.brandEyebrow}</p>
-          <h2 className="title-section mt-4 max-w-xl text-white">
-            {dict.home.brandTitleLead} <span className="text-yellow-500">{dict.home.brandTitleAccent}</span>
-          </h2>
-          <p className="mt-4 max-w-lg text-pretty text-base leading-7 text-slate-300">{dict.home.brandDescription}</p>
-          <Link href={localizedPath(locale, '/services')} className={buttonStyles({ variant: 'accent', className: 'group lift-sm mt-8' })}>
-            {dict.home.brandCta}
-            <ArrowRight className={arrowClass} aria-hidden="true" />
-          </Link>
-        </Reveal>
-
-        {/* no drawing in the band, so the figures carry it alone: the two
-            rows sit at their own rhythm and the whole grid is centred
-            against the statement, which leaves no dead air under either
-            column. */}
-        <Reveal variant="from-end" delay={80}>
-          <dl className="grid grid-cols-2 gap-x-8 gap-y-10 sm:gap-x-10 sm:gap-y-12">
-            {metrics.map(({ icon: Icon, value, label, decimals }) => (
-              <div key={label} className="border-t border-white/12 pt-4">
-                {/* the label always holds two lines so all four figures sit
-                    on exactly the same baseline, whatever the copy length */}
-                <dt className="flex min-h-9 items-start gap-2 text-xs font-semibold uppercase leading-[1.5] tracking-[0.12em] text-slate-400">
-                  <Icon className="mt-0.5 size-4 shrink-0 text-yellow-500" aria-hidden="true" />
-                  <span className="min-w-0">{label}</span>
-                </dt>
-                <dd className="mt-1 text-[40px] font-semibold leading-none tracking-[-0.045em] text-white tabular-nums sm:text-[52px]">
-                  <CountUp value={value} locale={locale} decimals={decimals} />
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </Reveal>
-      </Container>
-    </Section>
-  );
-}
-
-/* ================================================================== *
+ /* ================================================================== *
  * LEVEL 2 — PROCESS
  * Very shallow curve in, straight edge out. The photograph is deliberately
  * smaller than the step list, and the route drawing is the only graphic.
@@ -221,89 +164,6 @@ export function ProcessSection({ locale, dict }: { locale: Locale; dict: Diction
   );
 }
 
-/* ================================================================== *
- * LEVEL 3 — PROFESSIONALS
- * Straight edge in. A portrait grid, deliberately unlike the two service
- * grids above it: taller media, one person, one metadata baseline.
- * ================================================================== */
-export function FeaturedProfessionalsSection({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  return (
-    <Section size="default" tone="light">
-      <Container className="relative">
-        {/* one small verification mark, set in the empty ground beside the
-            heading rather than repeated on every card */}
-        <VerificationGeometry className="pointer-events-none absolute end-0 top-0 hidden h-[88px] w-[88px] text-primary/[0.10] lg:block" />
-        <Reveal>
-          <SectionHeader
-            eyebrow={dict.home.prosEyebrow}
-            title={dict.home.prosTitle}
-            description={dict.home.prosDescription}
-            action={<TextLink href={localizedPath(locale, '/providers')}>{dict.home.browsePros}</TextLink>}
-          />
-        </Reveal>
-        <div className="header-gap grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
-          {providers.slice(0, 3).map((provider, index) => (
-            <Reveal key={provider.id} delay={index * 60} variant="card" className="h-full min-w-0">
-              <ProfessionalCard
-                locale={locale}
-                href={localizedPath(locale, `/providers/${provider.slug}`)}
-                image={{ url: provider.image.url, alt: getText(provider.image.alt, locale) }}
-                focus={provider.focus}
-                name={provider.name}
-                specialisation={dict.providers.experience.replace('{years}', String(provider.experienceYears))}
-                bio={getText(provider.bio, locale)}
-                verifiedLabel={dict.providers.verified}
-                rating={provider.rating}
-                ratingCount={provider.ratingCount}
-                ratingAriaLabel={dict.common.rating}
-                jobs={dict.providers.jobs.replace('{count}', formatNumber(provider.verifiedJobs, locale))}
-                availability={`${dict.home.nextAvailable} ${formatDateTime(provider.nextSlot, locale)}`}
-              />
-            </Reveal>
-          ))}
-        </div>
-      </Container>
-    </Section>
-  );
-}
-
-/* ================================================================== *
- * LEVEL 3 — COVERAGE
- * The one light band between the dark process and dark trust bands, so the
- * page gets a quiet breath there. Links only: no cards, no images and no
- * drawing, because everything either side of it is already carrying weight.
- * ================================================================== */
-export function CoverageSection({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  return (
-    <Section size="default" tone="light">
-      <Container className="relative">
-        <Reveal>
-          <SectionHeader
-            eyebrow={dict.home.coverageEyebrow}
-            title={dict.home.coverageTitle}
-            description={dict.home.coverageDescription}
-            action={<TextLink href={localizedPath(locale, '/providers')}>{dict.home.coverageAction}</TextLink>}
-          />
-        </Reveal>
-        <Reveal variant="section" delay={60}>
-          <ul className="header-gap flex flex-wrap gap-2.5">
-            {areas.map((area) => (
-              <li key={area.id}>
-                <Link
-                  href={localizedPath(locale, `/providers?area=${area.slug}`)}
-                  className="group inline-flex min-h-11 items-center gap-2 rounded-full border border-line bg-white px-4 text-sm font-semibold text-navy transition-colors duration-200 hover:border-primary/40 hover:bg-blue-50 hover:text-primary-strong focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
-                >
-                  <MapPin className="size-3.5 shrink-0 text-muted transition-colors duration-200 group-hover:text-primary-strong" aria-hidden="true" />
-                  {getText(area.name, locale)}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Reveal>
-      </Container>
-    </Section>
-  );
-}
 
 /* ================================================================== *
  * LEVEL 2 — MANAGED JOURNEY
@@ -379,28 +239,20 @@ export function TrustSection({ locale, dict }: { locale: Locale; dict: Dictionar
  * Straight edge in. Editorial, not a grid: the quotation mark stays in
  * the background and never sits behind the copy.
  * ================================================================== */
-export function ReviewsSection({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  return (
-    <Section size="default" tone="light">
-      <Container className="relative">
-        <Reveal variant="from-start">
-          <ReviewsEditorial
-            locale={locale}
-            eyebrow={dict.home.reviewsEyebrow}
-            title={dict.home.reviewsTitle}
-            description={dict.home.reviewsDescription}
-            countLabel={dict.home.reviewCount}
-            label={dict.home.reviewsLabel}
-            prevLabel={dict.home.reviewsPrev}
-            nextLabel={dict.home.reviewsNext}
-            verifiedLabel={dict.providers.verified}
-            ratingLabel={dict.common.rating}
-          />
-        </Reveal>
-      </Container>
-    </Section>
-  );
-}
+/* The reviews carousel used to live here, above the FAQ.
+ *
+ * It is gone because every line it showed was invented: three quotations with
+ * invented reviewer names, an invented average, and service and professional
+ * names joined out of `src/lib/data.ts`. The API has no public feed of recent
+ * remarks to replace it — `GET /search/providers/:id/remarks` is scoped to one
+ * provider — so there is nothing honest to render in that band today. It is
+ * recorded as a backend requirement rather than refilled with sample quotes,
+ * because a homepage testimonial that nobody wrote is the single most expensive
+ * thing on this page to get wrong.
+ *
+ * The sections that *can* be honest moved to `home-platform.tsx`, which reads the
+ * catalogue, places and search endpoints: PlatformMetricsSection,
+ * FeaturedProfessionalsSection and CoverageSection. */
 
 /* ================================================================== *
  * LEVEL 3 — FAQ

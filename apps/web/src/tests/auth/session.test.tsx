@@ -9,7 +9,12 @@ import { SessionProvider, sessionKeys, useSession } from "@/features/auth/sessio
 /* These cover the two things that only show up once state and a network are
    both involved: that a reload rebuilds the session from the refresh cookie
    rather than bouncing the visitor to sign-in, and that signing out leaves no
-   trace of the person who was here before. */
+   trace of the person who was here before.
+
+   Every fixture models the real `GET /auth/session`: 200 with
+   `{ authenticated, user }` either way. `me` is never the first call, because it
+   needs a bearer token that a reload has thrown away — asking it first is what
+   made every public page log two errors for a signed-out visitor. */
 
 let currentPathname = "/en/account";
 const replace = vi.fn();
@@ -32,6 +37,10 @@ const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const empty = (status: number) => new Response("", { status });
+
+/** The real `GET /auth/session` answers, 200 either way. */
+const signedOut = () => json(200, { authenticated: false, user: null });
+const signedInAs = (user: unknown) => json(200, { authenticated: true, user });
 
 const customer = { id: "u1", phoneE164: "+923001234567", email: null, firstName: "Ayesha", lastName: "Khan", locale: "en", status: "ACTIVE", roles: ["CUSTOMER"], totpEnabled: false, providerStatus: null };
 
@@ -75,7 +84,7 @@ describe("SessionProvider", () => {
   });
 
   it("starts in the loading state, so a protected page is not shown to a visitor who has a session", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => json(200, { user: customer })));
+    vi.stubGlobal("fetch", vi.fn(async () => signedInAs(customer)));
     renderSession();
     expect(screen.getByTestId("status").textContent).toBe("loading");
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("authenticated"));
@@ -88,8 +97,10 @@ describe("SessionProvider", () => {
         refreshes += 1;
         return json(201, { user: customer, accessToken: "rebuilt", expiresInSeconds: 900, totpRequired: false });
       }
-      if (readAccessToken() === "rebuilt") return json(200, { user: customer });
-      return json(401, problem(401, "UNAUTHENTICATED"));
+      /* The cookie is still there after the reload, so the session endpoint
+         answers "signed in" without any bearer token. */
+      if (url.endsWith("/auth/session")) return signedInAs(customer);
+      return empty(204);
     }));
     /* Nothing in memory, exactly as after a browser refresh. */
     resetAccessToken();
@@ -102,7 +113,7 @@ describe("SessionProvider", () => {
   });
 
   it("settles on anonymous, not loading, when there is no session at all", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => json(401, problem(401, "UNAUTHENTICATED"))));
+    vi.stubGlobal("fetch", vi.fn(async () => signedOut()));
     renderSession();
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("anonymous"));
     expect(screen.getByTestId("user").textContent).toBe("-");
@@ -113,7 +124,7 @@ describe("SessionProvider", () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       seen.push(url);
       if (url.endsWith("/auth/logout")) return new Response("", { status: 204 });
-      return json(200, { user: customer });
+      return signedInAs(customer);
     }));
     const { queryClient } = renderSession();
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("authenticated"));
@@ -133,7 +144,7 @@ describe("SessionProvider", () => {
   it("keeps the local session closed even when the logout call cannot be made", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url.endsWith("/auth/logout")) throw new TypeError("offline");
-      return json(200, { user: customer });
+      return signedInAs(customer);
     }));
     const { queryClient } = renderSession();
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("authenticated"));
@@ -146,7 +157,7 @@ describe("SessionProvider", () => {
   });
 
   it("holds the cached user under one key, so nothing else holds a copy", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => json(200, { user: customer })));
+    vi.stubGlobal("fetch", vi.fn(async () => signedInAs(customer)));
     const { queryClient } = renderSession();
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("authenticated"));
     expect(queryClient.getQueryData(sessionKeys.me)).toEqual({ user: customer });
@@ -169,7 +180,7 @@ describe("RequireSession", () => {
   });
 
   it("withholds the portal and sends a signed-out visitor to sign-in with where they were going", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => json(401, problem(401, "UNAUTHENTICATED"))));
+    vi.stubGlobal("fetch", vi.fn(async () => signedOut()));
     window.history.replaceState({}, "", "/en/admin/reports?range=30");
 
     render(
@@ -189,7 +200,7 @@ describe("RequireSession", () => {
 
   it("shows the portal to a signed-in account once the session is confirmed", async () => {
     writeAccessToken("held", 900);
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => (url.endsWith("/auth/me") ? json(200, { user: customer }) : empty(204))));
+    vi.stubGlobal("fetch", vi.fn(async () => signedInAs(customer)));
 
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -209,7 +220,7 @@ describe("RequireSession", () => {
   it("redirects an authenticated account away from unauthorized portal areas", async () => {
     currentPathname = "/en/admin";
     writeAccessToken("held", 900);
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => (url.endsWith("/auth/me") ? json(200, { user: customer }) : empty(204))));
+    vi.stubGlobal("fetch", vi.fn(async () => signedInAs(customer)));
 
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

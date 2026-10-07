@@ -1,11 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import type { Dictionary } from "@/lib/dictionaries";
-import type { Locale } from "@/lib/utils";
+import { localizedPath, type Locale } from "@/lib/utils";
 import { useService } from "@/features/catalogue/queries";
 import { BookingFlow } from "@/features/booking/booking-flow";
 import { NotFoundState } from "@/features/discovery/states";
+import { useSession } from "@/features/auth/session";
+import { signInPath } from "@/features/auth/routing";
 
 /* Resolves the slug to a real catalogue service before the flow renders.
 
@@ -32,6 +35,7 @@ export function BookService({
   start: string | null;
 }) {
   const service = useService(slug, locale);
+  const { status: sessionStatus } = useSession();
 
   /* A UUID, because `/search/providers/:id/slots` is keyed on one. A hand-edited
      `?provider=` that is not one must not reach the API as if it were: the
@@ -63,6 +67,44 @@ export function BookService({
             <button type="button" onClick={() => void service.refetch()} className="text-sm font-semibold text-primary-strong hover:underline">
               {dict.catalogue.retry}
             </button>
+          }
+        />
+      </div>
+    );
+  }
+
+  /* `POST /bookings`, `POST /bookings/quote` and `GET /customer/addresses` all
+     require a signed-in customer, so `/book/[slug]` is a public *route* that can
+     only be completed by an account. Rather than let a visitor fill in six steps
+     and fail at checkout — or, worse, watch the address step sit on a permanent
+     skeleton because its read is correctly disabled — they are told now and sent
+     to sign-in with this exact service as the destination.
+
+     Waiting for `status !== "loading"` also means the flow never mounts with an
+     unknown session, which is what used to make the first authenticated read
+     race the session's own refresh. */
+  if (sessionStatus === "loading") {
+    return (
+      <div className="min-h-dvh bg-page" aria-busy="true" aria-live="polite">
+        <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+          <span className="skeleton block h-9 w-64 rounded-[9px]" />
+          <span className="skeleton mt-4 block h-4 w-full max-w-md rounded-[9px]" />
+          <span className="skeleton mt-6 block h-64 w-full rounded-[14px]" />
+        </div>
+      </div>
+    );
+  }
+
+  if (sessionStatus === "anonymous") {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
+        <NotFoundState
+          title={dict.booking.signInToBookTitle}
+          body={dict.booking.signInToBookText}
+          action={
+            <Link href={signInPath(locale, localizedPath(locale, `/book/${slug}`))} className="text-sm font-semibold text-primary-strong hover:underline">
+              {dict.nav.signIn}
+            </Link>
           }
         />
       </div>

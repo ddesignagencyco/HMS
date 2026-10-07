@@ -7,7 +7,7 @@ import type { NextConfig } from 'next';
    Declared in `apps/web/.env` as `API_ORIGIN`, alongside this app's own `PORT`.
    The two must stay apart — the API is on 3000 and this server is on 3001 — or the
    rewrite proxies every /api/v1 request into itself and the recursion ends in
-   ECONNRESET on every /auth/me and /catalogue/* call. See BACKEND_REQUIREMENTS
+   ECONNRESET on every /auth/me and /catalogue/* call. See backend_requirement.md
    §0.1. `npm run dev:web` refuses to start if they ever match. */
 const API_ORIGIN = process.env.API_ORIGIN ?? 'http://localhost:3000';
 

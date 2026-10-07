@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react';
 import { Card, PageHeader } from '@/components/ui';
 import { useMyBookings } from '@/features/booking/queries';
 import type { BookingStatus } from '@/features/booking/api';
-import type { BookingListStatus } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
 import { BookingTable } from '@/features/customer/dashboard-view';
 import type { Dictionary } from '@/lib/dictionaries';
@@ -12,33 +11,24 @@ import { cn, type Locale } from '@/lib/utils';
 
 /* Every booking the customer has made.
  *
- * The filter matters, because `GET /bookings?status=` is `.strict()` and accepts
- * only the ten statuses the API documents — BACKEND_REQUIREMENTS §3.2 records that
- * `?status=VERIFIED` is a 422. So the tabs here are exactly that list, and the
- * **client-side** filter is what groups them into something a person can read:
+ * Four readable tabs over one response, grouped client-side:
  *
  *   live      — waiting on someone: REQUESTED, SCHEDULED, EN_ROUTE, IN_PROGRESS
  *   finishing — QUOTE_REVISION and AWAITING_VERIFICATION
  *   closed    — everything else that has ended
  *
- * "All" sends no status at all, which is the only way to get history in one read.
- * A server filter per tab would be five round trips to show the same rows.
+ * This screen used to be built around the API accepting only ten statuses, with a
+ * note on the page telling the customer so. The backend now derives the filter
+ * from the database enum, so every status is filterable and the note was both
+ * wrong and unnecessary.
  */
 
-/** `bookingListQuerySchema` accepts exactly these. */
-const FILTERABLE: ReadonlySet<string> = new Set<BookingListStatus>([
-  'REQUESTED',
-  'SCHEDULED',
-  'EN_ROUTE',
-  'IN_PROGRESS',
-  'QUOTE_REVISION',
-  'WORK_COMPLETED',
-  'UNFULFILLED',
-  'CANCELLED_CUSTOMER',
-  'CANCELLED_PROVIDER',
-  'NO_SHOW'
-]);
-
+/* Grouped locally rather than by a server filter.
+   `GET /bookings?status=` now accepts any value of the enum, so it *could* back
+   each tab — but "All" sends no status at all, and it is the only read that
+   returns history in one request. Filtering the same full list client-side keeps
+   all four tabs on one response and one cache entry, and switching tabs cannot
+   disagree with what "All" shows. */
 const GROUPS = {
   live: ['REQUESTED', 'SCHEDULED', 'EN_ROUTE', 'IN_PROGRESS'] as const,
   finishing: ['QUOTE_REVISION', 'AWAITING_VERIFICATION'] as const
@@ -101,7 +91,7 @@ export function CustomerBookingsScreen({ locale, dict }: { locale: Locale; dict:
       </div>
 
       <Card className="mt-4 overflow-hidden">
-        <BookingTable locale={locale} dict={dict} items={filtered} names={names} />
+        <BookingTable locale={locale} dict={dict} items={filtered} names={names} total={rows.length} />
       </Card>
 
       {bookings.isError ? (
@@ -110,13 +100,6 @@ export function CustomerBookingsScreen({ locale, dict }: { locale: Locale; dict:
         </p>
       ) : null}
 
-      {/*
-        Stated once, on the screen where someone would look for it, rather than
-        never: the server can filter by only ten statuses, so the tabs above group
-        locally. `FILTERABLE` is kept as the documented set rather than deleted —
-        it is the list a future server-side tab must not exceed.
-      */}
-      <p className="mt-4 text-xs leading-5 text-muted">{dict.portal.bookingsFilterNote.replace('{count}', String(FILTERABLE.size))}</p>
-    </div>
+      </div>
   );
 }

@@ -5,18 +5,19 @@ import type { Dictionary } from "@/lib/dictionaries";
 import { formatDate, formatNumber, type Locale } from "@/lib/utils";
 import type { Reputation, Remark } from "@/features/search/api";
 import { useProviderRemarks, useProviderReputation } from "@/features/search/queries";
+import { ratingOf } from "@/features/search/location";
 import { InlineError, LoadingSkeleton } from "./states";
 
 /* Reputation and remarks are two separate queries with two separate failure
    modes: a remark that fails to load must not take the profile down with it, and
    neither blocks the other.
 
-   The one number that needs care is `score`. The API always sends a value —
-   `rating.service.ts` pulls a Bayesian mean toward `rating.bayesian_prior`, so an
-   unrated provider scores 3.5, not 0 and not null. That value exists to rank
-   providers. Printing it next to a star would be a claim nobody has made, so
-   every rendering here is gated on `ratingCount` and "no ratings yet" is shown
-   instead. */
+   The one number that needs care is `score`. The API returns **null** when
+   nobody has rated this professional — it deliberately stopped publishing the
+   Bayesian prior as if it were a rating — while still ranking on the prior
+   internally. A null is a real answer, not a zero, so it is rendered as "no
+   ratings yet" rather than 0.0, and the branch is on the score itself rather
+   than on `ratingCount`, since a count with a null score is legitimate. */
 
 export function ReputationSection({
   locale,
@@ -32,6 +33,11 @@ export function ReputationSection({
 }) {
   const query = useProviderReputation(providerId, locale);
   const value = query.data ?? reputation;
+  /* Narrowed by the branch below: the "rated" arm is the only place a score is
+     printed, and reading it off the discriminant keeps that true by type rather
+     than by hope. */
+  const rating = value === undefined ? ratingOf(null) : ratingOf(value.score);
+  const score = rating.rated ? rating.score : 0;
 
   return (
     <section aria-labelledby="reputation-heading" className="rounded-[16px] border border-line bg-white p-5 sm:p-6">
@@ -46,18 +52,18 @@ export function ReputationSection({
         </div>
       ) : query.isError && !query.isPending ? (
         <InlineError className="mt-4" title={dict.search.loadError} actionLabel={dict.catalogue.retry} onRetry={() => void query.refetch()} />
-      ) : value.ratingCount === 0 ? (
+      ) : ratingOf(value.score).rated === false ? (
         <p className="mt-3 text-sm text-secondary">{dict.profile.noRatingsYet}</p>
       ) : (
         <div className="mt-4 grid gap-4">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="inline-flex items-center gap-1.5">
               <Star className="size-5 fill-yellow-500 text-yellow-500" aria-hidden="true" />
-              <span className="text-[28px] font-semibold leading-none tracking-[-0.04em] text-navy tabular-nums">{value.score.toFixed(2)}</span>
+              <span className="text-[28px] font-semibold leading-none tracking-[-0.04em] text-navy tabular-nums">{score.toFixed(2)}</span>
             </span>
             <span className="text-sm text-secondary">
               {dict.profile.ratingOf
-                .replace("{score}", value.score.toFixed(2))
+                .replace("{score}", score.toFixed(2))
                 .replace("{count}", formatNumber(value.ratingCount, locale))}
             </span>
           </div>

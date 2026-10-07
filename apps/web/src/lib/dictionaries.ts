@@ -12,7 +12,24 @@ const en = {
     myAccount: 'My account',
     bookService: 'Book a Service',
     menu: 'Open navigation menu',
-    close: 'Close menu'
+    close: 'Close menu',
+    home: 'Home',
+    search: 'Search',
+    bookings: 'Bookings',
+    plansShort: 'Plans',
+    servicesShort: 'Services',
+    /* The brand wordmark lives in the logo tile, not beside it. Kept as a
+       dictionary key because the mark is decorative and the header still needs a
+       real accessible name and a `title` for it. */
+    brandLabel: 'Smart Home Maintenance',
+    /* The utility strip above the main bar: the number a customer can ring, and
+       a named route to help. Both are real destinations, not decoration. */
+    support: 'Support',
+    phoneLabel: 'Call us',
+    accountMenu: 'Account menu',
+    profile: 'Profile',
+    security: 'Security',
+    addresses: 'Addresses'
   },
   common: {
     from: 'From',
@@ -392,7 +409,14 @@ const en = {
     hint: 'Your code looks like SHM-0001030 and was sent with your confirmation.',
     placeholder: 'SHM-0001030',
     submit: 'Check status',
-    notFound: 'No booking found for {code}. Check the code and try again.'
+    notFound: 'No booking found for {code}. Check the code and try again.',
+    /* The API scopes every booking route to the booking's own customer or
+       provider, so there is no anonymous lookup to offer here. Saying that is
+       better than a search box that only ever comes up empty. */
+    signInRequiredTitle: 'Sign in to check on a booking',
+    signInRequiredText: 'Bookings are private to the account that made them, so we can only show you your own. Sign in and every booking you have made is here with its live status and whether your money is still held.',
+    loadError: 'We could not load your bookings.',
+    noBookingsYet: 'You have not made a booking yet.'
   },
   verifyPage: {
     eyebrow: 'The defining rule',
@@ -428,7 +452,30 @@ const en = {
     noteHint: 'Anything the next customer should know, or anything that went wrong.',
     consentRequired: 'Please confirm you took part in this call.',
     scoreRequired: 'Choose a score before submitting.',
-    submit: 'Submit verification'
+    submit: 'Submit verification',
+    /* ---- the one-tap link questionnaire, matching POST /v/:token ---- */
+    escalatedTitle: 'Thank you - someone will call you',
+    escalatedText: 'Your answer has been recorded and the payment has not been released. Someone from our team will call you to go through it.',
+    yourBooking: 'Your booking',
+    otpLabel: 'Code from the text',
+    otpHint: 'We texted you a six-digit code with this link. It proves the answer is really yours.',
+    otpRequired: 'Enter the six-digit code from the text.',
+    otpLocked: 'Too many incorrect codes. Please wait for a call from our team.',
+    workCompletedLegend: 'Was the work completed?',
+    workFULL: 'All of it',
+    workPARTIAL: 'Partly',
+    workNONE: 'None of it',
+    workRequired: 'Tell us whether the work was completed.',
+    ratingsRequired: 'Rate all four points before submitting.',
+    scoreQuality: 'Quality of the work',
+    scorePunctuality: 'Arriving on time',
+    scoreConduct: 'Conduct and professionalism',
+    scoreCleanliness: 'Cleanliness and tidiness',
+    extraChargeLegend: 'Did the professional ask for money beyond the approved price?',
+    extraChargeRequired: 'Answer the question about extra charges.',
+    consentRelease: 'I agree to release the payment to the professional.',
+    submitting: 'Recording your answer…',
+    submitFailed: 'We could not record your answer. Please try again, or call us.'
   },
   plansPage: {
     eyebrow: 'Save against the jobs you cannot avoid',
@@ -565,6 +612,18 @@ const en = {
     requiredProvider: 'Choose a professional.',
     requiredSlot: 'Choose an available time.',
     requiredProblem: 'Describe the problem before continuing.',
+    /* The fault list comes from `GET /catalogue/services/:slug/issue-options`, so
+       these are the strings around a real dropdown rather than around a text box. */
+    issueLabel: 'What is the problem?',
+    issueChoose: 'Choose the problem',
+    issueHint: 'Pick the closest match from the list. It is what the professional is dispatched against.',
+    issueNone: 'This service has no published problem list yet, so describe it in your own words below.',
+    issueLoading: 'Loading the list of problems…',
+    issueLoadFailed: 'We could not load the list of problems.',
+    requiredIssueOption: 'Choose the problem before continuing.',
+    /* `/book/[slug]` is a public route but every step of it needs an account. */
+    signInToBookTitle: 'Sign in to book this service',
+    signInToBookText: 'Booking needs an account so your address, bookings and payment stay together. Sign in and you will come straight back to this service.',
     requiredPayment: 'Choose a payment method.',
     requiredAgreement: 'Accept the estimate and the cancellation terms to continue.',
     costBreakdown: 'Cost breakdown',
@@ -629,7 +688,7 @@ const en = {
     slotTaken: 'That time was taken while you were deciding. The list above has been refreshed — please choose another.',
     slotLoadingPlaceholder: 'Checking availability.',
     photosAfterBooking: 'You can add up to five photos of the problem from the booking page once the booking exists.',
-    problemHint: 'At least 10 characters. Where it is, when it started, and anything you have already noticed.',
+    problemHint: 'Optional. Where it is, when it started, and anything you have already noticed.',
     pricingBooking: 'Working out your price…',
     quoteFailed: 'We could not work out a price for this booking.',
     payable: 'Total payable',
@@ -681,7 +740,12 @@ const en = {
     noActionsAvailable: 'Nothing can be changed on this booking at its current stage.',
     actionFailed: 'That did not go through. The booking may have moved on since this page loaded.',
     cancelTitle: 'Cancel this booking',
-    cancelNote: 'The slot is released. No cancellation fee is charged — the platform does not apply one yet, so we will not quote you a figure that is never collected.',
+    cancelNote: 'The slot is released. You can cancel without a fee until the free-cancellation window closes.',
+    /* The fee itself is the API's own figure, from the `cancellation` block on
+       GET /bookings/:id — these two strings only frame it. */
+    cancelFree: 'Cancelling this booking now is free.',
+    cancelFee: 'Cancelling this booking now costs',
+    cancelFeeWithin: ', because the free-cancellation window has closed. This is the figure the platform will charge.',
     cancelAction: 'Cancel booking',
     confirmCancel: 'Yes, cancel it',
     cancelReasonLabel: 'Reason (optional)',
@@ -711,6 +775,7 @@ const en = {
     photosCount: 'Up to five, JPEG, PNG or WebP.',
     photosUpload: 'Upload photos',
     photoFailed: 'A photo could not be uploaded. Nothing else was affected.',
+    photosClosed: 'These are the photos already sent with this booking. No more can be added now that the visit has begun.',
     cancelReasonLabelShort: 'Reason',
     chatTitle: 'Messages',
     chatClosed: 'Messaging opens once a professional accepts and closes when the job is done. Everything already said stays readable here.',
@@ -935,7 +1000,7 @@ const en = {
     areaPlaceholder: 'Choose an area',
     areaPending: 'Choose a city first',
     areaLoading: 'Loading areas…',
-    areaNotApplied: 'The API does not return coordinates for an area yet, so this cannot narrow the search. Use the city or your own location instead.',
+    areaHint: 'Picking an area searches around its centre, which is more precise than the city.',
     locationLabel: 'Search point',
     useMyLocation: 'Use my location',
     locating: 'Finding your location…',
@@ -1019,6 +1084,7 @@ const en = {
     yourComplaints: 'Complaints you have raised',
     complaintSlaBreached: '{count} complaint(s) have passed the response time we promised. We are escalating them.',
     noBookingsYet: 'No bookings yet. Search for a professional to get started.',
+    noBookingsInTab: 'Nothing in this group. Try another tab, or “All”.',
     bookingsInPlay: 'In play',
     bookingsFinishing: 'Finishing',
     bookingsClosed: 'Closed',
@@ -1088,7 +1154,7 @@ const en = {
       REJECTED: 'Not upheld'
     },
     complaintSeverities: { SAFETY: 'Urgent', HIGH: 'High', NORMAL: 'Normal' },
-    /* Favourites: no backend at all (BACKEND_REQUIREMENTS §3.12). */
+    /* Favourites: no backend at all (backend_requirement.md §3.12). */
     favourites: 'Saved professionals',
     favouritesDescription: 'Keep the professionals you trust somewhere you can find them again.',
     favouritesUnavailableTitle: 'Saving a professional is not available yet',
@@ -1109,7 +1175,7 @@ const en = {
     /* Both are read from the availability and leave endpoints rather than assumed. */
     todayOnLeave: 'You have recorded leave today, so no new job can be scheduled on it.',
     todayNotWorking: 'You have no availability set for today, so you will not be offered work for it.',
-    /* The address is not readable by a provider — BACKEND_REQUIREMENTS §3.10. */
+    /* The address is not readable by a provider — backend_requirement.md §3.10. */
     todayAddressUnavailable: 'Ask the customer for the address in the chat',
     /* The one thing that blocks approval outright, so it is the first thing said. */
     dashboardCnicPending: 'Your CNIC is on file and waiting to be verified.',
@@ -1150,6 +1216,7 @@ const en = {
     queueTitle: 'Verification queue',
     sessionLabel: 'Signed in',
     exit: 'Sign out',
+    backToSite: 'Back to site',
     queueDescription: 'Bookings waiting on a customer verification call before funds can be released.',
     controlRoomDescription: 'Everything happening across bookings, providers, payments and disputes.',
     approvalsDescription: 'Applications waiting on an identity and trade document decision.',
@@ -2031,7 +2098,19 @@ const ur: typeof en = {
     myAccount: 'میرا اکاؤنٹ',
     bookService: 'بکنگ کریں',
     menu: 'نیویگیشن کھولیں',
-    close: 'مینو بند کریں'
+    close: 'مینو بند کریں',
+    home: 'ہوم',
+    search: 'تلاش',
+    bookings: 'بکنگز',
+    plansShort: 'پلان',
+    servicesShort: 'خدمات',
+    brandLabel: 'سمارٹ ہوم مینٹیننس',
+    support: 'مدد',
+    phoneLabel: 'کال کریں',
+    accountMenu: 'اکاؤنٹ مینو',
+    profile: 'پروفائل',
+    security: 'سیکیورٹی',
+    addresses: 'پتے'
   },
   common: {
     from: 'سے',
@@ -2449,7 +2528,11 @@ const ur: typeof en = {
     hint: 'آپ کا کوڈ SHM-0001030 جیسا ہوتا ہے اور تصدیق کے ساتھ بھیجا جاتا ہے۔',
     placeholder: 'SHM-0001030',
     submit: 'حالت دیکھیں',
-    notFound: '{code} کے لیے کوئی بکنگ نہیں ملی۔ کوڈ دوبارہ چیک کریں۔'
+    notFound: '{code} کے لیے کوئی بکنگ نہیں ملی۔ کوڈ دوبارہ چیک کریں۔',
+    signInRequiredTitle: 'بکنگ دیکھنے کے لیے سائن اِن کریں',
+    signInRequiredText: 'بکنگ اُسی اکاؤنٹ کی نجی ہوتی ہے جس نے بنائی ہے، اس لیے ہم صرف اپنی بکنگز دکھا سکتے ہیں۔ سائن اِن کریں، آپ کی بنائی ہوئی ہر بکنگ یہاں اپنی موجودہ حالت کے ساتھ ہوگی۔',
+    loadError: 'آپ کی بکنگز لوڈ نہیں ہو سکیں۔',
+    noBookingsYet: 'آپ نے ابھی تک کوئی بکنگ نہیں کی۔'
   },
   verifyPage: {
     eyebrow: 'بنیادی اصول',
@@ -2485,7 +2568,29 @@ const ur: typeof en = {
     noteHint: 'جو کچھ اگلے گاہک کو بتانا ہو، یا جو کچھ غلط ہوا۔',
     consentRequired: 'تصدیق کریں کہ آپ اس کال میں شریک ہیں۔',
     scoreRequired: 'جمع کرنے سے پہلے درجہ منتخب کریں۔',
-    submit: 'تصدیق جمع کریں'
+    submit: 'تصدیق جمع کریں',
+    escalatedTitle: 'شکریہ — ہمارا کوئی ایکشن آپ سے رابطہ کرے گا',
+    escalatedText: 'آپ کا جواب محفوظ ہو چکا ہے اور ادائیگی جاری نہیں کی گئی۔ ہماری ٹیم آپ سے بات کرے گی۔',
+    yourBooking: 'آپ کی بکنگ',
+    otpLabel: 'ٹیکسٹ میں آنے والا کوڈ',
+    otpHint: 'اس لنک کے ساتھ ہم نے آپ کو چھ ہندسوں کا کوڈ بھیجا ہے۔ اسی سے پتا چلتا ہے کہ جواب آپ کا ہے۔',
+    otpRequired: 'ٹیکسٹ کا چھ ہندسوں کا کوڈ درج کریں۔',
+    otpLocked: 'بہت زیادہ غلط کوڈ۔ براہِ کرم ہماری ٹیم کے کال کا انتظار کریں۔',
+    workCompletedLegend: 'کیا کام مکمل ہوا؟',
+    workFULL: 'مکمل',
+    workPARTIAL: 'جزوی',
+    workNONE: 'نہیں',
+    workRequired: 'بتائیں کہ کام مکمل ہوا یا نہیں۔',
+    ratingsRequired: 'چاروں نکات پر درجہ دیں۔',
+    scoreQuality: 'کام کا معیار',
+    scorePunctuality: 'وقت کی پابندی',
+    scoreConduct: 'سلوک اور پیشہ دارانہ',
+    scoreCleanliness: 'صفائی اور سازش',
+    extraChargeLegend: 'کیا پیشہ کار نے منظور شدہ رقم سے زیادہ پیسے مانگے؟',
+    extraChargeRequired: 'اضافی رقم کے بارے میں جواب دیں۔',
+    consentRelease: 'میں ادائیگی پیشہ کار کو جاری کرنے پر رضامند ہوں۔',
+    submitting: 'آپ کا جواب محفوظ کیا جا رہا ہے…',
+    submitFailed: 'ہم آپ کا جواب محفوظ نہیں کر سکے۔ دوبارہ کوشش کریں یا ہمیں کال کریں۔'
   },
   plansPage: {
     eyebrow: 'ان کاموں سے بچیں جو ہر گھر کو درکار ہیں',
@@ -2575,6 +2680,15 @@ const ur: typeof en = {
     requiredProvider: 'پیشہ کار منتخب کریں۔',
     requiredSlot: 'دستیاب وقت منتخب کریں۔',
     requiredProblem: 'آگے بڑھنے سے پہلے مسئلہ لکھیں۔',
+    issueLabel: 'مسئلہ کیا ہے؟',
+    issueChoose: 'مسئلہ منتخب کریں',
+    issueHint: 'فہرست سے قریب ترین انتخاب کریں۔ پیشہ کار اسی کے مطابق بھیجے جاتے ہیں۔',
+    issueNone: 'اس خدمت کے لیے ابھی مسئلوں کی فہرست موجود نہیں، اس لیے نیچے اپنے الفاظ میں لکھیں۔',
+    issueLoading: 'مسئلوں کی فہرست لوڈ ہو رہی ہے…',
+    issueLoadFailed: 'مسئلوں کی فہرست لوڈ نہیں ہو سکی۔',
+    requiredIssueOption: 'آگے بڑھنے سے پہلے مسئلہ منتخب کریں۔',
+    signInToBookTitle: 'اس خدمت کو بکنگ کرنے کے لیے سائن اِن کریں',
+    signInToBookText: 'بکنگ کے لیے اکاؤنٹ درکار ہے تاکہ آپ کا پتہ، بکنگز اور ادائیگی ایک جگہ رہے۔ سائن اِن کریں، آپ براہِ راست اسی خدمت پر واپس آ جائیں گے۔',
     requiredPayment: 'ادائیگی کا طریقہ منتخب کریں۔',
     requiredAgreement: 'آگے بڑھنے کے لیے تخمینہ اور منسوخی شرائط قبول کریں۔',
     costBreakdown: 'لاگت کی تفصیل',
@@ -2639,7 +2753,7 @@ const ur: typeof en = {
     slotTaken: 'فیصلہ کرتے دوران یہ وقت کسی اور نے لے لیا۔ اوپر کی فہرست تازہ ہو چکی ہے — دوسرا وقت منتخب کریں۔',
     slotLoadingPlaceholder: 'دستیابی دیکھی جا رہی ہے۔',
     photosAfterBooking: 'بکنگ بننے کے بعد آپ بکنگ پیج سے مسئلے کی پانچ تصاویر تک شامل کر سکتے ہیں۔',
-    problemHint: 'کم از کم 10 حروف۔ مسئلہ کہاں ہے، کب سے ہے، اور آپ نے کیا دیکھا ہے۔',
+    problemHint: 'اختیاری۔ مسئلہ کہاں ہے، کب سے ہے، اور آپ نے کیا دیکھا ہے۔',
     pricingBooking: 'آپ کی قیمت معلوم کی جا رہی ہے…',
     quoteFailed: 'اس بکنگ کی قیمت معلوم نہیں ہو سکی۔',
     payable: 'کل واجب الادا رقم',
@@ -2690,7 +2804,10 @@ const ur: typeof en = {
     noActionsAvailable: 'اس بکنگ کے موجودہ مرحلے میں کچھ تبدیل نہیں کیا جا سکتا۔',
     actionFailed: 'یہ کام مکمل نہیں ہوا۔ ہو سکتا ہے بکنگ اس صفحے کے لوڈ ہونے کے بعد آگے بڑھ چکی ہو۔',
     cancelTitle: 'یہ بکنگ منسوخ کریں',
-    cancelNote: 'وقت آزاد ہو جائے گا۔ کوئی منسوخی فیس لاگو نہیں ہوتی — پلیٹ فارم ابھی اسے لاگو نہیں کرتا، اس لیے ہم ایسی رقم نہیں بتائیں گے جو کبھی وصول ہی نہ ہو۔',
+    cancelNote: 'وقت آزاد ہو جائے گا۔ مفت منسوخی کی مدت ختم ہونے تک اس میں کوئی فیس نہیں لگے گی۔',
+    cancelFree: 'اس بکنگ کو ابھی منسوخ کرنے پر کوئی فیس نہیں لگتی۔',
+    cancelFee: 'اس بکنگ کو ابھی منسوخ کرنے کا خرچ',
+    cancelFeeWithin: 'ہے، کیونکہ مفت منسوخی کی مدت ختم ہو چکی ہے۔ یہی رقم پلیٹ فارم وصول کرے گا۔',
     cancelAction: 'بکنگ منسوخ کریں',
     confirmCancel: 'ہاں، منسوخ کریں',
     cancelReasonLabel: 'وجہ (اختیاری)',
@@ -2719,6 +2836,7 @@ const ur: typeof en = {
     photosChoose: 'تصاویر منتخب کریں',
     photosCount: 'پانچ تک، JPEG، PNG یا WebP۔',
     photosUpload: 'تصاویر اپ لوڈ کریں',
+    photosClosed: 'یہ وہ تصاویر ہیں جو اس بکنگ کے ساتھ بھیجی جا چکی ہیں۔ وزٹ شروع ہونے کے بعد مزید تصاویر نہیں بھیجی جا سکتیں۔',
     photoFailed: 'تصویر اپ لوڈ نہیں ہو سکی۔ اس سے کوئی اثر نہیں پڑا۔',
     cancelReasonLabelShort: 'وجہ',
     chatTitle: 'پیغامات',
@@ -2944,7 +3062,7 @@ const ur: typeof en = {
     areaPlaceholder: 'علاقہ منتخب کریں',
     areaPending: 'پہلے شہر منتخب کریں',
     areaLoading: 'علاقے لوڈ ہو رہے ہیں…',
-    areaNotApplied: 'API ابھی علاقے کے درست مختصات نہیں دیتا، اس لیے اس سے تلاش محدود نہیں ہو سکتی۔ شہر یا اپنا مقام استعمال کریں۔',
+    areaHint: 'علاقہ منتخب کرنے پر اس کے مرکز کے گرد تلاش ہوتی ہے، جو شہر کے مرکز سے زیادہ درست ہے۔',
     locationLabel: 'تلاش کا مقام',
     useMyLocation: 'میرا مقام استعمال کریں',
     locating: 'مقام تلاش ہو رہا ہے…',
@@ -3026,6 +3144,7 @@ const ur: typeof en = {
     yourComplaints: 'آپ کی درج شدہ شکایات',
     complaintSlaBreached: '{count} شکایت پر ہم نے جو جوابی وقت دیا تھا وہ گزر چکا ہے۔ ہم انہیں اوپر لے رہے ہیں۔',
     noBookingsYet: 'ابھی کوئی بکنگ نہیں۔ شروع کرنے کے لیے کوئی پیشہ کار تلاش کریں۔',
+    noBookingsInTab: 'اس گروپ میں کچھ نہیں۔ کوئی دوسرا ٹیب، یا “All” دیکھیں۔',
     bookingsInPlay: 'جاری',
     bookingsFinishing: 'تکمیل کے قریب',
     bookingsClosed: 'بند',
@@ -3149,6 +3268,7 @@ const ur: typeof en = {
     queueTitle: 'تصدیق قطار',
     sessionLabel: 'سائن اِن',
     exit: 'سائن آؤٹ',
+    backToSite: 'ویب سائٹ پر واپس جائیں',
     queueDescription: 'وہ بکنگ جو رقم جاری ہونے سے پہلے صارف کی تصدیق کا انتظار کر رہی ہیں۔',
     controlRoomDescription: 'بکنگ، پیشہ کار، ادائیگی اور تنازعات سب کا ایک جائزہ۔',
     approvalsDescription: 'شناخت اور ٹریڈ دستاویزات کے فیصلے کا انتظار کرنے والی درخواستیں۔',

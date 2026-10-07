@@ -7,6 +7,7 @@ import { Card, PageHeader, StatCard, StatusBadge } from '@/components/ui';
 import { useMyBookings } from '@/features/booking/queries';
 import type { Booking, BookingStatus } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
+import { ratingOf } from '@/features/search/location';
 import { useConduct, useEarnings, useProviderDocuments, useProviderOffers, useProviderProfile, useProviderRatings, useWallet } from '@/features/provider/queries';
 import type { ProviderStatus } from '@/features/provider/api';
 import type { Dictionary } from '@/lib/dictionaries';
@@ -75,6 +76,13 @@ export function ProviderDashboardScreen({ locale, dict }: { locale: Locale; dict
   const restrictions = conduct.data?.standingConsequences ?? [];
   const cnic = documents.data?.cnic;
   const ratingCount = ratings.data?.reputation.ratingCount ?? 0;
+  /* Null score means nobody has rated this professional yet — the API stopped
+     publishing the ranking prior as though it were a rating. Branching on the
+     score rather than the count means a legitimate count-with-null cannot slip
+     through and print "0.0". Carrying `verifiedJobs` with it keeps the pair
+     read together, so the number beside the score cannot drift. */
+  const overallRating =
+    ratings.data === undefined ? null : { ...ratingOf(ratings.data.reputation.score), verifiedJobs: ratings.data.reputation.verifiedJobs };
 
   /**
    * Offer windows close, so "needs you now" has to be measured against `expiresAt`
@@ -211,14 +219,14 @@ export function ProviderDashboardScreen({ locale, dict }: { locale: Locale; dict
               <Star className="size-4 text-muted" aria-hidden="true" />
               {dict.portal.overallRating}
             </h2>
-            {ratings.data === undefined ? (
+            {overallRating === null ? (
               <span className="skeleton mt-3 h-7 w-20 rounded-[9px]" />
-            ) : ratingCount === 0 ? (
+            ) : overallRating.rated === false ? (
               <p className="mt-2 text-sm text-secondary">{dict.portal.noRatingsYet}</p>
             ) : (
               <p className="mt-2 text-2xl font-semibold text-navy tabular-nums">
-                {ratings.data.reputation.score.toFixed(1)}
-                <span className="ms-2 text-sm font-normal text-muted">{dict.portal.dashboardVerifiedJobs.replace('{count}', formatNumber(ratings.data.reputation.verifiedJobs, locale))}</span>
+                {overallRating.score.toFixed(1)}
+                <span className="ms-2 text-sm font-normal text-muted">{dict.portal.dashboardVerifiedJobs.replace('{count}', formatNumber(overallRating.verifiedJobs, locale))}</span>
               </p>
             )}
           </Card>

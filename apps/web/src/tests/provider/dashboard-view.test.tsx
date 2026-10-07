@@ -3,6 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProviderDashboardScreen } from '@/features/provider/dashboard-view';
+import type { Reputation } from '@/features/search/api';
 import { getDictionary } from '@/lib/dictionaries';
 import type { Locale } from '@/lib/utils';
 
@@ -71,7 +72,7 @@ let profile = { userId: 'p-1', status: 'APPROVED', bio: null, experienceYears: 5
 let bookings = [booking()];
 let earnings = { heldPaisa: 40_000, releasablePaisa: 250_000, paidPaisa: 900_000, commissionPaisa: 20_000 };
 let wallet = { balancePaisa: 310_000, debtPaisa: 0, debtCeilingPaisa: 100_000, offersBlocked: false, offerBlockedReason: null };
-let reputation = { score: 4.5, ratingCount: 12, distribution: { '1': 0, '2': 0, '3': 1, '4': 4, '5': 7 }, verifiedJobs: 40, badge: null };
+let reputation: Reputation = { score: 4.5, ratingCount: 12, distribution: { '1': 0, '2': 0, '3': 1, '4': 4, '5': 7 }, verifiedJobs: 40, badge: null };
 /** Typed so a test can stage a non-empty `standingConsequences` without `never[]`. */
 type ConductStub = {
   providerStatus: string;
@@ -269,11 +270,12 @@ describe('money', () => {
 
 describe('reputation', () => {
   it('withholds the score while there is no real rating', async () => {
-    reputation = { score: 3.5, ratingCount: 0, distribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }, verifiedJobs: 0, badge: null };
+    reputation = { score: null, ratingCount: 0, distribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 }, verifiedJobs: 0, badge: null };
     renderScreen();
     expect(await screen.findByText(dict.portal.noRatingsYet)).toBeDefined();
-    /* 3.5 is the Bayesian prior, not something a customer said. */
-    expect(screen.queryByText('3.5')).toBeNull();
+    /* A null score must not become "NaN" or "0.0" two frames downstream. */
+    expect(screen.queryByText('NaN')).toBeNull();
+    expect(screen.queryByText('0.0')).toBeNull();
   });
 
   it('shows it once there is a real rating', async () => {

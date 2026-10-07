@@ -38,9 +38,15 @@ function useAreaNames(locale: Locale): Map<number, string> {
   const areas = useQueries({
     queries: cityIds.map((cityId) => ({
       queryKey: publicKeys.areas(cityId),
-      queryFn: ({ signal }: { signal: AbortSignal }) => placesApi.listAreas(cityId, { signal, locale }).then((result) => result.items),
-      /* Reference data — the same window the single-city hook uses. The keys are
-         already per-city, so this fans out without colliding with `useCityAreas`. */
+      /* Returns exactly what `useCityAreas` returns — the whole response, not
+         `response.items`. These keys are deliberately the same ones, so the fan-out
+         is deduplicated against that hook's cache rather than fetching twice; but a
+         shared key means a shared value, and unwrapping here made the cached shape
+         depend on which hook happened to mount first. Whichever won, the other read
+         it wrongly: `for (const area of result.data)` threw "result.data is not
+         iterable" and took the whole address book down. */
+      queryFn: ({ signal }: { signal: AbortSignal }) => placesApi.listAreas(cityId, { signal, locale }),
+      /* Reference data — the same window the single-city hook uses. */
       staleTime: FRESHNESS.places.staleTime,
       gcTime: FRESHNESS.places.gcTime,
       retry: publicRetry
@@ -51,7 +57,7 @@ function useAreaNames(locale: Locale): Map<number, string> {
     const names = new Map<number, string>();
     for (const result of areas) {
       if (!result.isSuccess) continue;
-      for (const area of result.data) names.set(area.id, area.name);
+      for (const area of result.data?.items ?? []) names.set(area.id, area.name);
     }
     return names;
   }, [areas]);

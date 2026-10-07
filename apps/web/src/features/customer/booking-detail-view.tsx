@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { Button, Card, Input, Label, PageHeader, Textarea } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
+import { ProblemPhotos, canAttachProblemPhotos } from '@/features/booking/booking-detail';
 import { useBooking, useOnBehalfContact, useWarrantyClaim } from '@/features/booking/queries';
 import type { BookingStatus } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
@@ -33,7 +34,7 @@ import { cn, formatDate, formatDateTime, formatMoney, localizedPath, type Locale
  *   job that is `AWAITING_VERIFICATION` shows what that means rather than a
  *   generic fourth step.
  * · **The professional is resolved by a real lookup**, or not shown. `GET /bookings`
- *   publishes ids only (BACKEND_REQUIREMENTS §3.1), so the name comes from
+ *   publishes ids only (backend_requirement.md §3.1), so the name comes from
  *   `/search/providers/:id` when that is readable. While a booking is still
  *   `REQUESTED` there may be nobody at all, and the screen says so instead of
  *   printing "Assigned Professional".
@@ -152,7 +153,7 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
         eyebrow={current.code}
         title={serviceName}
         description={current.problemText ?? undefined}
-        action={<span className={cn('rounded-full px-3 py-1 text-xs font-semibold', tone(current.status))}>{dict.job.statuses[current.status]}</span>}
+        action={<span className={cn('rounded-full px-3 py-1 text-xs font-semibold', tone(current.status))}>{dict.bookingStatus[current.status]}</span>}
       />
 
       {notice !== '' ? (
@@ -184,14 +185,21 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
                     >
                       {index + 1}
                     </span>
-                    <span className={cn('font-medium', index === stageIndex ? 'text-navy' : 'text-secondary')}>{dict.job.statuses[status]}</span>
+                    <span className={cn('font-medium', index === stageIndex ? 'text-navy' : 'text-secondary')}>{dict.bookingStatus[status]}</span>
                   </li>
                 ))}
               </ol>
             ) : (
-              <p className="mt-3 rounded-[9px] bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.job.statuses[current.status]}</p>
+              <p className="mt-3 rounded-[9px] bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.bookingStatus[current.status]}</p>
             )}
           </Card>
+
+          {/* Photos of the problem. The booking step tells the customer they can
+              add these "from the booking page once the booking exists", so this is
+              that page — rendered nowhere else on the customer's side. The card
+              hides itself once the professional is under way, because
+              `ExecutionService` refuses CUSTOMER_PROBLEM evidence after SCHEDULED. */}
+          <ProblemPhotos locale={locale} dict={dict} bookingId={current.id} canUpload={canAttachProblemPhotos(current)} />
 
           {/* Who is coming. Resolved from `providerId`, or not shown: a REQUESTED
               job may have nobody yet, and the old screen printed a hardcoded

@@ -21,10 +21,10 @@
    most misleading thing this flow could do, so it says so on screen instead. */
 
 import { CalendarDays, Sparkles, Users } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, type Locale } from "@/lib/utils";
-import { formatDistance } from "@/features/search/location";
+import { formatDistance, ratingOf } from "@/features/search/location";
 import { RadioGroup, RadioGroupItem } from "@/components/ui";
 import { money } from "@/features/catalogue/pricing";
 import type { ProviderSearchResult } from "@/features/search/api";
@@ -61,14 +61,33 @@ export const slotEndFrom = (startIso: string, minutes = SLOT_MINUTES): string =>
  * These are *requested* times, and the UI labels them that way. For a named
  * professional the flow uses `/slots` instead and this list is not shown.
  */
-export const requestedWindows = (date: string, durationMin: number): { start: string; end: string }[] => {
+/**
+ * Checkout refuses a start inside `booking.min_notice_min` (seeded at 30) with
+ * 400 "This service needs at least 30 minutes' notice". The slot listing and
+ * checkout both read that setting so a listed time is always bookable, but this
+ * list is built here rather than fetched, so without this filter the customer is
+ * offered 09:00 at 15:30 and then told the time is in the past. Matches
+ * `windowRefusal` in packages/domain/src/sameDay.ts.
+ */
+export const MIN_NOTICE_MINUTES = 30;
+
+export const requestedWindows = (
+  date: string,
+  durationMin: number,
+  now: Date = new Date(),
+): { start: string; end: string }[] => {
   const windows: { start: string; end: string }[] = [];
+  const earliest = now.getTime() + MIN_NOTICE_MINUTES * 60_000;
   /* A working day in Asia/Karachi, which is UTC+5 with no daylight saving, so
      the offset is fixed and the local hour can be converted exactly. */
   for (let hour = 9; hour + Math.ceil(durationMin / 60) <= 20; hour += 1) {
     const localMinutes = hour * 60;
     const start = new Date(`${date}T00:00:00+05:00`);
     start.setMinutes(localMinutes);
+    /* Today, the hours that have gone — and the one inside the notice period —
+       are not choices. They are removed rather than disabled so the step cannot
+       be completed into a refusal. */
+    if (start.getTime() < earliest) continue;
     windows.push({ start: start.toISOString(), end: new Date(start.getTime() + durationMin * 60_000).toISOString() });
   }
   return windows;
@@ -148,6 +167,7 @@ export function ProviderChoiceStep({
           >
             {providers.map((provider) => {
               const selected = choice?.kind === "provider" && choice.providerId === provider.providerId;
+              const rating = ratingOf(provider.ratingScore);
               return (
                 <label
                   key={provider.providerId}
@@ -174,11 +194,14 @@ export function ProviderChoiceStep({
                       <span>{formatDistance(provider.distanceM, labelTag(locale))}</span>
                       <span className="font-semibold text-navy">{money(provider.pricePaisa, locale)}</span>
                     </span>
-                    {provider.ratingCount > 0 ? (
+                    {rating.rated ? (
                       <span className="mt-1 block text-xs text-muted">
-                        {dict.booking.ratingSummary} · {provider.ratingScore.toFixed(1)} / 5 ({provider.ratingCount})
+                        {dict.booking.ratingSummary} · {rating.score.toFixed(1)} / 5 ({provider.ratingCount})
                       </span>
                     ) : (
+                      /* `ratingScore` is null for an unrated professional and the
+                         API still ranks them on it, so there is no score to print
+                         here — not 0, and not the ranking prior. */
                       <span className="mt-1 block text-xs text-muted">{dict.booking.noRatingsYet}</span>
                     )}
                   </span>
@@ -264,7 +287,18 @@ export function RequestedWindowPicker({
   selected: ScheduleRequest | null;
   onSelect: (window: ScheduleRequest) => void;
 }) {
-  const windows = useMemo(() => requestedWindows(date, durationMin), [date, durationMin]);
+  /* The list depends on "now": a start inside the notice period has to stop
+     being on offer by itself rather than sit there until checkout refuses it.
+     Reading the clock during render would be impure, so it is sampled in an
+     effect and held in state — one re-render a minute is plenty of resolution
+     for a 30-minute rule. */
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const windows = useMemo(() => requestedWindows(date, durationMin, now), [date, durationMin, now]);
   const hasDuration = windows.length > 0;
 
   return (

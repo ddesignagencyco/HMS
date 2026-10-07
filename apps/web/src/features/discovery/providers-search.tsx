@@ -11,7 +11,7 @@ import { SelectField } from "@/components/select-field";
 import { useCategories, useCategoryServices } from "@/features/catalogue/queries";
 import { useCities, useCityAreas } from "@/features/places/queries";
 import { useProviderSearch } from "@/features/search/queries";
-import { cityCentre, requestDeviceLocation } from "@/features/search/location";
+import { areaCentroid, cityCentre, requestDeviceLocation } from "@/features/search/location";
 import {
   buildSearchParams,
   EMPTY_SEARCH,
@@ -85,22 +85,38 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   const setService = (serviceSlug: string) => push({ ...state, serviceSlug });
 
   /** Changing the city invalidates the area: an area id means nothing in a
-      different city, so it is dropped rather than left to fail. */
+      different city, so it is dropped rather than left to fail.
+
+      A city with no surveyed areas has no centre of its own, so its coordinates
+      are dropped too rather than kept from the previous city — a stale point
+      would search the wrong place while looking deliberate. The search then
+      needs a point, which the screen already says out loud. */
   const setCity = (cityId: string) => {
     const parsed = cityId === "" ? null : Number(cityId);
     const city = cities.data?.items.find((item) => item.id === parsed) ?? null;
-    const centre = city === null ? null : cityCentre(city.name);
+    const centre = cityCentre(city);
     push({
       ...state,
       cityId: parsed,
       areaId: null,
-      lat: centre?.lat ?? state.lat,
-      lng: centre?.lng ?? state.lng,
+      lat: centre?.lat ?? null,
+      lng: centre?.lng ?? null,
       source: "city",
     });
   };
 
-  const setArea = (areaId: string) => push({ ...state, areaId: areaId === "" ? null : Number(areaId) });
+  /** An area's own centroid is the most precise point the customer has named, so
+      selecting one replaces the city centre rather than only recording an id. */
+  const setArea = (areaId: string) => {
+    const parsed = areaId === "" ? null : Number(areaId);
+    const area = areas.data?.items.find((item) => item.id === parsed) ?? null;
+    const centroid = areaCentroid(area);
+    push({
+      ...state,
+      areaId: parsed,
+      ...(centroid === null ? {} : { lat: centroid.lat, lng: centroid.lng, source: "city" as const }),
+    });
+  };
 
   const applyDeviceLocation = async () => {
     setLocating(true);
@@ -215,7 +231,11 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
           options={areaOptions}
           placeholder={state.cityId === null ? dict.search.areaPending : areas.isPending ? dict.search.areaLoading : dict.search.areaPlaceholder}
         />
-        <p className="text-xs leading-5 text-muted">{dict.search.areaNotApplied}</p>
+        {/* An area *is* used as the search point — `setArea` takes its centroid,
+            which is more precise than the city centre. This line used to claim the
+            API returned no coordinates for an area, so the control was described as
+            useless while it was in fact the sharpest filter on the form. */}
+        <p className="text-xs leading-5 text-muted">{dict.search.areaHint}</p>
       </div>
 
       <div className="grid gap-2 border-t border-line pt-4">

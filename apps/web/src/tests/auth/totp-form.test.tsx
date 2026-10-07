@@ -74,13 +74,13 @@ const renderForm = () =>
     </QueryClientProvider>,
   );
 
-/** Answers /auth/me as a staff account that has not cleared two-factor yet, and
+/** Answers /auth/session as a staff account that has not cleared two-factor yet, and
     hands out the one-time secret the way the API does. */
 const stubStaffSession = () => {
   writeAccessToken("held", 900);
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string) => (url.endsWith("/auth/me") ? json(200, { user: agent }) : json(200, secret))),
+    vi.fn(async (url: string) => (url.endsWith("/auth/session") ? json(200, { authenticated: true, user: agent }) : json(200, secret))),
   );
 };
 
@@ -176,7 +176,7 @@ it("shows the setup key in a dialog rather than expanding it in place, so the ca
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
         seen.push(`${init?.method ?? "GET"} ${url}`);
-        if (url.endsWith("/auth/me")) return json(200, { user: { ...agent, totpEnabled: false } });
+        if (url.endsWith("/auth/session")) return json(200, { authenticated: true, user: { ...agent, totpEnabled: false } });
         if (url.endsWith("/auth/totp/setup")) return json(200, secret);
         if (url.endsWith("/auth/totp/verify")) return json(200, { totpEnabled: true });
         if (url.endsWith("/auth/refresh")) {
@@ -207,7 +207,7 @@ it("shows the setup key in a dialog rather than expanding it in place, so the ca
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (url.endsWith("/auth/me")) return json(200, { user: agent });
+        if (url.endsWith("/auth/session")) return json(200, { authenticated: true, user: agent });
         if (url.endsWith("/auth/totp/setup")) return json(200, secret);
         return json(422, { ...problem(422, "TOTP_INVALID"), errors: [{ path: "code", code: "TOTP_INVALID", message: "That code is not right." }] });
       }),

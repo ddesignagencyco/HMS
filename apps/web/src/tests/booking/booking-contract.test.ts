@@ -281,10 +281,11 @@ describe('booking reads', () => {
     const seen = capture(200, { items: [] });
     await bookingApi.listMine('CANCELLED_CUSTOMER');
     expect(seen[0].url).toContain('status=CANCELLED_CUSTOMER');
-    /* VERIFIED is a real booking_status and `GET /bookings/:id` returns it, but
-       it is not in the list filter's enum — asking for it is a 422. That gap is
-       reported in BACKEND_REQUIREMENTS.md §3.2. */
-    expect(seen[0].url).not.toContain('VERIFIED');
+/* `GET /bookings?status=` now takes any value of the booking_status enum —
+       the API derives it from the database rather than a hand-written subset, so
+       VERIFIED is filterable too and is no longer left out. */
+    await bookingApi.listMine('VERIFIED');
+    expect(seen[seen.length - 1].url).toContain('status=VERIFIED');
   });
 
   it("answers 404 for a booking that is not the caller's, and does not soften it", async () => {

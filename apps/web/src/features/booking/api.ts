@@ -57,20 +57,34 @@ export type BookingStatus =
 
 export type PaymentMode = "CASH" | "ONLINE";
 
-/** The statuses `GET /bookings?status=` accepts — a strict subset of the enum. */
-export type BookingListStatus = Extract<
-  BookingStatus,
-  | "REQUESTED"
-  | "SCHEDULED"
-  | "EN_ROUTE"
-  | "IN_PROGRESS"
-  | "QUOTE_REVISION"
-  | "WORK_COMPLETED"
-  | "UNFULFILLED"
-  | "CANCELLED_CUSTOMER"
-  | "CANCELLED_PROVIDER"
-  | "NO_SHOW"
->;
+/**
+ * `GET /bookings?status=` takes **any** value of the booking status enum.
+ *
+ * This used to be a ten-value subset, because the API's schema listed only those.
+ * The backend now derives `BOOKING_STATUS_VALUES` from the database enum itself,
+ * so the filter accepts every status — including `VERIFIED`, `CLOSED`,
+ * `CANCELLED_PROVIDER` and the rest. Keeping a hand-written subset here would
+ * silently make those bookings unreachable from the list's own filter.
+ */
+export type BookingListStatus = BookingStatus;
+
+/**
+ * What cancelling this booking would cost right now, from
+ * `GET /bookings/:id` under `cancellation`.
+ *
+ * The server builds it from the same rule `POST /bookings/:id/cancel` applies, so
+ * the two cannot disagree: `feeDuePaisa` is non-zero only once the booking is
+ * SCHEDULED and the start is inside `booking.free_cancel_hours`, and it is capped
+ * at the booking total. A quote of zero is the normal answer, not a missing one —
+ * so this is shown as "free" rather than as an absence.
+ */
+export type CancellationQuote = {
+  freeCancelHours: number;
+  lateCancelFeePaisa: number;
+  hoursUntilStart: number;
+  isLate: boolean;
+  feeDuePaisa: number;
+};
 
 export type Booking = {
   id: string;
@@ -122,10 +136,36 @@ export type Booking = {
 };
 
 /**
+ * `GET /bookings/:id` returns more than the booking row: the readable names
+ * behind its ids, the line items it was priced for, and what cancelling would
+ * cost. All three are absent from `GET /bookings` (the list), so they are held
+ * apart rather than merged into `Booking` and left undefined in the list.
+ */
+export type BookingDetail = Booking & {
+  serviceName: string | null;
+  serviceNameUr: string | null;
+  serviceSlug: string | null;
+  providerQualification: string | null;
+  addressLabel: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  areaName: string | null;
+  items: { id: string; kind: string; description: string; quantity: number; unitPricePaisa: number; amountPaisa: number }[];
+  /** The cancellation rule in plain words, rendered by the server. */
+  cancellationPolicy: string;
+  /** What cancelling this booking costs right now. */
+  cancellation: CancellationQuote;
+};
+
+/**
  * What an ONLINE booking returns on top of the booking: where to send the
  * browser to pay. Absent for CASH, and the booking is already REQUESTED then.
+ *
+ * `returnUrl` is echoed back by `startCheckout` unchanged so the client knows
+ * where the gateway will land the customer. It is informational: the return page
+ * cannot observe the webhook, so it must not be treated as proof of payment.
  */
-export type BookingPayment = { paymentId: string; redirectUrl: string };
+export type BookingPayment = { paymentId: string; redirectUrl: string; returnUrl?: string };
 
 export type CreatedBooking = Booking & { payment?: BookingPayment };
 
@@ -178,6 +218,15 @@ export type CreateBookingInput = {
   /** ISO instants. Must start in the future and end on the same local day. */
   scheduledStart: string;
   scheduledEnd: string;
+  /**
+   * One of the service's own faults, from `GET /catalogue/services/:slug/issue-options`.
+   *
+   * The server validates it against the service (`resolveIssueOption` looks the id
+   * up scoped to `service_id` and `is_active`), so an id from another service is
+   * refused rather than stored. The API treats this as a narrowing hint, not a
+   * constraint: a booking may send this, `problemText`, or both.
+   */
+  issueOptionId?: number;
   problemText?: string;
   paymentMode: PaymentMode;
   isEmergency?: boolean;
@@ -293,7 +342,7 @@ export const bookingApi = {
 
   /** 404 for someone else's booking — the API does not confirm it exists. */
   get: (bookingId: string, options?: BookingOptions) =>
-    call<Booking>(`/bookings/${encodeURIComponent(bookingId)}`, {}, options),
+    call<BookingDetail>(`/bookings/${encodeURIComponent(bookingId)}`, {}, options),
 
   /**
    * Everything you are the customer or the provider on, newest first.

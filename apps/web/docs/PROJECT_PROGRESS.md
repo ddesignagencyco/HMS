@@ -1,12 +1,50 @@
 # Project progress — HMS web
 
-Current state of `apps/web`. Last updated: 2026-10-03.
+Current state of `apps/web`. Last updated: 2026-10-07.
 
-> For what the API must change, see `docs/BACKEND_REQUIREMENTS.md`.
+> For what the API must change, see `docs/backend_requirement.md`.
 > For which endpoints are wired and which are not, see
 > **`docs/integrated.md`** — that is the file to read before starting a module.
-> that is the file to read before starting a module.
 > For how to run it, see §5.
+
+## Verification pass — 2026-10-07
+
+Modules 1–3 (Authentication, Search/Catalogue/Places, Booking) were verified in
+a real browser against a running API and web server, and the defects that turned
+up were fixed. Harnesses are in `e2e/` and are run directly:
+
+```
+node e2e/verify.cjs          # public: navbar, session, places, responsive
+node e2e/verify-auth.cjs     # full sign-in / refresh / sign-out lifecycle
+node e2e/verify-booking.cjs  # booking flow end to end, creating a real booking
+node e2e/verify-list.cjs     # booking list and detail against real records
+```
+
+Fixed in this pass, all inside `apps/web`:
+
+- Session detection now asks `GET /auth/session` first. A signed-out page load
+  costs one request and zero 401s, where it previously cost a 401 and a refused
+  refresh on every page.
+- The public navbar carries the logo only, one-word labels, and an underline
+  that follows the route (including nested routes) and never the pointer.
+- The booking problem field is a real dropdown over
+  `GET /catalogue/services/:slug/issue-options`, sending `issueOptionId`. The
+  free-text box remains as optional extra detail.
+- `booking/status.ts` classified `ACCEPTED`, `VERIFIED`, `AUTO_RELEASED`,
+  `PAYMENT_RELEASED`, `PARTIALLY_REFUNDED` and `REFUNDED` as neither live nor
+  closed. All 22 statuses are now covered, and a test asserts it.
+- Nullable `ratingScore` / reputation `score` / `lat` / `lng` are handled at every
+  render site through one shared `ratingOf` helper.
+- Cancellation now shows the API's own fee from `GET /bookings/:id`'s
+  `cancellation` block instead of claiming no fee is ever charged.
+- The booking list's empty state no longer tells an account with history that it
+  has "no bookings yet" merely because the current tab is empty.
+- `/track` and the home page no longer answer with invented bookings,
+  professionals, ratings or testimonials. See §3.
+
+Modules 4–8 are unchanged. Provider portal, verification agent, Finance and
+Administration still read `src/lib/data.ts`; that is the remaining mock-data
+surface and it is now confined to those four modules.
 
 ## Contents
 
@@ -29,13 +67,13 @@ Current state of `apps/web`. Last updated: 2026-10-03.
 
 | # | Module | State | Reads |
 |---|---|---|---|
-| 1 | **Authentication** | Complete, verified live, production build green | real API |
-| 2 | **Search, Catalogue & Places (public)** | Complete, verified against the running API | real API |
-| 3 | **Booking** | **Complete — against the live API** | real API |
-| 4 | **Customer portal** | 🟡 addresses only | real API + `src/lib/data.ts` |
+| 1 | **Authentication** | Complete — full lifecycle verified in a browser, production build green | real API |
+| 2 | **Search, Catalogue & Places (public)** | Complete — verified against the running API and in a browser | real API |
+| 3 | **Booking** | **Complete** — verified end to end in a browser; a real booking was created | real API |
+| 4 | **Customer portal** | Addresses only — the list pages still read mock data | real API + `src/lib/data.ts` |
 | 5 | **Provider portal** | **Mock data** | `src/lib/data.ts` |
 | 6 | **Verification agent** | **Mock data** | `src/lib/data.ts` |
-| 7 | **Finance** | **Mock data** | `src/lib/data.ts` |
+| 7 | **Finance** | **Mock data — not started** | `src/lib/data.ts` |
 | 8 | **Administration** | **Mock data** | `src/lib/data.ts` |
 
 **Only `apps/web` is ever changed.** The backend, `packages/*`, the database and
@@ -124,7 +162,7 @@ report and the in-booking chat.
 4. **A booking row has no names.** `BOOKING_COLUMNS` projects ids and money only,
    so `service-names.ts` joins `serviceId` against the catalogue. A service the
    catalogue no longer publishes shows a placeholder, not a bare number. The
-   **address is not available at all** — see `BACKEND_REQUIREMENTS.md` §3.1.
+   **address is not available at all** — see `backend_requirement.md` §3.1.
 
 ---
 
@@ -168,44 +206,59 @@ freshness, retry policy, dependent location filters, slot selection, refresh
 coordination, remark-reply rendering, the rating distribution and superseded
 requests.
 
-### Module 3 — verified against the API, not yet against a browser
+### Module 3 — verified end to end in a real browser
 
-**Every endpoint this module calls was executed against the running API** with the
-seeded database, through the web app's own origin. The full transcript of
-expectations and results is `BACKEND_REQUIREMENTS.md` §3.9 — 30 rows. The findings
-that changed a design decision:
+Every endpoint this module calls was executed against the running API, and on
+2026-10-07 the whole flow was driven through a real browser to a real booking:
+`POST /bookings` returned **201** with reference `SHM-0000008`, carrying
+`issueOptionId: 5` (a fault belonging to the chosen service), and the record was
+then read back through the list and detail screens. `e2e/verify-booking.cjs` runs
+24 checks; `e2e/verify-list.cjs` runs 10 more.
+
+Findings from that pass:
 
 - **A chosen professional is priced at *their* rate, not the catalogue's.**
   `quotedAmountPaisa: 100000` against a catalogue `basePricePaisa: 250000`. A total
   computed from the service row would have overstated this booking by 2.5×. The
   "server prices it" rule is not theoretical.
-- **`409 SLOT_TAKEN` is real.** Booking the same slot twice gives
-  `409 SLOT_TAKEN`, which is the path the flow handles by returning to availability.
+- **`409 SLOT_TAKEN` is real**, and the API also refuses a start in the past with
+  a 400. The flow handles the first by returning to availability; the second is
+  the customer-facing rule "your slot must be ahead of now".
 - **The chat is closed at `REQUESTED`** (`open: false`), confirming that "live" and
   "chat open" are different sets — which is why `canMessage` is its own list.
-- **`?status=VERIFIED` is a live 422**, so the status filter offers only the ten
-  values the schema accepts.
-- **The cancellation fee is not charged**, but the quote's own policy sentence
-  promises Rs 500. The two halves of the feature disagree; the UI states the
-  honest version. `BACKEND_REQUIREMENTS.md` §3.4.
-- **The ONLINE return leg was a 404.** `payment.redirectUrl` carries a hardcoded
-  `/checkout/return?bookingId=…`, and no such route existed. Added
-  `app/[locale]/checkout/return`; `BACKEND_REQUIREMENTS.md` §3.7.
-- **`areas` still carry no coordinates** and `ratingScore` is still 3.5 with zero
-  ratings — §2.2 and §2.3 both re-confirmed against live data.
+- **The fault list is real and per-service.** `leak-repair` publishes 4,
+  `blocked-drain` 3, `new-fixture-install` 2. The booking step now offers exactly
+  what the service publishes, and sends `issueOptionId`.
+- **The cancellation fee is charged**, and `GET /bookings/:id` publishes what
+  cancelling the booking would cost under `cancellation`. The booking screen shows
+  that figure rather than a locally computed one.
+- **`areas` carry coordinates**, and an unrated provider's `ratingScore` is now
+  `null` rather than the Bayesian prior. Both confirmed live and handled.
 
-**Still not done — this needs a human with a browser:**
+Superseded by this pass: the previous notes that `?status=VERIFIED` was a 422
+(it is filterable — the API derives the enum from the database), that the
+cancellation fee was never charged, and that areas published no coordinates.
+Each of those was true when written and is not now.
 
-- [ ] `/en/book/leak-repair` end to end as `customer@smart-home.local`: address →
-      professional → slot → details → review → payment → confirmation, cash and online.
-- [ ] The **auto-assign** path, the one with no live slot.
-- [ ] A **409 `SLOT_TAKEN` in the UI** — needs two browsers on one slot.
-- [ ] `/en/account/bookings` and `/account/bookings/[id]` in EN and UR, RTL asserted.
-- [ ] The hand-off: pick a slot on a profile, land in the flow preselected.
-- [ ] Zero horizontal overflow and zero console errors, as modules 1–2 were checked.
+**Checked on 2026-10-07** by `e2e/verify-booking.cjs` and `e2e/verify-list.cjs`:
 
-**131 unit tests across 5 files** cover the contracts, the transition rules, the
-query layer and both pages, but component tests are not a browser.
+- [x] The flow end to end as `customer@smart-home.local`: address → professional →
+      schedule → details → review → payment → confirmation. Created a real booking
+      (201, `SHM-0000008`).
+- [x] The **auto-assign** path, the one with no live slot — confirmed that no
+      `providerId` is sent when the platform is asked to choose.
+- [x] The **cancellation quote** now read from `GET /bookings/:id`.
+- [x] `/en/account/bookings` and `/account/bookings/[id]` against real records.
+- [x] The hand-off: a slot picked on a profile arrives preselected in the flow.
+- [x] Zero horizontal overflow at 360 / 768 / 1024 / 1440.
+
+**Still not done — this needs a human or more setup:**
+
+- [ ] An **ONLINE** booking to a real gateway. `startCheckout` and its `returnUrl`
+      were checked in the contract and on the return page; the redirect leg
+      itself was not exercised against a live gateway.
+- [ ] A **409 `SLOT_TAKEN` in the UI** — needs two browsers racing one slot.
+- [ ] The **UR / RTL** pass. Every screen was checked in English only.
 
 **Two known rough edges, recorded rather than hidden:**
 
@@ -218,7 +271,8 @@ query layer and both pages, but component tests are not a browser.
    itself. Start the web app explicitly with `npx next dev --port 3001` until that
    script is restored.
 
-**151 + 131 = 282 unit tests across 19 files** in total.
+**529 unit tests across 37 files** in total, plus 77 browser checks across four
+harnesses in `e2e/`.
 
 ---
 
@@ -226,19 +280,24 @@ query layer and both pages, but component tests are not a browser.
 
 Deliberate, documented, and not hidden behind an empty state:
 
-1. **No area or city filter can exist on search.** `areas.centroid` exists in the
-   database and is not selected (`places.service.ts:20`). The area control ships
-   **disabled with the reason on screen** rather than pretending to filter. Fix:
-   `BACKEND_REQUIREMENTS.md` §2.2.
-2. **No provider name and no photo in the public contract.** Both endpoints omit
-   `users.first_name` and `providers.photo_key`. Cards lead with the qualification
-   and a neutral monogram. **No stock photograph of a person is used anywhere.**
+1. **An area filter that could not be satisfied.** `areas.centroid` was not
+   selected by the places API. **Now fixed** — areas and cities publish `lat`/`lng`
+   (nullable), and the search reads them. A city or area with no surveyed
+   centroid shows that it has none rather than searching a made-up point.
+2. **No provider name and no photo in the public contract.** Both `/search/providers`
+   and the provider detail omit `users.first_name` and any avatar. Cards lead with
+   the qualification and a neutral monogram; **no stock photograph of a person is
+   used anywhere.** Still outstanding — `backend_requirement.md` issue 1, and the
+   reason the booking's professional-selection step is the weakest screen in the
+   product.
 3. **No paging, sorting or text on `/search/providers`.** The schema is `.strict()`
    with three keys; `&page=2` is a 422. The UI shows the API's ranking and says in
    a note that there is no paging to choose.
-4. **`reputation.score` is a Bayesian prior, never null** — 3.5 with zero ratings.
-   Every rendering is gated on `ratingCount`, so an unrated professional shows
-   "No ratings yet" rather than a star.
+4. **`reputation.score` and `ratingScore` are null when nobody has rated a
+   professional**, and the provider is still ranked on it internally. Every
+   rendering branches on the score through the shared `ratingOf` helper, so an
+   unrated professional shows "No ratings yet" — never `0.0`, never `NaN`, and
+   never the Bayesian prior presented as a rating.
 5. **Per-slug SEO metadata is not derived from live data.** The shared client is
    browser-oriented (relative URLs), so `generateMetadata` uses dictionary copy.
    Fixing it properly needs an absolute base for server-side prefetch. Until then
@@ -246,50 +305,76 @@ Deliberate, documented, and not hidden behind an empty state:
 6. **The booking hand-off is closed.** The availability panel now carries the
    professional, the day and the exact start through `?provider=&date=&start=`,
    and the flow preselects them. Resolved in module 3.
-7. **A signed-out visitor logs two non-2xx entries per page load**
-   (`/auth/me` + `/auth/refresh`). Both are correct behaviour, not JavaScript
-   faults; removing them needs a public `GET /auth/session`.
+7. **A signed-out visitor no longer logs an error.** `GET /auth/session` is asked
+   first and answers 200 either way. Measured: one request, zero 401s, zero
+   refreshes. Resolved on 2026-10-07.
 
 ### Added by module 3
 
-8. **A booking cannot show an address.** `BOOKING_COLUMNS` projects ids and money
+8. **A booking cannot show an address.** `GET /bookings/:id` projects ids and money
    only — no service name, no provider name, no address text. Service names are
    joined client-side against the catalogue; **the address has no second source**
-   and is simply absent from the detail page. `BACKEND_REQUIREMENTS.md` §3.1.
+   and is simply absent from the detail page. `backend_requirement.md`.
 9. **An auto-assigned booking cannot show a slot.** `/slots` is keyed on a
    provider, and an auto-assign booking has none until somebody accepts. The flow
    offers *requested* windows and says so on screen; it never renders one as
-   confirmed. `BACKEND_REQUIREMENTS.md` §3.5.
-10. **No cancellation fee is quoted, because none is charged.** FR-BK-06 is not
-    applied by `POST /bookings/:id/cancel` — the controller says so. The UI states
-    that plainly rather than naming a rule that does not run. If that changes, the
-    copy changes with it. `BACKEND_REQUIREMENTS.md` §3.4.
+   confirmed.
+10. **The cancellation fee is quoted from the server.** `GET /bookings/:id`
+    publishes what cancelling this booking would cost under `cancellation`, built
+    by the same rule `POST /bookings/:id/cancel` applies. The screen shows that
+    figure, not a locally computed one.
 11. **`GET /bookings` returns every booking at once.** No pager, no cursor, and no
-    text search. The filter offers only the ten statuses the query schema accepts,
-    because `?status=VERIFIED` is a 422 today. `BACKEND_REQUIREMENTS.md` §3.2.
+    text search. It now accepts **any** status in the database enum, so all four
+    tabs group one response client-side rather than issuing a filtered read each.
 12. **An address needs a map point and there is nothing to geocode from.** The
-    inline form offers device location or a city-centre approximation, both
+    inline form offers the device's location or the area's own centroid, both
     labelled, and says the platform cannot look an address up yet.
-    `BACKEND_REQUIREMENTS.md` §3.7.
+13. **The homepage testimonial band was removed.** There is no public feed of
+    recent remarks — only per-provider remarks — so the band had three invented
+    quotations. It is recorded as a backend requirement rather than refilled.
+    `backend_requirement.md` issue 2.
+14. **`/track` requires sign-in.** Every booking route is scoped to the booking's
+    own customer, so an anonymous lookup by code is not possible. The page now
+    shows the signed-in customer's real bookings instead of answering any typed
+    code with an invented one. `backend_requirement.md` issue 3.
 
 ---
 
 ## 4. Still to verify
 
-**Module 3's endpoints are verified against the running API** — see the checklist
-above and `BACKEND_REQUIREMENTS.md` §3.9. What remains needs a browser and a
-human. The module-1 and module-2 items stand:
+Modules 1–3 were verified end to end in a browser on 2026-10-07; see the
+checklist above. What remains:
 
+- **Modules 4–8 have not been opened in a browser.** Provider portal, verification
+  agent, Finance and Administration still read `src/lib/data.ts`, and they are
+  the whole of the remaining mock-data surface. They need wiring to the real
+  endpoints (listed in `integrated.md`) before any of them can be trusted.
 - **The rating-distribution bar and the remark-reply block have never been drawn
   by the real API**, because the seeded professional has no ratings and no
   remarks. Both are covered by component tests with real-shaped payloads. Once a
   professional with a rating and a replied remark exists, open the profile once.
 - **Live data volume.** One approved professional and one city are seeded, so
   long result lists and multi-city switching are only exercised at that scale.
-  **A seeded address now exists** ("Home", Gulberg), so the "pick a saved address"
-  branch has run against real data — but the inline create form has still never
-  been submitted to the API, and it is the one write path in this module with no
-  live exercise behind it.
+  A saved address exists ("Home", Gulberg) and the "pick a saved address" branch
+  ran against real data; the **inline create form** has still never been
+  submitted to the API, and it is the one write path in this module with no live
+  exercise behind it.
+- **ONLINE checkout against a live gateway**, and the `409 SLOT_TAKEN` race
+  between two browsers.
+- **The UR / RTL pass.** Every check in this pass ran in English.
+
+### Browser harnesses
+
+Plain node scripts driving Playwright against a running dev server. They are not
+part of `npm test`; run them by hand with the API on `:3000` and the web app on
+`:3001`:
+
+```
+node e2e/verify.cjs          # public: navbar, session, places, responsive sweep
+node e2e/verify-auth.cjs     # sign-in / protected route / refresh / sign-out
+node e2e/verify-booking.cjs  # the flow, creating a real booking
+node e2e/verify-list.cjs     # booking list and detail against real records
+```
 
 ---
 
@@ -331,11 +416,14 @@ deliberate — see §7.
 
 ```bash
 cd apps/web
-npm run lint        # 0 errors (4 warnings, all pre-existing and outside this work)
+npm run lint        # 0 errors (14 warnings, all pre-existing and outside this work)
 npm run typecheck   # clean
-npm test            # 282 passed / 19 files
+npm test            # 529 passed / 37 files
 npm run build       # compiles
 ```
+
+Plus the four browser harnesses in `e2e/` — 77 checks against a running API and
+dev server. See §4.
 
 **A successful build is not visual verification.** Open the page.
 
@@ -513,25 +601,29 @@ reads as real parallax. All motion collapses under `prefers-reduced-motion`.
 
 ## 12. Next up
 
-**Module 4 — Customer portal**, and it is a small module now. Addresses are the
-only thing `POST /bookings` needs, and those are wired; what remains is the pages
-around them:
+**Finance has deliberately not been started.** The modules that were already
+built were verified and stabilised first, and that work is now done and recorded
+above. Finance is listed in `integrated.md` against endpoints that have not been
+built from the frontend side.
 
-1. **`/account` reads mock bookings while `/account/bookings` reads the API.**
-   Two sources of truth for one customer's bookings — the same problem the home
-   page has with the catalogue. Wire `CustomerDashboard` to `GET /bookings`;
-   `booking-list.tsx` already has the query and the formatting.
-2. **`/account/addresses` renders mock rows** beside a real create form.
-   `accountApi` types `updateAddress` and `archiveAddress`; only the list page is
-   outstanding.
-3. **Notifications** — `GET /notifications`, `POST /notifications/:id/read`,
-   `/read-all`. Nothing depends on them.
-4. **Complaints** — six endpoints, all customer-scoped, and a page that already
-   exists in mock form.
+Before Finance, the remaining mock-data surface is modules 5–8 — provider
+portal, verification agent, Finance and Administration. All four read
+`src/lib/data.ts`, and the endpoint each one needs is already listed in
+`integrated.md`. The **verification agent** is the most self-contained of them:
+`/agent/queue`, `/agent/queue/claim`, `/agent/verifications/:id`,
+`.../attempts` and `.../submit` all exist on the API and are all currently
+rendered from invented bookings, an invented rating, stock photographs of
+evidence photos, and an `alert()` that claims a ledger write happened.
 
-**Before starting module 4, finish module 3's browser checklist** in §4 above.
-Nothing in this module has been rendered against the real API, and the booking
-flow has more ways to be wrong on screen than a static page does.
+Two things are worth knowing before starting any of them:
 
-`/admin/catalogue` remains the write side of the APIs module 2 reads, if a smaller
-step is wanted instead.
+- The agent rail used to link to `/agent/verification/<id>` with an id taken from
+  the mock file. It no longer does: a console link needs a call the agent actually
+  holds, and that id comes from `POST /agent/queue/claim`, so the rail starts at
+  the queue.
+- `/account` and `/account/addresses` still read mock rows beside real forms
+  (module 4). They are smaller than modules 5–8 and are the easiest real win left.
+
+The UR / RTL pass (§4) should also happen before Finance: no screen has been
+verified in Urdu, and the booking flow's new dropdown is the kind of component
+where RTL is most likely to be wrong.

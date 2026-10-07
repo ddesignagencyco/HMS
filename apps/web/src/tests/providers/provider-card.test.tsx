@@ -13,8 +13,9 @@ import type { Locale } from "@/lib/utils";
    · There is no name and no photo in the contract, so the card leads with the
      qualification and a neutral monogram. A stock photograph of a person next to
      somebody's real rating is a misrepresentation.
-   · `ratingScore` is a Bayesian prior, so it is meaningless without `ratingCount`.
-     An unrated professional must not be shown a star. */
+   · `ratingScore` is null when nobody has rated this professional, and the API
+     still ranks them on an internal prior. A null must read as "no ratings yet",
+     never as 0.00 and never as the prior. */
 
 const dict = getDictionary("en");
 const locale: Locale = "en";
@@ -35,7 +36,7 @@ const rated: ProviderSearchResult = {
 const unrated: ProviderSearchResult = {
   ...rated,
   providerId: "00000000-0000-4000-8000-0000000000aa",
-  ratingScore: 3.5,
+  ratingScore: null,
   ratingCount: 0,
 };
 
@@ -46,7 +47,7 @@ const noOptionalFields: ProviderSearchResult = {
   qualification: null,
   pricePaisa: 250000,
   distanceM: 0,
-  ratingScore: 3.5,
+  ratingScore: null,
   ratingCount: 0,
   badge: null,
 };
@@ -81,14 +82,15 @@ describe("provider card", () => {
     expect(text).not.toContain(dict.profile.noRatingsYet);
   });
 
-  it("never shows the prior score for an unrated professional", () => {
-    /* The API sends ratingScore 3.5 with ratingCount 0. Printing that beside a
-       star would be a claim nobody has made. */
+  it("never shows a score for an unrated professional", () => {
+    /* The API sends ratingScore: null for somebody nobody has rated. Printing a
+       figure beside a star would be a claim nobody has made. */
     renderCard(unrated);
     const text = document.body.textContent ?? "";
     expect(text).toContain(dict.profile.noRatingsYet);
     expect(text).not.toContain("3.50");
-    expect(text).not.toContain("3.5");
+    expect(text).not.toContain("NaN");
+    expect(text).not.toContain("0.00");
   });
 
   it("renders no photograph at all, because the contract has none", () => {

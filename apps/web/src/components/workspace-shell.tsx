@@ -1,19 +1,15 @@
 "use client";
 
-import { Banknote, BarChart3, Bell, BriefcaseBusiness, CalendarDays, CircleDollarSign, ClipboardCheck, CreditCard, FileCheck2, Gavel, Gauge, Heart, History, Home, Landmark, LayoutDashboard, Lock, LogOut, MapPinned, Menu, PhoneCall, ReceiptText, RefreshCcw, Repeat2, Scale, ScrollText, Settings, Settings2, ShieldAlert, ShieldCheck, SlidersHorizontal, Star, Sun, TriangleAlert, UserRound, UsersRound, Wallet, Wrench, X } from "lucide-react";
+import { Banknote, BarChart3, Bell, BriefcaseBusiness, CalendarDays, CircleDollarSign, ClipboardCheck, CreditCard, FileCheck2, Gavel, Gauge, Globe2, Heart, History, Home, Landmark, LayoutDashboard, Lock, LogOut, MapPinned, Menu, PhoneCall, ReceiptText, RefreshCcw, Repeat2, Scale, ScrollText, Settings, Settings2, ShieldAlert, ShieldCheck, SlidersHorizontal, Star, Sun, TriangleAlert, UserRound, UsersRound, Wallet, Wrench, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Dictionary } from "@/lib/dictionaries";
-import { bookings } from "@/lib/data";
 import { cn, localizedPath, type Locale } from "@/lib/utils";
 import { useSession } from "@/features/auth/session";
 
-/* The console link has to point at a booking that is actually waiting on a
-   verification call, otherwise it lands on the wrong record. */
-const pendingVerificationId =
-  bookings.find((booking) => booking.status === "AWAITING_VERIFICATION")?.id ?? bookings[0].id;
-
+/* Every item here points at a page this app actually renders, so nothing is
+   invented to fill the rail and no entry needs a data lookup to exist. */
 const roleConfig = {
   customer: { label: "customer", icon: Home },
   provider: { label: "provider", icon: BriefcaseBusiness },
@@ -42,6 +38,9 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
   const [navOpen, setNavOpen] = useState(false);
   const role = getRole(pathname);
   const Icon = roleConfig[role].icon;
+
+  const otherLocale: Locale = locale === "en" ? "ur" : "en";
+  const localeHref = pathname.replace(/^\/(en|ur)/, `/${otherLocale}`);
   const base = `/${locale}/${role === "customer" ? "account" : role}`;
   const nav = role === "customer"
     ? [
@@ -70,8 +69,13 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
         ]
         : role === "agent"
         ? [
+            /* The queue is the only agent page that can be linked to without
+               inventing a record. A console link needs a call this agent actually
+               holds, and that id comes from `POST /agent/queue/claim` — so the
+               queue is where an agent starts, and its rows open the console. The
+               old rail hardcoded a booking id from the mock file, which sent
+               every agent to a record that did not exist. */
             { href: base, label: dict.portal.queue, icon: LayoutDashboard },
-            { href: `${base}/verification/${pendingVerificationId}`, label: dict.portal.console, icon: ClipboardCheck },
             { href: `${base}/attempts`, label: dict.agent.attempts, icon: PhoneCall },
           ]
         : role === "finance"
@@ -132,19 +136,39 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
   };
 
   const brand = (compact = false) => (
-    <div className={cn("flex items-center gap-2.5", compact ? "p-0" : "p-5 lg:p-6")}>
-      <span className="grid size-10 shrink-0 place-items-center rounded-[9px] bg-yellow-500 text-navy-950">
-        <Wrench className="size-4" />
-      </span>
-      <div className="min-w-0">
-        <p className="truncate font-bold text-white">{user ? `${user.firstName} ${user.lastName}`.trim() : dict.brand.name}</p>
-        <p className="truncate text-xs text-white/55">{dict.portal[role]}</p>
+    <div className={cn("flex items-center justify-between", compact ? "p-0" : "p-5 lg:p-6")}>
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className="grid size-10 shrink-0 place-items-center rounded-[9px] bg-yellow-500 text-navy-950">
+          <Wrench className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate font-bold text-white">{user ? `${user.firstName} ${user.lastName}`.trim() : dict.brand.name}</p>
+          <p className="truncate text-xs text-white/55">{dict.portal[role]}</p>
+        </div>
       </div>
+      {!compact && (
+        <div className="relative ms-2">
+          <Link
+            href={localeHref}
+            className="flex size-8 items-center justify-center rounded-[9px] border border-white/10 text-white/85 transition-colors hover:bg-white/5 hover:text-white"
+            title={otherLocale === "ur" ? "اردو" : "English"}
+          >
+            <Globe2 className="size-4" aria-hidden="true" />
+          </Link>
+        </div>
+      )}
     </div>
   );
 
-  const signOut = (
-    <div className="border-t border-white/10 px-4 py-4">
+  const bottomActions = (
+    <div className="grid gap-1 border-t border-white/10 px-4 py-4">
+      <Link
+        href={localizedPath(locale, "/")}
+        className="flex min-h-11 w-full items-center gap-2 rounded-[9px] px-3 text-sm font-medium text-white/65 transition hover:bg-white/5 hover:text-white"
+      >
+        <Globe2 className="size-4" />
+        {dict.portal.backToSite}
+      </Link>
       <button
         type="button"
         onClick={leave}
@@ -180,7 +204,7 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
             ))}
           </nav>
         </div>
-        {signOut}
+        {bottomActions}
       </aside>
 
       <div className="min-w-0">
@@ -249,7 +273,7 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
                   ))}
                 </nav>
               </div>
-              {signOut}
+              {bottomActions}
             </div>
           </div>
         ) : null}
