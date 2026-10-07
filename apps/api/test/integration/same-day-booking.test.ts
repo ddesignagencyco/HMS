@@ -11,7 +11,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { callApi, createTestApp, postJson, putJson, readyBookableProvider, registerAndVerify, type TestUser } from './harness.js';
-import { nextLocalTime, travelToLocal, unfreeze } from './flow.js';
+import { unfreeze } from './flow.js';
+import { AppClock } from '../../src/platform/app-clock.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -38,6 +39,10 @@ const MIN_NOTICE_MIN = 30;
 const inMinutes = (minutes: number): Date => new Date(Math.ceil((Date.now() + minutes * 60_000) / (30 * 60_000)) * 30 * 60_000);
 
 const localDate = (daysAhead: number): string => new Date(Date.now() + daysAhead * 86_400_000 + 5 * 3_600_000).toISOString().slice(0, 10);
+
+/** 00:00 (Asia/Karachi, fixed UTC+5) on the first day after `instant` — the same instant the booking engine splits windows against. */
+const nextLocalMidnightAfter = (instant: Date): Date =>
+  new Date(Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate() + (instant.getUTCHours() >= 19 ? 1 : 0), 19, 0));
 
 type Slots = { date: string; durationMin: number; items: { start: string; end: string }[] };
 type NextSlots = { durationMin: number; items: { start: string; end: string }[] };
@@ -109,8 +114,9 @@ describe('same-day booking: a job that ends after local midnight', () => {
   let serviceId: number;
   let customer: TestUser;
   let addressId: string;
-  /** The next local midnight (Asia/Karachi) after the application's clock is set to 22:00. */
+  /** The next local midnight (Asia/Karachi) after real "now", and the 22:00 of the evening that precedes it — both derived from one anchor. */
   let localMidnight: Date;
+  let frozenEvening: Date;
 
   beforeAll(async () => {
     const ready = await readyBookableProvider(app);
@@ -120,10 +126,15 @@ describe('same-day booking: a job that ends after local midnight', () => {
     const address = await callApi<{ id: string }>(app, '/customer/addresses', bearer(customer.accessToken, postJson({ label: 'Home', line1: 'House 1', areaId: ready.areaId, lat: 31.52, lng: 74.35, isDefault: true })));
     addressId = address.body.id;
 
-    // Pinned to 22:00 local rather than depending on when the suite happens to run:
-    // "23:00 to 00:30" is only a cross-midnight booking if the clock says it is.
-    travelToLocal(app, 22, 0);
-    localMidnight = nextLocalTime(0, 0);
+    // The frozen clock and the window come from the SAME anchor — the first 00:00
+    // local after real "now" — so the suite reads the same whenever it runs: the
+    // clock says 22:00, and the booking is 23:00 to 00:30. Deriving "later today's
+    // 22:00" and "next midnight" independently would make 23:00 land a day behind
+    // 22:00 (or before it) depending on the wall clock, "refusing" the booking as
+    // inside the notice period.
+    localMidnight = nextLocalMidnightAfter(new Date());
+    frozenEvening = new Date(localMidnight.getTime() - 2 * 3_600_000);
+    app.get(AppClock).travelTo(frozenEvening);
   });
 
   afterAll(() => {
@@ -166,7 +177,7 @@ describe('same-day booking: a job that ends after local midnight', () => {
     // Before that split it required a single availability row to span the whole
     // window, which no provider can satisfy across midnight -- so a next-hour booking
     // ending at 00:30 would find nobody and fall straight to UNFULFILLED.
-    travelToLocal(app, 22, 0);
+    app.get(AppClock).travelTo(frozenEvening);
     const auto = await callApi<{ id: string; status: string }>(
       app,
       '/bookings',

@@ -64,9 +64,15 @@ export class ReconciliationService implements OnModuleInit {
     );
     for (const row of refundTotals) drift.push({ check: 'payment_refunded_total', subject: row.id, expected: `${row.summed}`, actual: `${row.recorded}` });
 
-    // 4. Escrow is never overdrawn, and a released booking holds nothing more than excess it has already refunded.
+    // 4. Escrow is never overdrawn, and a finished booking holds nothing.
+    //
+    // `NO_SHOW` belongs in this list because a no-show refunds the customer in full,
+    // so escrow must be empty afterwards. It was missing, which is why an online
+    // no-show could strand the captured amount indefinitely: the status is terminal,
+    // so nothing else would ever move the money, and the one job whose job is to
+    // notice exactly this was not looking at that status.
     const escrow = await this.prisma.$queryRaw<{ bookingId: string; balance: bigint }[]>(
-      Prisma.sql`SELECT a.booking_id as "bookingId", b.balance FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'ESCROW' AND (b.balance < 0 OR (b.balance > 0 AND EXISTS (SELECT 1 FROM bookings bk WHERE bk.id = a.booking_id AND bk.status IN ('PAYMENT_RELEASED','CLOSED','CANCELLED_CUSTOMER','CANCELLED_PROVIDER','UNFULFILLED','ABANDONED'))))`
+      Prisma.sql`SELECT a.booking_id as "bookingId", b.balance FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'ESCROW' AND (b.balance < 0 OR (b.balance > 0 AND EXISTS (SELECT 1 FROM bookings bk WHERE bk.id = a.booking_id AND bk.status IN ('PAYMENT_RELEASED','CLOSED','CANCELLED_CUSTOMER','CANCELLED_PROVIDER','UNFULFILLED','ABANDONED','NO_SHOW'))))`
     );
     for (const row of escrow) drift.push({ check: 'escrow', subject: row.bookingId, expected: '0 once a booking is finished, never negative', actual: `${row.balance}` });
 

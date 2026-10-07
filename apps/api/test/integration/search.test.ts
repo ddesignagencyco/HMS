@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { adminSession, callApi, createTestApp, patchJson, putJson, registerAndVerify, type TestUser } from './harness.js';
+import { adminSession, callApi, createTestApp, patchJson, putJson, registerAndVerify, verifyCnicFor, type TestUser } from './harness.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -39,6 +39,7 @@ const readyProvider = async (radiusM = 5000): Promise<TestUser> => {
   await callApi(app, '/provider/service-areas', asProvider(provider.accessToken, putJson({ areaIds: [gulbergAreaId] })));
   await callApi(app, `/provider/services/${leakRepair.id}`, putJson({ pricePaisa: leakRepair.minPricePaisa }, provider.accessToken));
   await callApi(app, `/admin/provider-services/${provider.id}/${leakRepair.id}/approve`, asAdmin({ method: 'POST' }));
+  await verifyCnicFor(app, provider);
   await callApi(app, `/admin/providers/${provider.id}/approve`, asAdmin({ method: 'POST' }));
   return provider;
 };

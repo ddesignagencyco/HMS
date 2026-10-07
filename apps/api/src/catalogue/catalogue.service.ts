@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { paisaToNumber } from '@smart-home/domain';
 import { conflict, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
 import type { CategoryCreateInput, CategoryUpdateInput, ChecklistReplaceInput, CommissionRuleCreateInput, CommissionRuleListQuery, IssueOptionsReplaceInput, ServiceCreateInput, ServiceUpdateInput } from './catalogue.schemas.js';
@@ -76,10 +77,10 @@ const COMMISSION_COLUMNS = Prisma.sql`id, scope, category_id as "categoryId", pr
 /** Paisa columns come back as JS bigint from Postgres int8; the API surface represents money as plain integers (see packages/contracts/src/money.ts). */
 const toServiceRow = (raw: ServiceRowRaw): ServiceRow => ({
   ...raw,
-  basePricePaisa: Number(raw.basePricePaisa),
-  minPricePaisa: Number(raw.minPricePaisa),
-  maxPricePaisa: Number(raw.maxPricePaisa),
-  visitFeePaisa: Number(raw.visitFeePaisa)
+  basePricePaisa: paisaToNumber(raw.basePricePaisa),
+  minPricePaisa: paisaToNumber(raw.minPricePaisa),
+  maxPricePaisa: paisaToNumber(raw.maxPricePaisa),
+  visitFeePaisa: paisaToNumber(raw.visitFeePaisa)
 });
 
 @Injectable()

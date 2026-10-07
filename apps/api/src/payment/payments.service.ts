@@ -56,14 +56,20 @@ export class PaymentsService {
     return id;
   }
 
-  /** Talks to the gateway (never inside a database transaction) and records its reference. */
-  async startCheckout(paymentId: string, customer: { userId: string }, returnUrl: string): Promise<{ paymentId: string; redirectUrl: string }> {
-    const rows = await this.prisma.$queryRaw<{ amountPaisa: bigint; idempotencyKey: string }[]>(Prisma.sql`SELECT amount_paisa as "amountPaisa", idempotency_key as "idempotencyKey" FROM payments WHERE id = ${paymentId}::uuid`);
+  /**
+   * Talks to the gateway (never inside a database transaction) and records its
+   * reference. `returnUrl` is handed back to the caller unchanged, so a client
+   * can show or persist where the gateway will send the customer back to.
+   */
+  async startCheckout(paymentId: string, customer: { userId: string }, returnUrl: string): Promise<{ paymentId: string; redirectUrl: string; returnUrl: string }> {
+    const rows = await this.prisma.$queryRaw<{ amountPaisa: bigint; idempotencyKey: string }[]>(
+      Prisma.sql`SELECT amount_paisa as "amountPaisa", idempotency_key as "idempotencyKey" FROM payments WHERE id = ${paymentId}::uuid`
+    );
     const payment = rows[0];
     if (payment === undefined) throw notFound('Payment');
     const checkout = await this.gateway.createCheckout({ paymentId, amount: payment.amountPaisa, currency: 'PKR', customer, returnUrl, idempotencyKey: payment.idempotencyKey });
     await this.prisma.$executeRaw(Prisma.sql`UPDATE payments SET gateway_ref = ${checkout.providerRef} WHERE id = ${paymentId}::uuid`);
-    return { paymentId, redirectUrl: checkout.redirectUrl };
+    return { paymentId, redirectUrl: checkout.redirectUrl, returnUrl };
   }
 
   /**
@@ -74,7 +80,7 @@ export class PaymentsService {
    * the gateway's retry is processed for real.
    */
   async ingestWebhookEvent(provider: string, event: ParsedPaymentEvent): Promise<WebhookIngestResult> {
-    const outcome = await this.prisma.$transaction(async tx => {
+    const outcome = await this.prisma.$transaction(async (tx) => {
       // Everything about one payment is serialised on its row lock, taken before the dedupe insert: two deliveries racing for the
       // same payment queue here instead of deadlocking on the event/ledger rows, and the loser then sees the winner's committed effect.
       const [payment] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM payments WHERE id = ${event.paymentId}::uuid FOR UPDATE`);
@@ -132,7 +138,12 @@ export class PaymentsService {
 
     if (payment.purpose === 'BOOKING') {
       await applySystemEvent(tx, payment.bookingId, 'paymentCaptured', { paymentStatus: 'HELD', metadata: { paymentId } });
-      await appendOutboxEvent(tx, { aggregate: 'payment', aggregateId: paymentId, type: 'payment.captured', payload: { paymentId, bookingId: payment.bookingId, amountPaisa: payment.amountPaisa.toString() } });
+      await appendOutboxEvent(tx, {
+        aggregate: 'payment',
+        aggregateId: paymentId,
+        type: 'payment.captured',
+        payload: { paymentId, bookingId: payment.bookingId, amountPaisa: payment.amountPaisa.toString() }
+      });
       if (this.bookingRequestedHook !== undefined) await this.bookingRequestedHook(tx, payment.bookingId);
     } else if (this.topupCapturedHook !== undefined) {
       await this.topupCapturedHook(tx, paymentId);
@@ -183,7 +194,7 @@ export class PaymentsService {
     );
     let abandoned = 0;
     for (const { id } of due) {
-      await this.prisma.$transaction(async tx => {
+      await this.prisma.$transaction(async (tx) => {
         const before = await tx.$queryRaw<{ status: string }[]>(Prisma.sql`SELECT status FROM payments WHERE id = ${id}::uuid`);
         if (before[0]?.status !== 'INITIATED') return;
         await this.fail(tx, id, 'EXPIRED');
@@ -262,7 +273,10 @@ export class PaymentsService {
    * method and the *platform* bears it — D CUSTOMER_COMPENSATION / C GATEWAY_CLEARING — because there is no escrow left to draw on. Capped at what the payment
    * still has left to refund. Returns the refund ids to settle with the gateway once the transaction commits.
    */
-  async compensate(tx: Prisma.TransactionClient, input: { bookingId: string; amountPaisa: bigint; reasonCode: string; reasonText?: string | undefined; idempotencyKey: string; requestedBy: string }): Promise<string[]> {
+  async compensate(
+    tx: Prisma.TransactionClient,
+    input: { bookingId: string; amountPaisa: bigint; reasonCode: string; reasonText?: string | undefined; idempotencyKey: string; requestedBy: string }
+  ): Promise<string[]> {
     const payments = await tx.$queryRaw<{ id: string; amountPaisa: bigint; refundedPaisa: bigint }[]>(
       Prisma.sql`SELECT id, amount_paisa as "amountPaisa", refunded_paisa as "refundedPaisa" FROM payments WHERE booking_id = ${input.bookingId}::uuid AND purpose IN ('BOOKING','TOPUP') AND status IN ('CAPTURED','PARTIALLY_REFUNDED') ORDER BY captured_at, id FOR UPDATE`
     );
@@ -277,7 +291,11 @@ export class PaymentsService {
       if (amount <= 0n) continue;
       const key = `${input.idempotencyKey}:${payment.id}`;
       const ledgerTransactionId = await this.ledger.post(tx, {
-        type: 'REFUND', bookingId: input.bookingId, idempotencyKey: `refund:${key}`, memo: input.reasonCode, createdBy: input.requestedBy,
+        type: 'REFUND',
+        bookingId: input.bookingId,
+        idempotencyKey: `refund:${key}`,
+        memo: input.reasonCode,
+        createdBy: input.requestedBy,
         lines: [
           { account: 'CUSTOMER_COMPENSATION', direction: 'DEBIT', amountPaisa: amount },
           { account: 'GATEWAY_CLEARING', direction: 'CREDIT', amountPaisa: amount }
@@ -290,7 +308,9 @@ export class PaymentsService {
       const refundId = refunds[0]?.id;
       if (refundId === undefined) throw new Error('Refund insert did not return a row');
       const fully = payment.refundedPaisa + amount >= payment.amountPaisa;
-      await tx.$executeRaw(Prisma.sql`UPDATE payments SET refunded_paisa = refunded_paisa + ${amount}, status = ${fully ? 'REFUNDED' : 'PARTIALLY_REFUNDED'}::payment_status WHERE id = ${payment.id}::uuid`);
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE payments SET refunded_paisa = refunded_paisa + ${amount}, status = ${fully ? 'REFUNDED' : 'PARTIALLY_REFUNDED'}::payment_status WHERE id = ${payment.id}::uuid`
+      );
       await appendOutboxEvent(tx, { aggregate: 'refund', aggregateId: refundId, type: 'refund.queued', payload: { refundId, bookingId: input.bookingId, amountPaisa: amount.toString() } });
       created.push(refundId);
       remaining -= amount;

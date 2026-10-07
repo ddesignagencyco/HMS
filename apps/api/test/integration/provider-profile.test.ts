@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Prisma } from '@prisma/client';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { adminSession, callApi, createTestApp, deleteWith, patchJson, postJson, putJson, registerAndVerify } from './harness.js';
+import { PrismaService } from '../../src/database/prisma.service.js';
+import { adminSession, callApi, createTestApp, deleteWith, patchJson, postJson, putJson, registerAndVerify, verifyCnicFor } from './harness.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -170,8 +172,9 @@ describe('FR-SP-08: provider service areas', () => {
 const asAdmin = (init: RequestInit = {}): RequestInit => ({ ...init, headers: { ...init.headers, authorization: `Bearer ${admin.accessToken}` } });
 
 describe('FR-AD-02: provider approval', () => {
-  it('lets an admin approve a pending provider', async () => {
+  it('lets an admin approve a pending provider once their CNIC is verified', async () => {
     const provider = await registerAndVerify(app, 'PROVIDER');
+    await verifyCnicFor(app, provider);
     const approved = await callApi<{ status: string; approvedAt: string | null }>(app, `/admin/providers/${provider.id}/approve`, asAdmin({ method: 'POST' }));
     expect(approved.status).toBe(200);
     expect(approved.body.status).toBe('APPROVED');
@@ -179,6 +182,26 @@ describe('FR-AD-02: provider approval', () => {
 
     const profile = await callApi<{ status: string }>(app, '/provider/profile', asProvider(provider.accessToken));
     expect(profile.body.status).toBe('APPROVED');
+
+    const prisma = app.get(PrismaService);
+    const wallet = await prisma.$queryRaw<{ c: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as c FROM ledger_accounts WHERE type = 'PROVIDER_WALLET' AND owner_user_id = ${provider.id}::uuid`);
+    expect(wallet[0]!.c).toBe(1n);
+    const audited = await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM audit_log WHERE entity_type = 'provider' AND entity_id = ${provider.id} AND action = 'provider.approval'`);
+    expect(audited[0]!.n).toBe(1n);
+  });
+
+  it('refuses to approve a provider whose CNIC is not yet verified', async () => {
+    const provider = await registerAndVerify(app, 'PROVIDER');
+    const response = await callApi<{ code: string; detail: string }>(app, `/admin/providers/${provider.id}/approve`, asAdmin({ method: 'POST' }));
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('CONFLICT');
+    expect(response.body.detail).toContain('CNIC');
+
+    const prisma = app.get(PrismaService);
+    const unapproved = await prisma.$queryRaw<{ status: string }[]>(Prisma.sql`SELECT status FROM providers WHERE user_id = ${provider.id}::uuid`);
+    expect(unapproved[0]!.status).not.toBe('APPROVED');
+    const wallet = await prisma.$queryRaw<{ c: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as c FROM ledger_accounts WHERE type = 'PROVIDER_WALLET' AND owner_user_id = ${provider.id}::uuid`);
+    expect(wallet[0]!.c).toBe(0n);
   });
 
   it('lets an admin reject a provider with a reason', async () => {

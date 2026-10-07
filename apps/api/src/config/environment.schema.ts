@@ -1,10 +1,13 @@
 import { z } from 'zod';
 
-const booleanFromEnv = z
-  .enum(['true', 'false', '1', '0'])
-  .transform(value => value === 'true' || value === '1');
+const booleanFromEnv = z.enum(['true', 'false', '1', '0']).transform((value) => value === 'true' || value === '1');
 
-const csv = z.string().transform(value => value.split(',').map(part => part.trim()).filter(Boolean));
+const csv = z.string().transform((value) =>
+  value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+);
 
 export const environmentSchema = z
   .object({
@@ -25,32 +28,35 @@ export const environmentSchema = z
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
     CSRF_SECRET: z.string().min(32, 'CSRF_SECRET must be at least 32 characters'),
     OTP_PEPPER: z.string().min(32, 'OTP_PEPPER must be at least 32 characters'),
-    TOTP_ENCRYPTION_KEY: z
-      .string()
-      .refine(value => {
-        try {
-          return Buffer.from(value, 'base64').length === 32;
-        } catch {
-          return false;
-        }
-      }, 'TOTP_ENCRYPTION_KEY must be a base64 encoded 32 byte key'),
+    TOTP_ENCRYPTION_KEY: z.string().refine((value) => {
+      try {
+        return Buffer.from(value, 'base64').length === 32;
+      } catch {
+        return false;
+      }
+    }, 'TOTP_ENCRYPTION_KEY must be a base64 encoded 32 byte key'),
     /**
      * A provider's CNIC is government identity data, so it gets its own key
      * rather than sharing TOTP's. Keys are separated per purpose so one being
      * rotated or leaked does not expose the other.
      */
-    CNIC_ENCRYPTION_KEY: z
-      .string()
-      .refine(value => {
-        try {
-          return Buffer.from(value, 'base64').length === 32;
-        } catch {
-          return false;
-        }
-      }, 'CNIC_ENCRYPTION_KEY must be a base64 encoded 32 byte key'),
+    CNIC_ENCRYPTION_KEY: z.string().refine((value) => {
+      try {
+        return Buffer.from(value, 'base64').length === 32;
+      } catch {
+        return false;
+      }
+    }, 'CNIC_ENCRYPTION_KEY must be a base64 encoded 32 byte key'),
 
-    /** Where customers open links we text them (the verification link). */
-    PUBLIC_BASE_URL: z.string().url().default('http://localhost:3000'),
+    /**
+     * The origin of the **web app**, not of this API — every URL built from it is
+     * one a customer opens in a browser: the verification link they are texted,
+     * the problem-report link on their receipt, and the gateway's payment return
+     * URL. Pointing it at the API's own port produces links that render Swagger or
+     * 404, so it is a separate value from PORT on purpose, and it must be set per
+     * deployment rather than assumed.
+     */
+    PUBLIC_BASE_URL: z.string().url().default('http://localhost:3001'),
     CORS_ORIGINS: csv.default('http://localhost:3000'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
@@ -65,7 +71,14 @@ export const environmentSchema = z
 
     STORAGE_BUCKETS: csv.default('evidence,documents,recordings,reports'),
 
-    DEV_INBOX_ENABLED: booleanFromEnv.default('true'),
+    // Opt-in, not opt-out. This flag opens `/dev/inbox`, which serves every OTP the
+    // system has ever sent, and `/dev/payments/{id}/complete`, which can capture an
+    // arbitrary payment. Both were reachable with no token and no configuration in any
+    // deployment whose NODE_ENV was not literally `production` -- staging, a preview
+    // environment, a demo box. The production guard below is not enough on its own,
+    // because "not production" is exactly the case that leaks. So it has to be asked
+    // for by name. CI sets it explicitly; `.env.example` does too.
+    DEV_INBOX_ENABLED: booleanFromEnv.default('false'),
     OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(1_000)
   })
   .superRefine((value, context) => {
@@ -81,6 +94,19 @@ export const environmentSchema = z
       if (value[key] !== 'mock') add(key, `Only the mock adapter is wired in this increment; ${key} must be "mock"`);
     }
     if (value.STORAGE_BUCKETS.length === 0) add('STORAGE_BUCKETS', 'At least one storage bucket is required');
+
+    // The dev inbox is the single most dangerous flag in the system: `/dev/inbox`
+    // serves every OTP the platform has sent, unauthenticated, and
+    // `/dev/payments/{id}/complete` captures an arbitrary payment. It now defaults to
+    // off, which is the actual fix -- `NODE_ENV` has only three legal values, so a
+    // preview or demo box that sets `development` or `test` (as those usually do) used
+    // to get the inbox live without anyone asking for it. On top of that it is refused
+    // unless the environment is explicitly `development` or `test`, so enabling it
+    // anywhere else fails the boot instead of quietly serving every customer's
+    // one-time code to whoever asks.
+    if (value.DEV_INBOX_ENABLED && value.NODE_ENV !== 'development' && value.NODE_ENV !== 'test') {
+      add('DEV_INBOX_ENABLED', `The development inbox may only be enabled when NODE_ENV is "development" or "test" (this is "${value.NODE_ENV}"). It exposes every OTP the platform has sent.`);
+    }
   });
 
 export type Environment = z.infer<typeof environmentSchema>;
@@ -88,7 +114,7 @@ export type Environment = z.infer<typeof environmentSchema>;
 export const parseEnvironment = (source: NodeJS.ProcessEnv): Environment => {
   const result = environmentSchema.safeParse(source);
   if (result.success) return result.data;
-  throw new EnvironmentValidationError(result.error.issues.map(issue => ({ path: issue.path.join('.'), message: issue.message })));
+  throw new EnvironmentValidationError(result.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })));
 };
 
 export type EnvironmentIssue = { path: string; message: string };
@@ -97,7 +123,7 @@ export class EnvironmentValidationError extends Error {
   readonly issues: readonly EnvironmentIssue[];
 
   constructor(issues: readonly EnvironmentIssue[]) {
-    super(`Invalid environment:\n${issues.map(issue => `  - ${issue.path}: ${issue.message}`).join('\n')}`);
+    super(`Invalid environment:\n${issues.map((issue) => `  - ${issue.path}: ${issue.message}`).join('\n')}`);
     this.name = 'EnvironmentValidationError';
     this.issues = issues;
   }

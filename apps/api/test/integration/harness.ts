@@ -160,6 +160,31 @@ export const SEEDED_ADMIN = { identifier: 'admin@smart-home.local', password: 'D
 const BASE_LAT = 31.5204;
 const BASE_LNG = 74.3587;
 
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/**
+ * SHM-023: approval now requires a VERIFIED CNIC, so the shared provider factory has
+ * to walk the real document flow once (submit a CNIC front, admin verifies it) before
+ * the provider can be approved. Each call mints a fresh CNIC like the documents suite
+ * does, because `cnic_hash` is unique across all providers and the database is not
+ * reset between runs.
+ */
+let cnicSequence = 0;
+const uniqueCnic = (): string => {
+  cnicSequence += 1;
+  const middle = `${cnicSequence}${Math.floor(Math.random() * 900_000)}`.padStart(7, '0').slice(0, 7);
+  return `35202-${middle}-${(cnicSequence % 9) + 1}`;
+};
+
+/** Submits a CNIC front as the provider and has the seeded admin verify it. */
+export const verifyCnicFor = async (app: NestExpressApplication, provider: TestUser): Promise<void> => {
+  const admin = await adminSession(app);
+  const submitted = await callApi<{ id: string }>(app, '/provider/documents', postJson({ docType: 'CNIC_FRONT', contentType: 'image/png', contentBase64: PNG_BASE64, cnicNumber: uniqueCnic() }, provider.accessToken));
+  if (submitted.status !== 201) throw new Error(`document submit failed: ${submitted.status} ${JSON.stringify(submitted.body)}`);
+  const reviewed = await callApi(app, `/admin/documents/${submitted.body.id}/review`, postJson({ status: 'VERIFIED', note: 'Identity check passed (test)' }, admin.accessToken));
+  if (reviewed.status !== 200) throw new Error(`document review failed: ${reviewed.status} ${JSON.stringify(reviewed.body)}`);
+};
+
 /**
  * A provider fully set up and approved to offer leak-repair, with a weekly
  * availability block covering the requested window and no service-area
@@ -191,6 +216,7 @@ export const readyBookableProvider = async (
   await callApi(app, `/provider/services/${service.body.id}`, putJson({ pricePaisa: service.body.minPricePaisa }, provider.accessToken));
   const adminAuth = (init: RequestInit = {}): RequestInit => ({ ...init, headers: { ...init.headers, authorization: `Bearer ${admin.accessToken}` } });
   await callApi(app, `/admin/provider-services/${provider.id}/${service.body.id}/approve`, adminAuth({ method: 'POST' }));
+  await verifyCnicFor(app, provider);
   await callApi(app, `/admin/providers/${provider.id}/approve`, adminAuth({ method: 'POST' }));
 
   return { provider, serviceId: service.body.id, areaId, minPricePaisa: service.body.minPricePaisa };

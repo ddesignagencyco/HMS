@@ -615,6 +615,15 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/api/v1/auth/session",
+      "operationId": "AuthController_session",
+      "summary": "Ask whether there is a session, without failing when there is not",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
       "method": "DELETE",
       "path": "/api/v1/auth/totp",
       "operationId": "AuthController_totpDisable",
@@ -691,6 +700,15 @@
       "path": "/api/v1/bookings/{id}/cash-received",
       "operationId": "BookingController_cashReceived",
       "summary": "Confirm the customer paid cash",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/checklist",
+      "operationId": "BookingController_listChecklist",
+      "summary": "Read the service’s checklist for this booking",
       "tags": [
         "booking"
       ]
@@ -826,6 +844,15 @@
       "path": "/api/v1/bookings/{id}/revisions/reject",
       "operationId": "BookingController_rejectRevision",
       "summary": "Reject the pending revised quote",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/service-address",
+      "operationId": "BookingController_serviceAddress",
+      "summary": "Where this job is",
       "tags": [
         "booking"
       ]
@@ -1024,6 +1051,15 @@
       "path": "/api/v1/dev/storage/{bucket}/{key}",
       "operationId": "DevController_storageObject",
       "summary": "Download a file from the mock file storage",
+      "tags": [
+        "development"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/dev/storage/{bucket}/{key}",
+      "operationId": "DevController_uploadObject",
+      "summary": "Upload a file to the mock file storage",
       "tags": [
         "development"
       ]

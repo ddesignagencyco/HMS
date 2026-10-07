@@ -2,9 +2,9 @@
      Produced by `npm run api:handoff --workspace @smart-home/api`, from the live application.
      Re-run it whenever an API is added or changed, and edit API_HANDOFF.md for the contracts. -->
 
-# API index — 175 operations
+# API index — 179 operations
 
-Generated 2026-10-06 from version `1.0.0`. Base path `api/v1`;
+Generated 2026-10-07 from version `1.0.0`. Base path `api/v1`;
 OpenAPI at `api/docs`. This table is the exhaustive list; `API_HANDOFF.md` adds the contracts you cannot
 infer from a path.
 
@@ -21,6 +21,7 @@ infer from a path.
 | `POST /api/v1/auth/password/reset` | PUBLIC | Reset your password |
 | `POST /api/v1/auth/refresh` | PUBLIC | Get a new access token |
 | `POST /api/v1/auth/register` | PUBLIC | Sign up for a new account |
+| `GET /api/v1/auth/session` | AUTHENTICATED | Ask whether there is a session, without failing when there is not |
 | `DELETE /api/v1/auth/totp` | AUTHENTICATED | Turn off two-factor authentication |
 | `POST /api/v1/auth/totp/setup` | AUTHENTICATED | Start setting up two-factor authentication |
 | `POST /api/v1/auth/totp/verify` | AUTHENTICATED | Confirm and turn on two-factor authentication |
@@ -64,6 +65,7 @@ infer from a path.
 | `POST /api/v1/bookings/{id}/accept` | AUTHENTICATED | Accept a booking request |
 | `POST /api/v1/bookings/{id}/cancel` | AUTHENTICATED | Cancel a scheduled booking |
 | `POST /api/v1/bookings/{id}/cash-received` | AUTHENTICATED | Confirm the customer paid cash |
+| `GET /api/v1/bookings/{id}/checklist` | AUTHENTICATED | Read the service’s checklist for this booking |
 | `POST /api/v1/bookings/{id}/checklist/{itemId}` | AUTHENTICATED | Mark a checklist item done |
 | `POST /api/v1/bookings/{id}/complete` | AUTHENTICATED | Mark the job complete |
 | `POST /api/v1/bookings/{id}/decline` | AUTHENTICATED | Decline a booking request |
@@ -79,6 +81,7 @@ infer from a path.
 | `POST /api/v1/bookings/{id}/revisions` | AUTHENTICATED | Raise a revised quote for extra work |
 | `POST /api/v1/bookings/{id}/revisions/approve` | AUTHENTICATED | Approve the pending revised quote |
 | `POST /api/v1/bookings/{id}/revisions/reject` | AUTHENTICATED | Reject the pending revised quote |
+| `GET /api/v1/bookings/{id}/service-address` | AUTHENTICATED | Where this job is |
 | `POST /api/v1/bookings/{id}/start` | AUTHENTICATED | Start the job with the customer’s code |
 | `POST /api/v1/bookings/{id}/warranty-claim` | AUTHENTICATED | Claim under warranty |
 | `POST /api/v1/bookings/checkout` | AUTHENTICATED | Check out a booking (alias of POST /bookings) |
@@ -293,6 +296,7 @@ infer from a path.
 | `GET /api/v1/dev/payments/{paymentId}` | AUTHENTICATED | Mock payment page (where the mock gateway redirects to) |
 | `POST /api/v1/dev/payments/{paymentId}/complete` | AUTHENTICATED | Complete a mock payment |
 | `GET /api/v1/dev/storage/{bucket}/{key}` | AUTHENTICATED | Download a file from the mock file storage |
+| `PUT /api/v1/dev/storage/{bucket}/{key}` | AUTHENTICATED | Upload a file to the mock file storage |
 
 ## Health & welcome
 

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { daySpan, earliestStart, generateSlots, instantFromWallTime, localDateOf, localMidnightOf } from '@smart-home/domain';
+import { daySpan, earliestStart, generateSlots, instantFromWallTime, localDateOf, localMidnightOf, paisaToNumber } from '@smart-home/domain';
 import { badRequest, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AppClock } from '../platform/app-clock.js';
@@ -8,9 +8,25 @@ import { ReputationService, type Reputation } from '../reputation/reputation.ser
 import { SettingsService } from '../platform/settings.service.js';
 import type { NextSlotsQuery, ProviderSearchQuery, SlotsQuery } from './search.schemas.js';
 
-export type ProviderSearchResultRow = { providerId: string; bio: string | null; experienceYears: number | null; qualification: string | null; pricePaisa: number; distanceM: number; ratingScore: number; ratingCount: number; badge: string | null };
+export type ProviderSearchResultRow = {
+  providerId: string;
+  bio: string | null;
+  experienceYears: number | null;
+  qualification: string | null;
+  pricePaisa: number;
+  distanceM: number;
+  /** Null when nobody has rated this provider yet — rank on it, do not render it as a rating. See `Reputation.score`. */
+  ratingScore: number | null;
+  ratingCount: number;
+  badge: string | null;
+};
 
-type ProviderSearchResultRowRaw = Omit<ProviderSearchResultRow, 'pricePaisa' | 'ratingScore' | 'ratingCount'> & { pricePaisa: bigint; ratingScoreHundredths: number; ratingCount: number; radiusM: number };
+type ProviderSearchResultRowRaw = Omit<ProviderSearchResultRow, 'pricePaisa' | 'ratingScore' | 'ratingCount'> & {
+  pricePaisa: bigint;
+  ratingScoreHundredths: number;
+  ratingCount: number;
+  radiusM: number;
+};
 
 export type ProviderDetailRow = {
   providerId: string;
@@ -62,7 +78,7 @@ export class SearchService {
    * 409 SLOT_TAKEN at checkout, never a double booking.
    */
   async listSlots(providerId: string, query: SlotsQuery): Promise<{ date: string; durationMin: number; items: { start: string; end: string }[] }> {
-    const [year, month, day] = query.date.split('-').map(part => Number.parseInt(part, 10)) as [number, number, number];
+    const [year, month, day] = query.date.split('-').map((part) => Number.parseInt(part, 10)) as [number, number, number];
     const dayStart = instantFromWallTime({ year, month, day, hour: 0, minute: 0 });
     if (Number.isNaN(dayStart.getTime()) || new Date(Date.UTC(year, month - 1, day)).getUTCDate() !== day) throw badRequest('date is not a real calendar day');
     const dayEnd = new Date(dayStart.getTime() + 24 * 3_600_000);
@@ -98,7 +114,7 @@ export class SearchService {
       bufferMin,
       earliest: await this.earliestBookableStart()
     });
-    return { date: query.date, durationMin: service.durationMin, items: slots.map(slot => ({ start: slot.start.toISOString(), end: slot.end.toISOString() })) };
+    return { date: query.date, durationMin: service.durationMin, items: slots.map((slot) => ({ start: slot.start.toISOString(), end: slot.end.toISOString() })) };
   }
 
   /**
@@ -140,8 +156,8 @@ export class SearchService {
           WHERE provider_id = ${providerId}::uuid AND slot && tstzrange(${now.toISOString()}::timestamptz, ${horizon.toISOString()}::timestamptz, '[)')
             AND status IN ('PENDING_PAYMENT','REQUESTED','ACCEPTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION')`
     );
-    const leave = blockers.filter(blocker => blocker.start.getTime() <= now.getTime() && blocker.end.getTime() > now.getTime());
-    const booked = blockers.filter(blocker => blocker.start.getTime() > now.getTime());
+    const leave = blockers.filter((blocker) => blocker.start.getTime() <= now.getTime() && blocker.end.getTime() > now.getTime());
+    const booked = blockers.filter((blocker) => blocker.start.getTime() > now.getTime());
 
     const found: { start: string; end: string }[] = [];
     for (let offset = 0; offset < days && found.length < query.limit; offset += 1) {
@@ -215,7 +231,10 @@ export class SearchService {
     raw.sort((left, right) => rank(right) - rank(left) || left.distanceM - right.distanceM);
     return raw.map(({ ratingScoreHundredths, radiusM, ...row }) => {
       void radiusM;
-      return { ...row, pricePaisa: Number(row.pricePaisa), ratingScore: ratingScoreHundredths / 100, ratingCount: row.ratingCount };
+      // Ranked above on the prior-pulled number; published as null when no rating
+      // exists, for the same reason as `Reputation.score` — a figure derived only
+      // from the prior is not something anybody has said about them.
+      return { ...row, pricePaisa: paisaToNumber(row.pricePaisa), ratingScore: row.ratingCount === 0 ? null : ratingScoreHundredths / 100, ratingCount: row.ratingCount };
     });
   }
 
@@ -237,6 +256,6 @@ export class SearchService {
       Prisma.sql`SELECT a.id as "areaId", a.name FROM provider_service_areas psa JOIN areas a ON a.id = psa.area_id WHERE psa.provider_id = ${providerId}::uuid ORDER BY a.name`
     );
 
-    return { ...profile, services: servicesRaw.map(row => ({ ...row, pricePaisa: Number(row.pricePaisa) })), areas, reputation: await this.reputation.reputation(this.prisma, providerId) };
+    return { ...profile, services: servicesRaw.map((row) => ({ ...row, pricePaisa: paisaToNumber(row.pricePaisa) })), areas, reputation: await this.reputation.reputation(this.prisma, providerId) };
   }
 }

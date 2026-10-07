@@ -57,7 +57,22 @@ export const notificationTemplates: readonly TemplateSeed[] = [
   t('payment.refunded', 'IN_APP', 'Refund processed', '{{amount}} was refunded to your original payment method.', '{{amount}} آپ کے ادائیگی طریقے پر واپس کر دی گئی ہے۔'),
   t('complaint.received', 'IN_APP', 'Complaint received', 'We received your complaint about booking {{bookingRef}} and will respond within the stated time.', 'ہمیں آپ کی شکایت مل گئی ہے اور ہم مقررہ وقت میں جواب دیں گے۔'),
   t('penalty.proposed', 'IN_APP', 'Penalty proposed', 'A breach was recorded against your account. You have 48 hours to reply.', 'آپ کے اکاؤنٹ پر جرم درج ہوا ہے۔ جواب دینے کے لیے 48 گھنٹے ہیں۔'),
-  t('payout.paid', 'IN_APP', 'Payout paid', '{{amount}} was paid to your bank account.', '{{amount}} آپ کے بینک اکاؤنٹ میں جمع کر دی گئی۔')
+  t('payout.paid', 'IN_APP', 'Payout paid', '{{amount}} was paid to your bank account.', '{{amount}} آپ کے بینک اکاؤنٹ میں جمع کر دی گئی۔'),
+  // -- planner rows for events that used to be silently dropped (each has a RULES entry in notification.service.ts)
+  t('booking.rescheduled', 'IN_APP', 'Booking rescheduled', 'Your booking {{bookingRef}} was rescheduled to {{slotLabel}}.', 'آپ کی بکنگ {{bookingRef}} {{slotLabel}} پر منتقل کر دی گئی۔'),
+  t('booking.started', 'IN_APP', 'Work started', '{{providerName}} has started work on your {{serviceName}} job ({{bookingRef}}).', '{{providerName}} نے آپ کے {{serviceName}} کام ({{bookingRef}}) پر کام شروع کر دیا ہے۔'),
+  t('booking.quote_approved', 'IN_APP', 'Revised quote approved', 'The customer approved your revised total for booking {{bookingRef}}. Work can continue.', 'گاہک نے بکنگ {{bookingRef}} کی نظرثانی شدہ رقم منظور کر لی۔ کام جاری رکھ سکتے ہیں۔'),
+  t('booking.quote_rejected', 'IN_APP', 'Revised quote declined', 'The customer did not approve the revised total for booking {{bookingRef}}.', 'گاہک نے بکنگ {{bookingRef}} کی نظرثانی شدہ رقم منظور نہیں کی۔'),
+  t('booking.payment_abandoned', 'IN_APP', 'Payment not completed', 'Your payment for booking {{bookingRef}} was not completed. Complete it to keep your slot.', 'بکنگ {{bookingRef}} کی ادائیگی مکمل نہیں ہوئی۔ اپنا ٹائم برقرار رکھنے کے لیے ادائیگی مکمل کریں۔'),
+  t('booking.visit_fee_charged', 'IN_APP', 'Visit fee charged', 'A visit fee was charged for booking {{bookingRef}}.', 'بکنگ {{bookingRef}} کے لیے وزٹ فیس وصول کی گئی۔'),
+  t('booking.customer_confirmed', 'IN_APP', 'Customer confirmed', 'The customer confirmed booking {{bookingRef}}. Payment is on its way.', 'گاہک نے بکنگ {{bookingRef}} کی تصدیق کر دی۔ ادائیگی راستے میں ہے۔'),
+  t('booking.cash_confirmed', 'IN_APP', 'Cash payment confirmed', 'The provider confirmed receiving your cash payment for booking {{bookingRef}}.', 'پروائیڈر نے بکنگ {{bookingRef}} کی نقد ادائیگی وصول کرنے کی تصدیق کی۔'),
+  t('booking.rework_needed', 'IN_APP', 'Rework required', 'Booking {{bookingRef}} was returned for rework. Please revisit the job.', 'بکنگ {{bookingRef}} دوبارہ کام کے لیے واپس کر دی گئی۔ براہ کرم کام دوبارہ کریں۔'),
+  t('booking.warranty_claim', 'IN_APP', 'Warranty claim', 'A warranty claim was raised for booking {{bookingRef}}.', 'بکنگ {{bookingRef}} کے لیے وارنٹی کا دعویٰ کیا گیا۔'),
+  t('admin.ledger_drift', 'IN_APP', 'Ledger drift', 'The ledger check found a discrepancy. Reconcile now.', 'لیجر چیک میں فرق ملا۔ ابھی ریکنسیلیشن کریں۔'),
+  t('admin.penalty_reply', 'IN_APP', 'Penalty reply', 'A provider replied to penalty {{penaltyId}}.', 'ایک پروائیڈر نے جرمانہ {{penaltyId}} کا جواب دیا۔'),
+  t('admin.dispute_reply', 'IN_APP', 'Dispute reply', 'A provider replied to the dispute on booking {{bookingRef}}.', 'ایک پروائیڈر نے بکنگ {{bookingRef}} کے تنازع کا جواب دیا۔'),
+  t('admin.provider_review_required', 'IN_APP', 'Provider review required', 'Provider {{providerId}} needs review ({{reason}}).', 'پروائیڈر {{providerId}} کا جائزہ درکار ہے ({{reason}})۔')
 ];
 
 export const seedNotificationTemplates = async (): Promise<void> => {

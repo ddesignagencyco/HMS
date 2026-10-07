@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { paisaToNumber } from '@smart-home/domain';
 import { badRequest, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
 import type { ProviderServiceListQuery } from './catalogue.schemas.js';
@@ -8,7 +9,7 @@ export type ProviderServiceRow = { providerId: string; serviceId: number; servic
 
 type ProviderServiceRowRaw = Omit<ProviderServiceRow, 'pricePaisa'> & { pricePaisa: bigint };
 
-const toRow = (raw: ProviderServiceRowRaw): ProviderServiceRow => ({ ...raw, pricePaisa: Number(raw.pricePaisa) });
+const toRow = (raw: ProviderServiceRowRaw): ProviderServiceRow => ({ ...raw, pricePaisa: paisaToNumber(raw.pricePaisa) });
 
 const ROW_COLUMNS = Prisma.sql`ps.provider_id as "providerId", ps.service_id as "serviceId", s.slug as "serviceSlug", s.name_en as "serviceNameEn", ps.price_paisa as "pricePaisa", ps.status, ps.created_at as "createdAt"`;
 
@@ -29,7 +30,7 @@ export class ProviderServicesService {
     );
     const service = services[0];
     if (service === undefined) throw notFound('Service');
-    if (pricePaisa < Number(service.minPricePaisa) || pricePaisa > Number(service.maxPricePaisa)) {
+    if (pricePaisa < paisaToNumber(service.minPricePaisa) || pricePaisa > paisaToNumber(service.maxPricePaisa)) {
       throw badRequest(`pricePaisa must be between ${service.minPricePaisa} and ${service.maxPricePaisa} for this service`);
     }
     const raw = await this.prisma.$queryRaw<ProviderServiceRowRaw[]>(

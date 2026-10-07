@@ -8,8 +8,14 @@ import { AuditService, appendOutboxEvent } from '../platform/audit.service.js';
 import { SettingsService } from '../platform/settings.service.js';
 
 export type Reputation = {
-  /** The published score on a 1–5 scale, rounded to two places (CL-17). Null until there is at least one rating and no prior. */
-  score: number;
+  /**
+   * The published score on a 1–5 scale, rounded to two places (CL-17). Null when
+   * nobody has rated this provider yet: the weighted mean always exists because
+   * of the prior, but a number derived purely from that prior is a ranking
+   * input, not something anybody has said about them, so it is not published as
+   * a rating. Rank with `score ?? rating.bayesian_prior`.
+   */
+  score: number | null;
   ratingCount: number;
   /** How many ratings fall in each whole-star bucket, 1 to 5. */
   distribution: Record<'1' | '2' | '3' | '4' | '5', number>;
@@ -27,7 +33,7 @@ const BADGES: readonly { badge: string; minJobs: number }[] = [
 /** The most recent ratings that count double-ish (SRS FR-RT-04: weighted toward the last 20 jobs). */
 const RECENT_WINDOW = 20;
 
-export const badgeFor = (verifiedJobs: number): string | null => BADGES.find(entry => verifiedJobs >= entry.minJobs)?.badge ?? null;
+export const badgeFor = (verifiedJobs: number): string | null => BADGES.find((entry) => verifiedJobs >= entry.minJobs)?.badge ?? null;
 
 /**
  * CL-17: a provider with two five-star ratings should not outrank one with two hundred at 4.8. The published score is a weighted mean
@@ -56,7 +62,7 @@ export class ReputationService {
 
   async reputation(client: Prisma.TransactionClient | PrismaService, providerId: string): Promise<Reputation> {
     const ratings = await client.$queryRaw<{ score: string }[]>(Prisma.sql`SELECT score::text FROM ratings WHERE provider_id = ${providerId}::uuid ORDER BY created_at DESC, id DESC`);
-    const hundredths = ratings.map(row => Math.round(Number(row.score) * 100));
+    const hundredths = ratings.map((row) => Math.round(Number(row.score) * 100));
     const prior = await this.settings.getNumber('rating.bayesian_prior');
     const priorWeight = await this.settings.getNumber('rating.bayesian_weight');
     const recentWeight = await this.settings.getNumber('rating.recent_weight');
@@ -67,7 +73,7 @@ export class ReputationService {
     const distribution: Reputation['distribution'] = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
     for (const value of hundredths) distribution[String(Math.min(5, Math.max(1, Math.round(value / 100)))) as keyof Reputation['distribution']] += 1;
     return {
-      score: weightedScoreHundredths(hundredths, prior, priorWeight, recentWeight) / 100,
+      score: hundredths.length === 0 ? null : weightedScoreHundredths(hundredths, prior, priorWeight, recentWeight) / 100,
       ratingCount: hundredths.length,
       distribution,
       verifiedJobs,
@@ -95,12 +101,16 @@ export class ReputationService {
 
   /** SRS §8.2 POOR_STREAK: three consecutive rated jobs each under 3.0. Proposed once per streak — the same three ratings never propose it twice. */
   private async proposePoorStreak(tx: Prisma.TransactionClient, providerId: string): Promise<void> {
-    const last = await tx.$queryRaw<{ score: string; createdAt: Date }[]>(Prisma.sql`SELECT score::text, created_at as "createdAt" FROM ratings WHERE provider_id = ${providerId}::uuid ORDER BY created_at DESC, id DESC LIMIT 3`);
-    if (last.length < 3 || last.some(row => Number(row.score) >= 3)) return;
+    const last = await tx.$queryRaw<{ score: string; createdAt: Date }[]>(
+      Prisma.sql`SELECT score::text, created_at as "createdAt" FROM ratings WHERE provider_id = ${providerId}::uuid ORDER BY created_at DESC, id DESC LIMIT 3`
+    );
+    if (last.length < 3 || last.some((row) => Number(row.score) >= 3)) return;
     const oldest = last[2]!.createdAt;
-    const existing = await tx.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM penalties WHERE provider_id = ${providerId}::uuid AND breach_code = 'POOR_STREAK' AND status <> 'WITHDRAWN' AND created_at >= ${oldest.toISOString()}::timestamptz`);
+    const existing = await tx.$queryRaw<{ n: bigint }[]>(
+      Prisma.sql`SELECT count(*)::bigint as n FROM penalties WHERE provider_id = ${providerId}::uuid AND breach_code = 'POOR_STREAK' AND status <> 'WITHDRAWN' AND created_at >= ${oldest.toISOString()}::timestamptz`
+    );
     if ((existing[0]?.n ?? 0n) > 0n) return;
-    await this.conduct.autoPropose(tx, { providerId, breachCode: 'POOR_STREAK', evidence: { scores: last.map(row => Number(row.score)) } });
+    await this.conduct.autoPropose(tx, { providerId, breachCode: 'POOR_STREAK', evidence: { scores: last.map((row) => Number(row.score)) } });
   }
 
   /**
@@ -114,11 +124,15 @@ export class ReputationService {
     );
     const mean = recent[0]?.avg == null ? null : Number(recent[0].avg);
     const count = ratingCount ?? Number(recent[0]?.n ?? 0n);
-    const open = await tx.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM provider_flags WHERE provider_id = ${providerId}::uuid AND kind = 'LOW_RATING' AND cleared_at IS NULL`);
+    const open = await tx.$queryRaw<{ n: bigint }[]>(
+      Prisma.sql`SELECT count(*)::bigint as n FROM provider_flags WHERE provider_id = ${providerId}::uuid AND kind = 'LOW_RATING' AND cleared_at IS NULL`
+    );
     const flagged = (open[0]?.n ?? 0n) > 0n;
     if (mean !== null && count >= 5 && mean <= poor) {
       if (!flagged) {
-        await tx.$executeRaw(Prisma.sql`INSERT INTO provider_flags(provider_id, kind, detail) VALUES (${providerId}::uuid, 'LOW_RATING'::flag_kind, ${JSON.stringify({ rollingAverage: mean, window: 10 })}::jsonb)`);
+        await tx.$executeRaw(
+          Prisma.sql`INSERT INTO provider_flags(provider_id, kind, detail) VALUES (${providerId}::uuid, 'LOW_RATING'::flag_kind, ${JSON.stringify({ rollingAverage: mean, window: 10 })}::jsonb)`
+        );
         await appendOutboxEvent(tx, { aggregate: 'provider', aggregateId: providerId, type: 'provider.review_required', payload: { providerId, reason: 'LOW_RATING', average: mean } });
       }
     } else if (flagged && mean !== null && mean > poor) {
@@ -133,31 +147,66 @@ export class ReputationService {
         FROM remarks m JOIN ratings r ON r.id = m.rating_id LEFT JOIN remark_replies rr ON rr.remark_id = m.id
         WHERE m.provider_id = ${providerId}::uuid AND m.is_published ORDER BY m.created_at DESC LIMIT ${limit}`
     );
-    return rows.map(row => ({ id: row.id, displayName: row.displayName, body: row.body, score: Number(row.score), createdAt: row.createdAt, reply: row.replyBody === null ? null : { body: row.replyBody, createdAt: row.repliedAt } }));
+    return rows.map((row) => ({
+      id: row.id,
+      displayName: row.displayName,
+      body: row.body,
+      score: Number(row.score),
+      createdAt: row.createdAt,
+      reply: row.replyBody === null ? null : { body: row.replyBody, createdAt: row.repliedAt }
+    }));
   }
 
   /** FR-SP-04 / FR-SP-05: a provider sees every rating they have received, and every remark including ones an admin has since unpublished. */
   async ownRatings(providerId: string) {
-    const rows = await this.prisma.$queryRaw<{ ratingId: string; score: string; quality: number; punctuality: number; conduct: number; cleanliness: number; createdAt: Date; remarkId: string | null; body: string | null; displayName: string | null; published: boolean | null; replyBody: string | null }[]>(
+    const rows = await this.prisma.$queryRaw<
+      {
+        ratingId: string;
+        score: string;
+        quality: number;
+        punctuality: number;
+        conduct: number;
+        cleanliness: number;
+        createdAt: Date;
+        remarkId: string | null;
+        body: string | null;
+        displayName: string | null;
+        published: boolean | null;
+        replyBody: string | null;
+      }[]
+    >(
       Prisma.sql`SELECT r.id as "ratingId", r.score::text as score, r.quality, r.punctuality, r.conduct, r.cleanliness, r.created_at as "createdAt", m.id as "remarkId", m.body, m.display_name as "displayName", m.is_published as published, rr.body as "replyBody"
         FROM ratings r LEFT JOIN remarks m ON m.rating_id = r.id LEFT JOIN remark_replies rr ON rr.remark_id = m.id WHERE r.provider_id = ${providerId}::uuid ORDER BY r.created_at DESC LIMIT 200`
     );
     return {
       reputation: await this.reputation(this.prisma, providerId),
-      items: rows.map(row => ({ ratingId: row.ratingId, score: Number(row.score), quality: row.quality, punctuality: row.punctuality, conduct: row.conduct, cleanliness: row.cleanliness, createdAt: row.createdAt, remark: row.remarkId === null ? null : { id: row.remarkId, body: row.body, displayName: row.displayName, published: row.published, reply: row.replyBody } }))
+      items: rows.map((row) => ({
+        ratingId: row.ratingId,
+        score: Number(row.score),
+        quality: row.quality,
+        punctuality: row.punctuality,
+        conduct: row.conduct,
+        cleanliness: row.cleanliness,
+        createdAt: row.createdAt,
+        remark: row.remarkId === null ? null : { id: row.remarkId, body: row.body, displayName: row.displayName, published: row.published, reply: row.replyBody }
+      }))
     };
   }
 
   /** FR-SP-12: one reply per published remark, never editable. The database allows only one and refuses any change. */
   async reply(providerId: string, remarkId: string, body: string) {
-    return this.prisma.$transaction(async tx => {
-      const remarks = await tx.$queryRaw<{ providerId: string; published: boolean }[]>(Prisma.sql`SELECT provider_id as "providerId", is_published as published FROM remarks WHERE id = ${remarkId}::uuid FOR UPDATE`);
+    return this.prisma.$transaction(async (tx) => {
+      const remarks = await tx.$queryRaw<{ providerId: string; published: boolean }[]>(
+        Prisma.sql`SELECT provider_id as "providerId", is_published as published FROM remarks WHERE id = ${remarkId}::uuid FOR UPDATE`
+      );
       const remark = remarks[0];
       if (remark === undefined || remark.providerId !== providerId) throw notFound('Remark');
       if (!remark.published) throw new DomainError('CONFLICT', 'That remark is no longer published, so it cannot be replied to');
       const existing = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM remark_replies WHERE remark_id = ${remarkId}::uuid`);
       if (existing[0] !== undefined) throw new DomainError('CONFLICT', 'You have already replied to this remark; a reply cannot be edited');
-      const rows = await tx.$queryRaw<{ id: string; createdAt: Date }[]>(Prisma.sql`INSERT INTO remark_replies(remark_id, provider_id, body) VALUES (${remarkId}::uuid, ${providerId}::uuid, ${body}) RETURNING id, created_at as "createdAt"`);
+      const rows = await tx.$queryRaw<{ id: string; createdAt: Date }[]>(
+        Prisma.sql`INSERT INTO remark_replies(remark_id, provider_id, body) VALUES (${remarkId}::uuid, ${providerId}::uuid, ${body}) RETURNING id, created_at as "createdAt"`
+      );
       return { id: rows[0]?.id, remarkId, body, createdAt: rows[0]?.createdAt };
     });
   }
@@ -166,21 +215,37 @@ export class ReputationService {
   async adminView(providerId: string) {
     const providers = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT user_id as id FROM providers WHERE user_id = ${providerId}::uuid`);
     if (providers[0] === undefined) throw notFound('Provider');
-    const rows = await this.prisma.$queryRaw<{ ratingId: string; bookingCode: string; score: string; createdAt: Date; remarkId: string | null; body: string | null; displayName: string | null; published: boolean | null; unpublishedReason: string | null }[]>(
+    const rows = await this.prisma.$queryRaw<
+      {
+        ratingId: string;
+        bookingCode: string;
+        score: string;
+        createdAt: Date;
+        remarkId: string | null;
+        body: string | null;
+        displayName: string | null;
+        published: boolean | null;
+        unpublishedReason: string | null;
+      }[]
+    >(
       Prisma.sql`SELECT r.id as "ratingId", b.code as "bookingCode", r.score::text as score, r.created_at as "createdAt", m.id as "remarkId", m.body, m.display_name as "displayName", m.is_published as published, m.unpublished_reason as "unpublishedReason"
         FROM ratings r JOIN bookings b ON b.id = r.booking_id LEFT JOIN remarks m ON m.rating_id = r.id WHERE r.provider_id = ${providerId}::uuid ORDER BY r.created_at DESC LIMIT 200`
     );
-    return { reputation: await this.reputation(this.prisma, providerId), items: rows.map(row => ({ ...row, score: Number(row.score) })) };
+    return { reputation: await this.reputation(this.prisma, providerId), items: rows.map((row) => ({ ...row, score: Number(row.score) })) };
   }
 
   /** An abusive remark is hidden from the public, but the rating stays in the score — removing the words must not move the number — and the removal is audited. */
   async unpublish(adminUserId: string, remarkId: string, reason: string) {
-    return this.prisma.$transaction(async tx => {
-      const rows = await tx.$queryRaw<{ providerId: string; published: boolean }[]>(Prisma.sql`SELECT provider_id as "providerId", is_published as published FROM remarks WHERE id = ${remarkId}::uuid FOR UPDATE`);
+    return this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ providerId: string; published: boolean }[]>(
+        Prisma.sql`SELECT provider_id as "providerId", is_published as published FROM remarks WHERE id = ${remarkId}::uuid FOR UPDATE`
+      );
       const remark = rows[0];
       if (remark === undefined) throw notFound('Remark');
       if (!remark.published) throw new DomainError('CONFLICT', 'That remark is already unpublished');
-      await tx.$executeRaw(Prisma.sql`UPDATE remarks SET is_published = false, unpublished_by = ${adminUserId}::uuid, unpublished_reason = ${reason}, unpublished_at = now() WHERE id = ${remarkId}::uuid`);
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE remarks SET is_published = false, unpublished_by = ${adminUserId}::uuid, unpublished_reason = ${reason}, unpublished_at = now() WHERE id = ${remarkId}::uuid`
+      );
       await this.audit.append({ actorUserId: adminUserId, actorRole: 'ADMIN', action: 'remark.unpublish', entityType: 'remark', entityId: remarkId, after: { reason } }, tx);
       return { id: remarkId, published: false };
     });
