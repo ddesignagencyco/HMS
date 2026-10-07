@@ -1,33 +1,39 @@
-"use client";
+'use client';
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
-import { Controller, useForm } from "react-hook-form";
-import { z } from "zod";
-import { Check, Copy, KeyRound, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
-import type { Dictionary } from "@/lib/dictionaries";
-import type { Locale } from "@/lib/utils";
-import { Button } from "@/components/ui";
-import { Card, PageHeader } from "@/components/ui";
-import { useSession } from "./session";
-import { totpCodeSchema } from "./schemas";
-import { SubmitButton } from "./auth-fields";
-import { TotpQrCode } from "./totp-qr";
-import { Notice } from "./auth-shell";
-import { OtpField } from "./otp-field";
-import { applyServerFieldErrors, authErrorMessage, toastError, toastSuccess } from "./auth-feedback";
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { Check, Copy, KeyRound, Loader2, ShieldCheck, ShieldOff } from 'lucide-react';
+import type { Dictionary } from '@/lib/dictionaries';
+import type { Locale } from '@/lib/utils';
+import { Button } from '@/components/ui';
+import { Card, PageHeader } from '@/components/ui';
+import { useSession } from './session';
+import { totpCodeSchema } from './schemas';
+import { SubmitButton } from './auth-fields';
+import { TotpQrCode } from './totp-qr';
+import { Notice } from './auth-shell';
+import { OtpField } from './otp-field';
+import { applyServerFieldErrors, authErrorMessage, toastError, toastSuccess } from './auth-feedback';
+import { ChangePasswordCard } from './change-password-form';
 
 /* Authenticated account security. Reuses the portal layout (WorkspaceShell +
-   RequireSession) — no auth-card image panel here. Implements only what the
-   backend supports: TOTP setup, verification and removal via
-   POST /auth/totp/setup, POST /auth/totp/verify and DELETE /auth/totp.
-   No password-change endpoint, no active-session management: the API
-   publishes neither, so the UI promises neither. The QR code is rendered
-   from the backend's own otpauthUri — never a mock. */
+   RequireSession) — no auth-card image panel here. Implements what the backend
+   supports: TOTP setup, verification and removal via POST /auth/totp/setup,
+   POST /auth/totp/verify and DELETE /auth/totp, plus a password change via
+   PATCH /me/password. The QR code is rendered from the backend's own otpauthUri —
+   never a mock.
+
+   The password change was missing from this screen, with a note saying no such
+   endpoint existed. It does now (me.controller.ts → me.service.ts), so the note
+   went and the form came. Active-session management is still not offered: a
+   password change revokes other sessions as a side effect, but the API publishes
+   no route that lists them, so there is nothing truthful to show. */
 
 const codeSchema = z.object({ code: totpCodeSchema });
 
-export function AccountSecurityView({ dict }: { locale: Locale; dict: Dictionary }) {
+export function AccountSecurityView({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const { user, status, totpPending, beginTotpSetup, confirmTotp, disableTotp } = useSession();
   const [secret, setSecret] = useState<{ secret: string; otpauthUri: string } | null>(null);
   const [starting, setStarting] = useState(false);
@@ -36,8 +42,8 @@ export function AccountSecurityView({ dict }: { locale: Locale; dict: Dictionary
 
   const form = useForm<z.infer<typeof codeSchema>>({
     resolver: zodResolver(codeSchema),
-    defaultValues: { code: "" },
-    mode: "onBlur",
+    defaultValues: { code: '' },
+    mode: 'onBlur'
   });
 
   const start = async () => {
@@ -70,7 +76,7 @@ export function AccountSecurityView({ dict }: { locale: Locale; dict: Dictionary
         return;
       }
       setSecret(null);
-      form.reset({ code: "" });
+      form.reset({ code: '' });
       toastSuccess(dict.auth.totpEnabledTitle);
     } catch (error) {
       applyServerFieldErrors(form, error);
@@ -90,7 +96,7 @@ export function AccountSecurityView({ dict }: { locale: Locale; dict: Dictionary
     }
   };
 
-  if (status === "loading") {
+  if (status === 'loading') {
     return (
       <div aria-busy="true" aria-live="polite" className="grid gap-4">
         <span className="skeleton h-9 w-64 rounded-[9px]" />
@@ -104,11 +110,7 @@ export function AccountSecurityView({ dict }: { locale: Locale; dict: Dictionary
 
   return (
     <div>
-      <PageHeader
-        eyebrow={dict.portal.customer}
-        title={dict.auth.accountSecurityTitle}
-        description={dict.auth.accountSecurityText}
-      />
+      <PageHeader eyebrow={dict.portal.customer} title={dict.auth.accountSecurityTitle} description={dict.auth.accountSecurityText} />
       <Card className="mt-6 p-5 sm:p-6">
         <h2 className="text-base font-semibold text-navy">{dict.auth.securityTwoFactorTitle}</h2>
         <p className="mt-1.5 text-sm leading-6 text-secondary">{dict.auth.securityTwoFactorText}</p>
@@ -146,10 +148,7 @@ export function AccountSecurityView({ dict }: { locale: Locale; dict: Dictionary
                 <summary className="cursor-pointer text-[13px] font-semibold text-secondary">{dict.auth.totpManualTitle}</summary>
                 <p className="mt-2 text-[13px] leading-6 text-secondary">{dict.auth.totpManualText}</p>
                 <div className="mt-2 flex items-stretch gap-2">
-                  <p
-                    dir="ltr"
-                    className="min-w-0 flex-1 select-all break-all rounded-[9px] border border-line bg-white p-3 text-start font-mono text-sm tracking-[0.12em] text-navy"
-                  >
+                  <p dir="ltr" className="min-w-0 flex-1 select-all break-all rounded-[9px] border border-line bg-white p-3 text-start font-mono text-sm tracking-[0.12em] text-navy">
                     {secret.secret}
                   </p>
                   <button
@@ -174,15 +173,7 @@ export function AccountSecurityView({ dict }: { locale: Locale; dict: Dictionary
               <Controller
                 control={form.control}
                 name="code"
-                render={({ field }) => (
-                  <OtpField
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    label={dict.auth.totpCode}
-                    error={form.formState.errors.code?.message}
-                  />
-                )}
+                render={({ field }) => <OtpField value={field.value} onChange={field.onChange} onBlur={field.onBlur} label={dict.auth.totpCode} error={form.formState.errors.code?.message} />}
               />
             </div>
 
@@ -192,6 +183,11 @@ export function AccountSecurityView({ dict }: { locale: Locale; dict: Dictionary
           </form>
         )}
       </Card>
+
+      {/* Below the two-factor card rather than inside it: a lost phone is recovered
+          with a password change, and someone who cannot see the TOTP section should
+          not have to find it to get to this one. */}
+      <ChangePasswordCard locale={locale} dict={dict} />
     </div>
   );
 }

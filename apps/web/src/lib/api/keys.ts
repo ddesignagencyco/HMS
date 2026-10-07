@@ -30,8 +30,11 @@ export const publicKeys = {
 } as const;
 
 export const accountKeys = {
+  all: ['account'] as const,
   /** The signed-in customer's saved addresses. Theirs alone; never shared. */
-  addresses: ['account', 'addresses'] as const
+  addresses: ['account', 'addresses'] as const,
+  /** `GET /me/favourites` — a CUSTOMER-only shortlist of approved providers. */
+  favourites: ['account', 'favourites'] as const
 } as const;
 
 /**

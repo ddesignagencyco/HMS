@@ -635,6 +635,10 @@ const reachPaymentForChosenProvider = async (routes: Routes = {}): Promise<{ sen
 };
 
 describe('a slot that is lost between listing and checkout', () => {
+  /* These two walk every step of the flow. They carry no per-test timeout of their
+     own: the budget is in `vitest.config.ts`, because on the 5s default they failed
+     only when the whole suite ran in parallel and this file took 80s instead of
+     35s — always on the longest test, never on the assertion. */
   it('sends the customer back to the time step with nothing preselected', async () => {
     await reachPaymentForChosenProvider({ slotTaken: true });
     fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.booking.confirm, 'i') }));
