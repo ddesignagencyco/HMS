@@ -2,7 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Prisma } from '@prisma/client';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { PrismaService } from '../../src/database/prisma.service.js';
-import { adminSession, callApi, createTestApp, deleteWith, patchJson, postJson, putJson, registerAndVerify, verifyCnicFor } from './harness.js';
+import { adminSession, callApi, createTestApp, deleteWith, loginAs, patchJson, postJson, putJson, registerAndVerify, verifyCnicFor } from './harness.js';
+
+const PASSWORD = 'CorrectHorse9Battery';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -69,6 +71,16 @@ describe('FR-SP-02/03: provider profile', () => {
     const response = await callApi<{ code: string }>(app, '/provider/profile', asProvider(customer.accessToken));
     expect(response.status).toBe(403);
     expect(response.body.code).toBe('FORBIDDEN');
+  });
+
+  it('lets a provider change their password and sign in with the new one', async () => {
+    const provider = await registerAndVerify(app, 'PROVIDER');
+    const changed = await callApi<{ changed: boolean }>(app, '/me/password', asProvider(provider.accessToken, patchJson({ currentPassword: PASSWORD, newPassword: 'BrandNewPass9' })));
+    expect(changed.status).toBe(200);
+    expect(changed.body.changed).toBe(true);
+
+    expect((await loginAs(app, provider.phoneE164, PASSWORD)).status).toBe(401);
+    expect((await loginAs(app, provider.phoneE164, 'BrandNewPass9')).status).toBe(201);
   });
 });
 
@@ -204,12 +216,19 @@ describe('FR-AD-02: provider approval', () => {
     expect(wallet[0]!.c).toBe(0n);
   });
 
-  it('lets an admin reject a provider with a reason', async () => {
+  it('lets an admin reject a provider with a reason and records who did it', async () => {
     const provider = await registerAndVerify(app, 'PROVIDER');
     const rejected = await callApi<{ status: string; rejectionReason: string | null }>(app, `/admin/providers/${provider.id}/reject`, asAdmin(postJson({ reason: 'Documents unclear' })));
     expect(rejected.status).toBe(200);
     expect(rejected.body.status).toBe('REJECTED');
     expect(rejected.body.rejectionReason).toBe('Documents unclear');
+
+    const prisma = app.get(PrismaService);
+    const audit = await prisma.$queryRaw<{ n: bigint; actor: string | null }[]>(
+      Prisma.sql`SELECT count(*)::bigint as n, max(actor_user_id::text) as actor FROM audit_log WHERE action = 'provider.rejection' AND entity_id = ${provider.id}`
+    );
+    expect(audit[0]!.n).toBe(1n);
+    expect(audit[0]!.actor).toBe(admin.userId);
   });
 
   it('rejects provider approval from a signed in customer', async () => {

@@ -168,5 +168,8 @@ describe('SHM-020: deactivate', () => {
 
     // Deactivating twice is a conflict rather than a second anonymisation.
     expect((await callApi(app, '/me/deactivate', bearer(customer.accessToken, { method: 'POST' }))).status).toBe(409);
+
+    // FR-CU-09: the old credentials no longer sign the account in.
+    expect((await loginAs(app, customer.phoneE164, PASSWORD)).status).toBe(401);
   });
 });

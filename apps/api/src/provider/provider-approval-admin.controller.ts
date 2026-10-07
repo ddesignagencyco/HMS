@@ -25,8 +25,8 @@ export class ProviderApprovalAdminController {
   @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
   @ApiOperation({ summary: 'Reject a provider', description: 'Admin only. Moves the provider to REJECTED with a reason the provider can be shown.' })
   @ApiZodBody(providerRejectSchema, { default: { summary: 'Rejection reason', value: { reason: 'Documents unclear' } } })
-  async reject(@Param('providerId', ParseUUIDPipe) providerId: string, @Body() body: unknown) {
+  async reject(@Param('providerId', ParseUUIDPipe) providerId: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     const { reason } = parseWith(providerRejectSchema, body);
-    return this.approvals.reject(providerId, reason);
+    return this.approvals.reject(providerId, reason, principal.userId);
   }
 }

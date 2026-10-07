@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { paisaToNumber } from '@smart-home/domain';
-import { badRequest, notFound } from '../common/domain-error.js';
+import { notFound, validationFailed } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { AuditService } from '../platform/audit.service.js';
 import type { ProviderServiceListQuery } from './catalogue.schemas.js';
 
 export type ProviderServiceRow = { providerId: string; serviceId: number; serviceSlug: string; serviceNameEn: string; pricePaisa: number; status: string; createdAt: Date };
@@ -15,7 +16,10 @@ const ROW_COLUMNS = Prisma.sql`ps.provider_id as "providerId", ps.service_id as 
 
 @Injectable()
 export class ProviderServicesService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly audit: AuditService
+  ) {}
 
   async listMine(providerId: string): Promise<ProviderServiceRow[]> {
     const raw = await this.prisma.$queryRaw<ProviderServiceRowRaw[]>(
@@ -31,7 +35,7 @@ export class ProviderServicesService {
     const service = services[0];
     if (service === undefined) throw notFound('Service');
     if (pricePaisa < paisaToNumber(service.minPricePaisa) || pricePaisa > paisaToNumber(service.maxPricePaisa)) {
-      throw badRequest(`pricePaisa must be between ${service.minPricePaisa} and ${service.maxPricePaisa} for this service`);
+      throw validationFailed([{ path: 'pricePaisa', code: 'out_of_band', message: `pricePaisa must be between ${service.minPricePaisa} and ${service.maxPricePaisa} for this service` }]);
     }
     const raw = await this.prisma.$queryRaw<ProviderServiceRowRaw[]>(
       Prisma.sql`INSERT INTO provider_services(provider_id, service_id, price_paisa, status)
@@ -59,7 +63,7 @@ export class ProviderServicesService {
     return raw.map(toRow);
   }
 
-  async setStatus(providerId: string, serviceId: number, status: 'APPROVED' | 'REJECTED'): Promise<ProviderServiceRow> {
+  async setStatus(providerId: string, serviceId: number, status: 'APPROVED' | 'REJECTED', actorUserId: string): Promise<ProviderServiceRow> {
     const raw = await this.prisma.$queryRaw<ProviderServiceRowRaw[]>(
       Prisma.sql`UPDATE provider_services ps SET status = ${status}::approval_status
         FROM services s
@@ -68,6 +72,7 @@ export class ProviderServicesService {
     );
     const row = raw[0];
     if (row === undefined) throw notFound('Provider service binding');
+    await this.audit.append({ actorUserId, actorRole: 'ADMIN', action: status === 'APPROVED' ? 'provider_service.approve' : 'provider_service.reject', entityType: 'provider_service', entityId: `${providerId}:${serviceId}`, after: { status } });
     return toRow(row);
   }
 }

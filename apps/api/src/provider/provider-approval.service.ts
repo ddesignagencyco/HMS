@@ -59,11 +59,18 @@ export class ProviderApprovalService {
     return row;
   }
 
-  async reject(providerId: string, reason: string): Promise<ProviderApprovalRow> {
-    const rows = await this.prisma.$queryRaw<ProviderApprovalRow[]>(
-      Prisma.sql`UPDATE providers SET status = 'REJECTED', rejection_reason = ${reason}, approved_at = NULL, approved_by = NULL
-        WHERE user_id = ${providerId}::uuid RETURNING ${APPROVAL_COLUMNS}`
-    );
+  async reject(providerId: string, reason: string, adminId: string): Promise<ProviderApprovalRow> {
+    const rows = await this.prisma.$transaction(async tx => {
+      const before = await tx.$queryRaw<{ status: string }[]>(Prisma.sql`SELECT status FROM providers WHERE user_id = ${providerId}::uuid FOR UPDATE`);
+      if (before.length === 0) throw notFound('Provider');
+      const updated = await tx.$queryRaw<ProviderApprovalRow[]>(
+        Prisma.sql`UPDATE providers SET status = 'REJECTED', rejection_reason = ${reason}, approved_at = NULL, approved_by = NULL
+          WHERE user_id = ${providerId}::uuid RETURNING ${APPROVAL_COLUMNS}`
+      );
+      if (updated[0] === undefined) throw new Error('Provider rejection returned no row');
+      await this.audit.append({ actorUserId: adminId, actorRole: 'ADMIN', action: 'provider.rejection', entityType: 'provider', entityId: providerId, before: { status: before[0]?.status }, after: { status: 'REJECTED', rejectionReason: reason } }, tx);
+      return updated;
+    });
     const row = rows[0];
     if (row === undefined) throw notFound('Provider');
     return row;
