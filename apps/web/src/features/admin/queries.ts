@@ -157,7 +157,14 @@ export const useRemoveStaffConflict = (locale: Locale) => usePrivilegedAction((i
 
 export const useApproveProvider = (locale: Locale) => usePrivilegedAction((providerId: string) => adminApi.approveProvider(providerId, { locale }));
 
-export const useRejectProvider = (locale: Locale) => usePrivilegedAction((providerId: string) => adminApi.rejectProvider(providerId, { locale }));
+/**
+ * `POST /admin/providers/:providerId/reject`.
+ *
+ * Takes the reason as well as the id: `providerRejectSchema` requires a non-empty
+ * `reason`, and it is the text the professional is shown. An earlier version here
+ * passed only the id, which could only ever have produced a 422.
+ */
+export const useRejectProvider = (locale: Locale) => usePrivilegedAction((input: { providerId: string; reason: string }) => adminApi.rejectProvider(input.providerId, input.reason, { locale }));
 
 export const useBlockProvider = (locale: Locale) => usePrivilegedAction((providerId: string) => adminApi.blockProvider(providerId, { locale }));
 

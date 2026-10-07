@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AdminComplaints } from "@/features/portal/admin-workspace-views";
+import { AdminComplaints } from "@/features/admin/complaints-view";
 import { getDictionary } from "@/lib/dictionaries";
 import { isLocale } from "@/lib/utils";
 

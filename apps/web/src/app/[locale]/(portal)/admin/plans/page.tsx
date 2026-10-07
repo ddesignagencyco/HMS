@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AdminPlans } from "@/features/portal/admin-ops-views";
+import { AdminPlans } from "@/features/admin/gaps-view";
 import { getDictionary } from "@/lib/dictionaries";
 import { isLocale } from "@/lib/utils";
 

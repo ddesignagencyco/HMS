@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AdminAppeals } from "@/features/portal/admin-ops-views";
+import { AdminAppeals } from "@/features/admin/conduct-view";
 import { getDictionary } from "@/lib/dictionaries";
 import { isLocale } from "@/lib/utils";
 

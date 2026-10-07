@@ -196,8 +196,12 @@ export const adminApi = {
   approveProvider: (providerId: string, options?: AdminApiOptions) =>
     call<{ providerId: string; status: string }>(`/admin/providers/${encodeURIComponent(providerId)}/approve`, { method: 'POST' }, options),
 
-  rejectProvider: (providerId: string, options?: AdminApiOptions) =>
-    call<{ providerId: string; status: string }>(`/admin/providers/${encodeURIComponent(providerId)}/reject`, { method: 'POST' }, options),
+  /**
+   * `providerRejectSchema` requires a `reason`, and it is what the professional is
+   * shown — so it is a parameter here rather than an optional body field.
+   */
+  rejectProvider: (providerId: string, reason: string, options?: AdminApiOptions) =>
+    call<{ providerId: string; status: string }>(`/admin/providers/${encodeURIComponent(providerId)}/reject`, { method: 'POST', body: { reason } }, options),
 
   /** BLOCKED — stops new work. Distinct from a conduct penalty, which is separate. */
   blockProvider: (providerId: string, options?: AdminApiOptions) =>
