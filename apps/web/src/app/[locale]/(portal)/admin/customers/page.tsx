@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AdminCustomers } from "@/features/portal/admin-customers";
+import { AdminCustomers } from "@/features/admin/customers-view";
 import { getDictionary } from "@/lib/dictionaries";
 import { isLocale } from "@/lib/utils";
 

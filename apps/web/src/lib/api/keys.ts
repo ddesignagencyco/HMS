@@ -84,6 +84,27 @@ export const providerKeys = {
  * changes, and reading the chat marks the other side's messages as read, so it
  * is a mutation for the same reason.
  */
+/**
+ * The signed-in administrator's own view of the platform.
+ *
+ * Every route is ADMIN-guarded and identified by the access token, so like
+ * `providerKeys` nothing here is keyed on the id of the thing being administered —
+ * except where the id *is* the filter the admin chose. A users list filtered by
+ * `role=PROVIDER` is a different answer from the same route unfiltered, and
+ * serving one for the other would show an admin the wrong set of accounts after
+ * they typed a filter. Read-only reference data (roles) is keyed by nothing.
+ */
+export const adminKeys = {
+  all: ['admin'] as const,
+  users: (role?: string, status?: string, q?: string) => ['admin', 'users', role ?? 'all', status ?? 'all', q ?? ''] as const,
+  customers: (q?: string) => ['admin', 'customers', q ?? ''] as const,
+  roles: ['admin', 'roles'] as const,
+  staffConflicts: ['admin', 'staff-conflicts'] as const,
+  audit: (action?: string, entityType?: string, entityId?: string, from?: string, to?: string) =>
+    ['admin', 'audit', action ?? 'all', entityType ?? 'all', entityId ?? '', from ?? '', to ?? ''] as const,
+  providers: (status?: string, q?: string) => ['admin', 'providers', status ?? 'all', q ?? ''] as const
+} as const;
+
 export const bookingKeys = {
   all: ['account', 'bookings'] as const,
   list: (status?: BookingListStatus) => ['account', 'bookings', 'list', status ?? 'all'] as const,
