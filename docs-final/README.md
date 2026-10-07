@@ -28,7 +28,7 @@ genuinely-historical documents were still sitting in the old locations. Now ther
 | `SRS.md` | Software Requirements Specification, v2.1 | **Doc of record.** 145 functional requirement ids. |
 | `TRD.md` | Technical Requirements & Design — architecture, stack, module map, state machine, ledger, verification engine, API catalogue, security, testing, CI/CD, ADRs, risks | **Doc of record.** Has a §0 "Implementation status" section — read that first, since most of this document describes the target design, not what's built yet. |
 | `ERD.md` | Entity-relationship diagrams, by domain | **Doc of record.** Physical schema itself is `schema.sql`, this folder. |
-| `schema.sql` | Canonical PostgreSQL 16 + PostGIS schema: 72 tables, enums, constraints, triggers, views | **Doc of record. Source of truth for the data model.** `packages/db/migrations/0001_init.sql` must be exactly what the migrations build — CI enforces it (job `migration-fidelity`, via `db:check-schema`, which builds the schema twice and compares the resulting catalogues). Schema changes are **additive migrations**; never rewrite a migration that has already been applied. `packages/db/README.md` documents the edit workflow; `packages/contracts/test/enum-mirror.test.ts` imports this file directly. Edit this file first, then regenerate the migration. |
+| `schema.sql` | Canonical PostgreSQL 16 + PostGIS schema: 73 tables, enums, constraints, triggers, views | **Doc of record. Source of truth for the data model.** `packages/db/migrations/0001_init.sql` must be exactly what the migrations build — CI enforces it (job `migration-fidelity`, via `db:check-schema`, which builds the schema twice and compares the resulting catalogues). Schema changes are **additive migrations**; never rewrite a migration that has already been applied. `packages/db/README.md` documents the edit workflow; `packages/contracts/test/enum-mirror.test.ts` imports this file directly. Edit this file first, then regenerate the migration. |
 | `PROGRESS_TRACKER.md` | Live, ticket-by-ticket (`SHM-###`) build-progress tracker for both BE and FE | **Doc of record. Update this continuously as tickets move** — it's the most granular truth about what's actually done. |
 | `TASKS_BACKEND.md` | Backend task board, by phase and module, with SRS FR-id traceability | **Doc of record.** Coarser-grained than `PROGRESS_TRACKER.md`; if the two disagree, trust `PROGRESS_TRACKER.md`. Has a "Platform migration" section logging the Fastify→Express move and both consolidation passes, and an appendix reconciling every FR id across both SRS versions. |
 | `TASKS_FRONTEND.md` | Frontend task board, by phase, screen-by-screen against the SRS | **Doc of record.** No frontend code exists yet - this is 100% forward-looking. |
@@ -65,7 +65,7 @@ the wrong copy by accident. Contents:
   actually built).
 - **From the later, since-superseded set (`docs/`):** `TRD_Smart_Home_Maintenance.md`,
   `ERD_Smart_Home_Maintenance.md`, `schema.prisma` (a 50-model alternate design that was never
-  adopted — the schema actually running is the 72-table `schema.sql` in this folder),
+  adopted — the schema actually running is the 73-table `schema.sql` in this folder),
   `OPENCODE_BUILD_PROMPT.md`, `SRS_Smart_Home_Maintenance_Services.pdf` (SRS v2.0 — an
   *earlier* draft than `SRS.md`'s v2.1, despite "2.0 < 2.1" suggesting the opposite:
   `SRS.md` came later and added 15 requirements v2.0 never had), `BACKEND_CONTINUATION_REPORT.md`
