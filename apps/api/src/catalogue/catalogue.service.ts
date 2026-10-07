@@ -3,7 +3,13 @@ import { Prisma } from '@prisma/client';
 import { paisaToNumber } from '@smart-home/domain';
 import { conflict, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { RedisService } from '../database/redis.module.js';
 import type { CategoryCreateInput, CategoryUpdateInput, ChecklistReplaceInput, CommissionRuleCreateInput, CommissionRuleListQuery, IssueOptionsReplaceInput, ServiceCreateInput, ServiceUpdateInput } from './catalogue.schemas.js';
+
+/** Public catalogue reads change only when an admin edits the catalogue, so a short TTL plus write-invalidation keeps them off Postgres without serving stale data for long. */
+export const CATALOGUE_TTL_SECONDS = 300;
+const CATALOGUE_CACHE_PREFIX = 'catalogue:';
+const CATALOGUE_VERSION_KEY = 'catalogue:version';
 
 export type CategoryRow = { id: number; slug: string; nameEn: string; nameUr: string; sortOrder: number; defaultWarrantyDays: number; isActive: boolean };
 
@@ -85,10 +91,37 @@ const toServiceRow = (raw: ServiceRowRaw): ServiceRow => ({
 
 @Injectable()
 export class CatalogueService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RedisService) private readonly redis: RedisService
+  ) {}
+
+  /**
+   * Read-through cache for the public endpoints. The cache key carries a shared
+   * version so a single `incr` invalidates every entry at once, on every instance,
+   * without scanning keys — an admin write is rare, so throwing the whole namespace
+   * away is cheaper than tracking which slugs each write touched. Entries also carry
+   * a TTL, so a cache is never the only copy for long.
+   */
+  private async cached<T>(name: string, load: () => Promise<T>): Promise<T> {
+    const version = (await this.redis.client.get(CATALOGUE_VERSION_KEY)) ?? '0';
+    const key = `${CATALOGUE_CACHE_PREFIX}${version}:${name}`;
+    const hit = await this.redis.client.get(key);
+    if (hit !== null) return JSON.parse(hit) as T;
+    const value = await load();
+    await this.redis.client.set(key, JSON.stringify(value), 'EX', CATALOGUE_TTL_SECONDS);
+    return value;
+  }
+
+  /** Every admin write to the catalogue calls this, so the next public read on any instance reloads from Postgres. */
+  private async invalidateCatalogue(): Promise<void> {
+    await this.redis.client.incr(CATALOGUE_VERSION_KEY);
+  }
 
   async listActiveCategories(): Promise<CategoryRow[]> {
-    return this.prisma.$queryRaw<CategoryRow[]>(Prisma.sql`SELECT ${CATEGORY_COLUMNS} FROM categories WHERE is_active = true ORDER BY sort_order, slug`);
+    return this.cached('categories', () =>
+      this.prisma.$queryRaw<CategoryRow[]>(Prisma.sql`SELECT ${CATEGORY_COLUMNS} FROM categories WHERE is_active = true ORDER BY sort_order, slug`)
+    );
   }
 
   async createCategory(input: CategoryCreateInput): Promise<CategoryRow> {
@@ -101,6 +134,7 @@ export class CatalogueService {
     );
     const row = rows[0];
     if (row === undefined) throw new Error('Category insert did not return a row');
+    await this.invalidateCatalogue();
     return row;
   }
 
@@ -117,23 +151,28 @@ export class CatalogueService {
     );
     const row = rows[0];
     if (row === undefined) throw notFound('Category');
+    await this.invalidateCatalogue();
     return row;
   }
 
   async listActiveServicesInCategory(categorySlug: string): Promise<ServiceRow[]> {
-    const categories = await this.prisma.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM categories WHERE slug = ${categorySlug} AND is_active = true`);
-    const category = categories[0];
-    if (category === undefined) throw notFound('Category');
-    const raw = await this.prisma.$queryRaw<ServiceRowRaw[]>(Prisma.sql`SELECT ${SERVICE_COLUMNS} FROM services WHERE category_id = ${category.id} AND is_active = true ORDER BY name_en`);
-    return raw.map(toServiceRow);
+    return this.cached(`category-services:${categorySlug}`, async () => {
+      const categories = await this.prisma.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM categories WHERE slug = ${categorySlug} AND is_active = true`);
+      const category = categories[0];
+      if (category === undefined) throw notFound('Category');
+      const raw = await this.prisma.$queryRaw<ServiceRowRaw[]>(Prisma.sql`SELECT ${SERVICE_COLUMNS} FROM services WHERE category_id = ${category.id} AND is_active = true ORDER BY name_en`);
+      return raw.map(toServiceRow);
+    });
   }
 
   async getServiceDetailBySlug(slug: string): Promise<ServiceDetailRow> {
-    const raw = await this.prisma.$queryRaw<ServiceRowRaw[]>(Prisma.sql`SELECT ${SERVICE_COLUMNS} FROM services WHERE slug = ${slug} AND is_active = true`);
-    const row = raw[0];
-    if (row === undefined) throw notFound('Service');
-    const checklist = await this.prisma.$queryRaw<ChecklistItemRow[]>(Prisma.sql`SELECT ${CHECKLIST_COLUMNS} FROM service_checklist_items WHERE service_id = ${row.id} AND is_active = true ORDER BY position`);
-    return { ...toServiceRow(row), checklist, issueOptions: await this.listIssueOptions(row.id) };
+    return this.cached(`service:${slug}`, async () => {
+      const raw = await this.prisma.$queryRaw<ServiceRowRaw[]>(Prisma.sql`SELECT ${SERVICE_COLUMNS} FROM services WHERE slug = ${slug} AND is_active = true`);
+      const row = raw[0];
+      if (row === undefined) throw notFound('Service');
+      const checklist = await this.prisma.$queryRaw<ChecklistItemRow[]>(Prisma.sql`SELECT ${CHECKLIST_COLUMNS} FROM service_checklist_items WHERE service_id = ${row.id} AND is_active = true ORDER BY position`);
+      return { ...toServiceRow(row), checklist, issueOptions: await this.listIssueOptions(row.id) };
+    });
   }
 
   /** The service's common faults, in display order. Empty for a service with none. */
@@ -154,7 +193,7 @@ export class CatalogueService {
   async replaceIssueOptions(serviceId: number, items: IssueOptionsReplaceInput['items']): Promise<IssueOptionRow[]> {
     const slugs = items.map(item => item.slug);
     if (new Set(slugs).size !== slugs.length) throw conflict('Two issue options share the same slug');
-    return this.prisma.$transaction(async tx => {
+    const inserted = await this.prisma.$transaction(async tx => {
       const services = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM services WHERE id = ${serviceId}`);
       if (services.length === 0) throw notFound('Service');
       await tx.$executeRaw(Prisma.sql`DELETE FROM service_issue_options WHERE service_id = ${serviceId}`);
@@ -170,6 +209,8 @@ export class CatalogueService {
       }
       return inserted;
     });
+    await this.invalidateCatalogue();
+    return inserted;
   }
 
   async createService(input: ServiceCreateInput): Promise<ServiceRow> {
@@ -186,6 +227,7 @@ export class CatalogueService {
     );
     const row = raw[0];
     if (row === undefined) throw new Error('Service insert did not return a row');
+    await this.invalidateCatalogue();
     return toServiceRow(row);
   }
 
@@ -211,11 +253,12 @@ export class CatalogueService {
     );
     const row = raw[0];
     if (row === undefined) throw notFound('Service');
+    await this.invalidateCatalogue();
     return toServiceRow(row);
   }
 
   async replaceChecklist(serviceId: number, items: ChecklistReplaceInput['items']): Promise<ChecklistItemRow[]> {
-    return this.prisma.$transaction(async tx => {
+    const inserted = await this.prisma.$transaction(async tx => {
       const services = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM services WHERE id = ${serviceId}`);
       if (services.length === 0) throw notFound('Service');
       await tx.$executeRaw(Prisma.sql`DELETE FROM service_checklist_items WHERE service_id = ${serviceId}`);
@@ -231,6 +274,8 @@ export class CatalogueService {
       }
       return inserted;
     });
+    await this.invalidateCatalogue();
+    return inserted;
   }
 
   async listCommissionRules(filter: CommissionRuleListQuery): Promise<CommissionRuleRow[]> {
