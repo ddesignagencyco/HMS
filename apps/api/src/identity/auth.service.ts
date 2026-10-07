@@ -148,6 +148,9 @@ export class AuthService {
       throw new DomainError('INVALID_CREDENTIALS', GENERIC_CREDENTIALS_MESSAGE);
     }
     if (user.status === 'DEACTIVATED') throw new DomainError('FORBIDDEN', 'This account has been deactivated');
+    // SHM-024: an admin block sets status LOCKED and revokes the existing sessions;
+    // without this check a blocked account could simply sign back in.
+    if (user.status === 'LOCKED') throw new DomainError('FORBIDDEN', 'This account has been locked');
     const passwordOk = await verifyPassword(user.password_hash, input.password);
     if (!passwordOk) {
       await this.recordFailure(input.identifier, meta, config);
@@ -288,6 +291,9 @@ export class AuthService {
     const session = await this.sessions.start(userId, meta);
     const user = await this.loadUser(userId);
     if (user === null) throw new DomainError('UNAUTHENTICATED', 'The session could not be started');
+    // SHM-024: a blocked or deactivated account cannot open a fresh session, however
+    // it got here (login, an OTP verify, or a password reset).
+    if (user.status !== 'ACTIVE') throw new DomainError('FORBIDDEN', user.status === 'DEACTIVATED' ? 'This account has been deactivated' : 'This account has been locked');
     return this.issueFor(user, session, {
       roles: precomputed?.roles,
       totpVerified: precomputed?.totpVerified ?? false,

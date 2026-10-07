@@ -37,7 +37,6 @@
     "db:studio": "npm run db:studio --workspace @smart-home/db",
     "infra:up": "docker compose --env-file .env -f infra/docker-compose.yml up -d --wait",
     "infra:down": "docker compose --env-file .env -f infra/docker-compose.yml down -v",
-    "infra:objects": "docker compose --env-file .env -f infra/docker-compose.yml --profile objects up -d --wait",
     "infra:ps": "docker compose --env-file .env -f infra/docker-compose.yml ps"
   },
   "devDependencies": {

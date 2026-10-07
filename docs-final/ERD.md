@@ -4,7 +4,7 @@
 |---|---|
 | Version | 1.0 — relocated to `docs-final/` 2026-09-28, content unchanged; see `README.md` in this folder |
 | Physical schema | `schema.sql` (PostgreSQL 16 + PostGIS) — **the source of truth**, confirmed byte-identical to `packages/db/migrations/0001_init.sql` by CI; this document explains it |
-| Tables | 72 tables, 3 views, 52 enum types |
+| Tables | 73 tables, 3 views, 52 enum types |
 
 Diagrams are split by domain for readability (Mermaid renders on GitHub, GitLab, Cursor preview and most Markdown viewers). Only keys and the most significant columns are drawn; `schema.sql` has every column, type and constraint.
 

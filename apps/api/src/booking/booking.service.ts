@@ -1,7 +1,7 @@
 // apps/api/src/booking/booking.service.ts
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { canTransition, paisaToNumber, splitAtLocalMidnight, windowRefusal, type BookingEvent, type BookingStatus } from '@smart-home/domain';
+import { canTransition, paisaToNumber, resolveCommissionRateBp as selectCommissionRateBp, splitAtLocalMidnight, windowRefusal, type BookingEvent, type BookingStatus, type CommissionScope } from '@smart-home/domain';
 import { DomainError, badRequest, conflict, notFound } from '../common/domain-error.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -741,17 +741,17 @@ export class BookingService {
     return rows.map(toBookingReadRow);
   }
 
-  /** Provider-scoped rate wins, then category-scoped, then the platform GLOBAL default (always seeded). */
+  /** Provider-scoped rate wins, then category-scoped, then the platform GLOBAL default (always seeded). The precedence itself lives in `@smart-home/domain`; this only fetches the rules that are in force. */
   private async resolveCommissionRateBp(providerId: string | null, categoryId: number): Promise<number> {
-    const rows = await this.prisma.$queryRaw<{ rateBp: number; scope: string }[]>(
-      Prisma.sql`SELECT rate_bp as "rateBp", scope FROM commission_rules
+    const rows = await this.prisma.$queryRaw<{ rateBp: number; scope: CommissionScope; categoryId: number | null; providerId: string | null; effectiveFrom: Date }[]>(
+      Prisma.sql`SELECT rate_bp as "rateBp", scope::text as scope, category_id as "categoryId", provider_id as "providerId", effective_from as "effectiveFrom"
+        FROM commission_rules
         WHERE effective_from <= now() AND (effective_to IS NULL OR effective_to > now())
-          AND ((scope = 'PROVIDER' AND provider_id = ${providerId}::uuid AND ${providerId}::uuid IS NOT NULL) OR (scope = 'CATEGORY' AND category_id = ${categoryId}) OR scope = 'GLOBAL')
-        ORDER BY CASE scope WHEN 'PROVIDER' THEN 0 WHEN 'CATEGORY' THEN 1 ELSE 2 END
-        LIMIT 1`
+          AND ((scope = 'PROVIDER' AND provider_id = ${providerId}::uuid) OR (scope = 'CATEGORY' AND category_id = ${categoryId}) OR scope = 'GLOBAL')
+        ORDER BY effective_from DESC, created_at DESC`
     );
-    const rate = rows[0];
-    if (rate === undefined) throw new Error('No commission rule resolved — expected at least a GLOBAL default to be seeded');
-    return rate.rateBp;
+    const rate = selectCommissionRateBp(rows, { providerId, categoryId });
+    if (rate === null) throw new Error('No commission rule resolved — expected at least a GLOBAL default to be seeded');
+    return rate;
   }
 }

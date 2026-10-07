@@ -1,9 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { paisaToNumber } from '@smart-home/domain';
-import { conflict, notFound } from '../common/domain-error.js';
+import { conflict, notFound, validationFailed } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { RedisService } from '../database/redis.module.js';
+import { AuditService } from '../platform/audit.service.js';
 import type { CategoryCreateInput, CategoryUpdateInput, ChecklistReplaceInput, CommissionRuleCreateInput, CommissionRuleListQuery, IssueOptionsReplaceInput, ServiceCreateInput, ServiceUpdateInput } from './catalogue.schemas.js';
+
+/** Public catalogue reads change only when an admin edits the catalogue, so a short TTL plus write-invalidation keeps them off Postgres without serving stale data for long. */
+export const CATALOGUE_TTL_SECONDS = 300;
+const CATALOGUE_CACHE_PREFIX = 'catalogue:';
+const CATALOGUE_VERSION_KEY = 'catalogue:version';
 
 export type CategoryRow = { id: number; slug: string; nameEn: string; nameUr: string; sortOrder: number; defaultWarrantyDays: number; isActive: boolean };
 
@@ -85,13 +92,41 @@ const toServiceRow = (raw: ServiceRowRaw): ServiceRow => ({
 
 @Injectable()
 export class CatalogueService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RedisService) private readonly redis: RedisService,
+    @Inject(AuditService) private readonly audit: AuditService
+  ) {}
 
-  async listActiveCategories(): Promise<CategoryRow[]> {
-    return this.prisma.$queryRaw<CategoryRow[]>(Prisma.sql`SELECT ${CATEGORY_COLUMNS} FROM categories WHERE is_active = true ORDER BY sort_order, slug`);
+  /**
+   * Read-through cache for the public endpoints. The cache key carries a shared
+   * version so a single `incr` invalidates every entry at once, on every instance,
+   * without scanning keys — an admin write is rare, so throwing the whole namespace
+   * away is cheaper than tracking which slugs each write touched. Entries also carry
+   * a TTL, so a cache is never the only copy for long.
+   */
+  private async cached<T>(name: string, load: () => Promise<T>): Promise<T> {
+    const version = (await this.redis.client.get(CATALOGUE_VERSION_KEY)) ?? '0';
+    const key = `${CATALOGUE_CACHE_PREFIX}${version}:${name}`;
+    const hit = await this.redis.client.get(key);
+    if (hit !== null) return JSON.parse(hit) as T;
+    const value = await load();
+    await this.redis.client.set(key, JSON.stringify(value), 'EX', CATALOGUE_TTL_SECONDS);
+    return value;
   }
 
-  async createCategory(input: CategoryCreateInput): Promise<CategoryRow> {
+  /** Every admin write to the catalogue calls this, so the next public read on any instance reloads from Postgres. */
+  private async invalidateCatalogue(): Promise<void> {
+    await this.redis.client.incr(CATALOGUE_VERSION_KEY);
+  }
+
+  async listActiveCategories(): Promise<CategoryRow[]> {
+    return this.cached('categories', () =>
+      this.prisma.$queryRaw<CategoryRow[]>(Prisma.sql`SELECT ${CATEGORY_COLUMNS} FROM categories WHERE is_active = true ORDER BY sort_order, slug`)
+    );
+  }
+
+  async createCategory(input: CategoryCreateInput, actorUserId: string): Promise<CategoryRow> {
     const existing = await this.prisma.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM categories WHERE slug = ${input.slug}`);
     if (existing.length > 0) throw conflict(`A category with slug "${input.slug}" already exists`);
     const rows = await this.prisma.$queryRaw<CategoryRow[]>(
@@ -101,39 +136,52 @@ export class CatalogueService {
     );
     const row = rows[0];
     if (row === undefined) throw new Error('Category insert did not return a row');
+    await this.audit.append({ actorUserId, actorRole: 'ADMIN', action: 'catalogue.category.create', entityType: 'category', entityId: String(row.id), after: { slug: row.slug, nameEn: row.nameEn } });
+    await this.invalidateCatalogue();
     return row;
   }
 
-  async updateCategory(id: number, input: CategoryUpdateInput): Promise<CategoryRow> {
-    const rows = await this.prisma.$queryRaw<CategoryRow[]>(
-      Prisma.sql`UPDATE categories SET
-          name_en = COALESCE(${input.nameEn ?? null}, name_en),
-          name_ur = COALESCE(${input.nameUr ?? null}, name_ur),
-          sort_order = COALESCE(${input.sortOrder ?? null}, sort_order),
-          default_warranty_days = COALESCE(${input.defaultWarrantyDays ?? null}, default_warranty_days),
-          is_active = COALESCE(${input.isActive ?? null}, is_active)
-        WHERE id = ${id}
-        RETURNING ${CATEGORY_COLUMNS}`
-    );
-    const row = rows[0];
-    if (row === undefined) throw notFound('Category');
+  async updateCategory(id: number, input: CategoryUpdateInput, actorUserId: string): Promise<CategoryRow> {
+    const row = await this.prisma.$transaction(async tx => {
+      const before = await tx.$queryRaw<CategoryRow[]>(Prisma.sql`SELECT ${CATEGORY_COLUMNS} FROM categories WHERE id = ${id} FOR UPDATE`);
+      if (before[0] === undefined) throw notFound('Category');
+      const rows = await tx.$queryRaw<CategoryRow[]>(
+        Prisma.sql`UPDATE categories SET
+            name_en = COALESCE(${input.nameEn ?? null}, name_en),
+            name_ur = COALESCE(${input.nameUr ?? null}, name_ur),
+            sort_order = COALESCE(${input.sortOrder ?? null}, sort_order),
+            default_warranty_days = COALESCE(${input.defaultWarrantyDays ?? null}, default_warranty_days),
+            is_active = COALESCE(${input.isActive ?? null}, is_active)
+          WHERE id = ${id}
+          RETURNING ${CATEGORY_COLUMNS}`
+      );
+      const updated = rows[0];
+      if (updated === undefined) throw notFound('Category');
+      await this.audit.append({ actorUserId, actorRole: 'ADMIN', action: 'catalogue.category.update', entityType: 'category', entityId: String(id), before: before[0], after: updated }, tx);
+      return updated;
+    });
+    await this.invalidateCatalogue();
     return row;
   }
 
   async listActiveServicesInCategory(categorySlug: string): Promise<ServiceRow[]> {
-    const categories = await this.prisma.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM categories WHERE slug = ${categorySlug} AND is_active = true`);
-    const category = categories[0];
-    if (category === undefined) throw notFound('Category');
-    const raw = await this.prisma.$queryRaw<ServiceRowRaw[]>(Prisma.sql`SELECT ${SERVICE_COLUMNS} FROM services WHERE category_id = ${category.id} AND is_active = true ORDER BY name_en`);
-    return raw.map(toServiceRow);
+    return this.cached(`category-services:${categorySlug}`, async () => {
+      const categories = await this.prisma.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM categories WHERE slug = ${categorySlug} AND is_active = true`);
+      const category = categories[0];
+      if (category === undefined) throw notFound('Category');
+      const raw = await this.prisma.$queryRaw<ServiceRowRaw[]>(Prisma.sql`SELECT ${SERVICE_COLUMNS} FROM services WHERE category_id = ${category.id} AND is_active = true ORDER BY name_en`);
+      return raw.map(toServiceRow);
+    });
   }
 
   async getServiceDetailBySlug(slug: string): Promise<ServiceDetailRow> {
-    const raw = await this.prisma.$queryRaw<ServiceRowRaw[]>(Prisma.sql`SELECT ${SERVICE_COLUMNS} FROM services WHERE slug = ${slug} AND is_active = true`);
-    const row = raw[0];
-    if (row === undefined) throw notFound('Service');
-    const checklist = await this.prisma.$queryRaw<ChecklistItemRow[]>(Prisma.sql`SELECT ${CHECKLIST_COLUMNS} FROM service_checklist_items WHERE service_id = ${row.id} AND is_active = true ORDER BY position`);
-    return { ...toServiceRow(row), checklist, issueOptions: await this.listIssueOptions(row.id) };
+    return this.cached(`service:${slug}`, async () => {
+      const raw = await this.prisma.$queryRaw<ServiceRowRaw[]>(Prisma.sql`SELECT ${SERVICE_COLUMNS} FROM services WHERE slug = ${slug} AND is_active = true`);
+      const row = raw[0];
+      if (row === undefined) throw notFound('Service');
+      const checklist = await this.prisma.$queryRaw<ChecklistItemRow[]>(Prisma.sql`SELECT ${CHECKLIST_COLUMNS} FROM service_checklist_items WHERE service_id = ${row.id} AND is_active = true ORDER BY position`);
+      return { ...toServiceRow(row), checklist, issueOptions: await this.listIssueOptions(row.id) };
+    });
   }
 
   /** The service's common faults, in display order. Empty for a service with none. */
@@ -151,10 +199,10 @@ export class CatalogueService {
    * what happened -- but it does mean an old option id silently stops resolving, so
    * this is an admin action and not something a customer can trigger.
    */
-  async replaceIssueOptions(serviceId: number, items: IssueOptionsReplaceInput['items']): Promise<IssueOptionRow[]> {
+  async replaceIssueOptions(serviceId: number, items: IssueOptionsReplaceInput['items'], actorUserId: string): Promise<IssueOptionRow[]> {
     const slugs = items.map(item => item.slug);
     if (new Set(slugs).size !== slugs.length) throw conflict('Two issue options share the same slug');
-    return this.prisma.$transaction(async tx => {
+    const inserted = await this.prisma.$transaction(async tx => {
       const services = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM services WHERE id = ${serviceId}`);
       if (services.length === 0) throw notFound('Service');
       await tx.$executeRaw(Prisma.sql`DELETE FROM service_issue_options WHERE service_id = ${serviceId}`);
@@ -168,11 +216,14 @@ export class CatalogueService {
         const row = rows[0];
         if (row !== undefined) inserted.push(row);
       }
+      await this.audit.append({ actorUserId, actorRole: 'ADMIN', action: 'catalogue.issue_options.replace', entityType: 'service', entityId: String(serviceId), after: { count: inserted.length } }, tx);
       return inserted;
     });
+    await this.invalidateCatalogue();
+    return inserted;
   }
 
-  async createService(input: ServiceCreateInput): Promise<ServiceRow> {
+  async createService(input: ServiceCreateInput, actorUserId: string): Promise<ServiceRow> {
     const categories = await this.prisma.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM categories WHERE id = ${input.categoryId}`);
     if (categories.length === 0) throw notFound('Category');
     const existing = await this.prisma.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM services WHERE slug = ${input.slug}`);
@@ -186,36 +237,62 @@ export class CatalogueService {
     );
     const row = raw[0];
     if (row === undefined) throw new Error('Service insert did not return a row');
+    await this.audit.append({ actorUserId, actorRole: 'ADMIN', action: 'catalogue.service.create', entityType: 'service', entityId: String(row.id), after: { slug: row.slug, categoryId: row.categoryId } });
+    await this.invalidateCatalogue();
     return toServiceRow(row);
   }
 
-  async updateService(id: number, input: ServiceUpdateInput): Promise<ServiceRow> {
-    const raw = await this.prisma.$queryRaw<ServiceRowRaw[]>(
-      Prisma.sql`UPDATE services SET
-          name_en = COALESCE(${input.nameEn ?? null}, name_en),
-          name_ur = COALESCE(${input.nameUr ?? null}, name_ur),
-          description = COALESCE(${input.description ?? null}, description),
-          base_price_paisa = COALESCE(${input.basePricePaisa === undefined ? null : BigInt(input.basePricePaisa)}, base_price_paisa),
-          min_price_paisa = COALESCE(${input.minPricePaisa === undefined ? null : BigInt(input.minPricePaisa)}, min_price_paisa),
-          max_price_paisa = COALESCE(${input.maxPricePaisa === undefined ? null : BigInt(input.maxPricePaisa)}, max_price_paisa),
-          visit_fee_paisa = COALESCE(${input.visitFeePaisa === undefined ? null : BigInt(input.visitFeePaisa)}, visit_fee_paisa),
-          expected_duration_min = COALESCE(${input.expectedDurationMin ?? null}, expected_duration_min),
-          is_emergency_eligible = COALESCE(${input.isEmergencyEligible ?? null}, is_emergency_eligible),
-          is_plan_eligible = COALESCE(${input.isPlanEligible ?? null}, is_plan_eligible),
-          warranty_days = COALESCE(${input.warrantyDays ?? null}, warranty_days),
-          is_high_risk = COALESCE(${input.isHighRisk ?? null}, is_high_risk),
-          is_active = COALESCE(${input.isActive ?? null}, is_active),
-          updated_at = now()
-        WHERE id = ${id}
-        RETURNING ${SERVICE_COLUMNS}`
-    );
-    const row = raw[0];
-    if (row === undefined) throw notFound('Service');
+  /**
+   * FR-CAT-02: `minPricePaisa <= basePricePaisa <= maxPricePaisa` has to survive a
+   * partial update too. The create path can check this in the request schema, but a
+   * PATCH only carries some of the three, so the check has to run against the row
+   * after the merge — otherwise raising `minPricePaisa` above an unchanged base
+   * would quietly store an impossible band. The row is locked for the read so two
+   * concurrent patches cannot both validate against stale values.
+   */
+  async updateService(id: number, input: ServiceUpdateInput, actorUserId: string): Promise<ServiceRow> {
+    const row = await this.prisma.$transaction(async tx => {
+      const current = await tx.$queryRaw<{ basePricePaisa: bigint; minPricePaisa: bigint; maxPricePaisa: bigint }[]>(
+        Prisma.sql`SELECT base_price_paisa as "basePricePaisa", min_price_paisa as "minPricePaisa", max_price_paisa as "maxPricePaisa" FROM services WHERE id = ${id} FOR UPDATE`
+      );
+      const existing = current[0];
+      if (existing === undefined) throw notFound('Service');
+      const base = input.basePricePaisa ?? paisaToNumber(existing.basePricePaisa);
+      const min = input.minPricePaisa ?? paisaToNumber(existing.minPricePaisa);
+      const max = input.maxPricePaisa ?? paisaToNumber(existing.maxPricePaisa);
+      if (!(min <= base && base <= max)) {
+        throw validationFailed([{ path: 'basePricePaisa', code: 'inconsistent', message: 'minPricePaisa <= basePricePaisa <= maxPricePaisa must hold' }]);
+      }
+      const raw = await tx.$queryRaw<ServiceRowRaw[]>(
+        Prisma.sql`UPDATE services SET
+            name_en = COALESCE(${input.nameEn ?? null}, name_en),
+            name_ur = COALESCE(${input.nameUr ?? null}, name_ur),
+            description = COALESCE(${input.description ?? null}, description),
+            base_price_paisa = ${BigInt(base)},
+            min_price_paisa = ${BigInt(min)},
+            max_price_paisa = ${BigInt(max)},
+            visit_fee_paisa = COALESCE(${input.visitFeePaisa === undefined ? null : BigInt(input.visitFeePaisa)}, visit_fee_paisa),
+            expected_duration_min = COALESCE(${input.expectedDurationMin ?? null}, expected_duration_min),
+            is_emergency_eligible = COALESCE(${input.isEmergencyEligible ?? null}, is_emergency_eligible),
+            is_plan_eligible = COALESCE(${input.isPlanEligible ?? null}, is_plan_eligible),
+            warranty_days = COALESCE(${input.warrantyDays ?? null}, warranty_days),
+            is_high_risk = COALESCE(${input.isHighRisk ?? null}, is_high_risk),
+            is_active = COALESCE(${input.isActive ?? null}, is_active),
+            updated_at = now()
+          WHERE id = ${id}
+          RETURNING ${SERVICE_COLUMNS}`
+      );
+      const updated = raw[0];
+      if (updated === undefined) throw notFound('Service');
+      await this.audit.append({ actorUserId, actorRole: 'ADMIN', action: 'catalogue.service.update', entityType: 'service', entityId: String(id), before: { basePricePaisa: paisaToNumber(existing.basePricePaisa), minPricePaisa: paisaToNumber(existing.minPricePaisa), maxPricePaisa: paisaToNumber(existing.maxPricePaisa) }, after: { basePricePaisa: base, minPricePaisa: min, maxPricePaisa: max } }, tx);
+      return updated;
+    });
+    await this.invalidateCatalogue();
     return toServiceRow(row);
   }
 
-  async replaceChecklist(serviceId: number, items: ChecklistReplaceInput['items']): Promise<ChecklistItemRow[]> {
-    return this.prisma.$transaction(async tx => {
+  async replaceChecklist(serviceId: number, items: ChecklistReplaceInput['items'], actorUserId: string): Promise<ChecklistItemRow[]> {
+    const inserted = await this.prisma.$transaction(async tx => {
       const services = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM services WHERE id = ${serviceId}`);
       if (services.length === 0) throw notFound('Service');
       await tx.$executeRaw(Prisma.sql`DELETE FROM service_checklist_items WHERE service_id = ${serviceId}`);
@@ -229,8 +306,11 @@ export class CatalogueService {
         const row = rows[0];
         if (row !== undefined) inserted.push(row);
       }
+      await this.audit.append({ actorUserId, actorRole: 'ADMIN', action: 'catalogue.checklist.replace', entityType: 'service', entityId: String(serviceId), after: { count: inserted.length } }, tx);
       return inserted;
     });
+    await this.invalidateCatalogue();
+    return inserted;
   }
 
   async listCommissionRules(filter: CommissionRuleListQuery): Promise<CommissionRuleRow[]> {
@@ -260,13 +340,20 @@ export class CatalogueService {
     );
     const row = rows[0];
     if (row === undefined) throw new Error('Commission rule insert did not return a row');
+    await this.audit.append({ actorUserId, actorRole: 'ADMIN', action: 'catalogue.commission.create', entityType: 'commission_rule', entityId: row.id, after: { scope: row.scope, rateBp: row.rateBp, categoryId: row.categoryId, providerId: row.providerId } });
     return row;
   }
 
-  async endCommissionRule(id: string): Promise<CommissionRuleRow> {
-    const rows = await this.prisma.$queryRaw<CommissionRuleRow[]>(Prisma.sql`UPDATE commission_rules SET effective_to = now() WHERE id = ${id}::uuid RETURNING ${COMMISSION_COLUMNS}`);
-    const row = rows[0];
-    if (row === undefined) throw notFound('Commission rule');
+  async endCommissionRule(id: string, actorUserId: string): Promise<CommissionRuleRow> {
+    const row = await this.prisma.$transaction(async tx => {
+      const before = await tx.$queryRaw<CommissionRuleRow[]>(Prisma.sql`SELECT ${COMMISSION_COLUMNS} FROM commission_rules WHERE id = ${id}::uuid FOR UPDATE`);
+      if (before[0] === undefined) throw notFound('Commission rule');
+      const rows = await tx.$queryRaw<CommissionRuleRow[]>(Prisma.sql`UPDATE commission_rules SET effective_to = now() WHERE id = ${id}::uuid RETURNING ${COMMISSION_COLUMNS}`);
+      const updated = rows[0];
+      if (updated === undefined) throw notFound('Commission rule');
+      await this.audit.append({ actorUserId, actorRole: 'ADMIN', action: 'catalogue.commission.end', entityType: 'commission_rule', entityId: id, before: { effectiveTo: before[0].effectiveTo }, after: { effectiveTo: updated.effectiveTo } }, tx);
+      return updated;
+    });
     return row;
   }
 }

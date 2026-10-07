@@ -7,4 +7,5 @@ export * from './slots.js';
 export * from './tierRouting.js';
 export * from './verification.js';
 export * from './complaints.js';
+export * from './commission.js';
 export * from './conduct.js';
