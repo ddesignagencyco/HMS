@@ -8,34 +8,43 @@
 export type BookingActorRole = 'CUSTOMER' | 'PROVIDER' | 'SYSTEM';
 
 /**
- * The subset of the database's `booking_status` enum this package's
- * transition table covers. `ACCEPTED`, `PENDING_PAYMENT`, `ABANDONED` and
- * everything from `AWAITING_VERIFICATION` onward are real enum values the
- * database defines but this build doesn't drive yet (see the design doc,
- * "Out of scope").
+ * Every value of the database's `booking_status` enum, in the order the
+ * migration declares them. The type below is derived from this list rather than
+ * restated, so a filter built from one cannot silently omit a status the
+ * database knows about — a `?status=VERIFIED` that 422s because the API's
+ * hand-written enum is out of date is exactly that bug.
+ *
+ * Not every value is driven by the transition table below: `ACCEPTED`,
+ * `PENDING_PAYMENT`, `ABANDONED` and everything from `AWAITING_VERIFICATION`
+ * onward are real, and reachable, but not all of them are fired by this build
+ * (see the design doc, "Out of scope").
  */
-export type BookingStatus =
-  | 'PENDING_PAYMENT'
-  | 'ABANDONED'
-  | 'REQUESTED'
-  | 'SCHEDULED'
-  | 'EN_ROUTE'
-  | 'IN_PROGRESS'
-  | 'QUOTE_REVISION'
-  | 'WORK_COMPLETED'
-  | 'AWAITING_VERIFICATION'
-  | 'REWORK_REQUIRED'
-  | 'VERIFIED'
-  | 'AUTO_RELEASED'
-  | 'DISPUTED'
-  | 'PAYMENT_RELEASED'
-  | 'PARTIALLY_REFUNDED'
-  | 'REFUNDED'
-  | 'CLOSED'
-  | 'UNFULFILLED'
-  | 'CANCELLED_CUSTOMER'
-  | 'CANCELLED_PROVIDER'
-  | 'NO_SHOW';
+export const BOOKING_STATUS_VALUES = [
+  'PENDING_PAYMENT',
+  'ABANDONED',
+  'REQUESTED',
+  'UNFULFILLED',
+  'ACCEPTED',
+  'SCHEDULED',
+  'EN_ROUTE',
+  'IN_PROGRESS',
+  'QUOTE_REVISION',
+  'WORK_COMPLETED',
+  'AWAITING_VERIFICATION',
+  'REWORK_REQUIRED',
+  'VERIFIED',
+  'AUTO_RELEASED',
+  'DISPUTED',
+  'PAYMENT_RELEASED',
+  'PARTIALLY_REFUNDED',
+  'REFUNDED',
+  'CANCELLED_CUSTOMER',
+  'CANCELLED_PROVIDER',
+  'NO_SHOW',
+  'CLOSED'
+] as const;
+
+export type BookingStatus = (typeof BOOKING_STATUS_VALUES)[number];
 
 export type BookingEvent =
   | 'accept'

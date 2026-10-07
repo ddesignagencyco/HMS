@@ -98,6 +98,20 @@
         "tags": [
           "development"
         ]
+      },
+      "put": {
+        "description": "Development-only: the PUT target of a presigned upload URL from POST /uploads/presign. Stores the bytes in memory under bucket/key, where GET /dev/storage/{bucket}/{key} can read them back.",
+        "operationId": "DevController_uploadObject",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Upload a file to the mock file storage",
+        "tags": [
+          "development"
+        ]
       }
     },
     "/api/v1/admin/settings": {
@@ -1855,6 +1869,32 @@
         "description": "Uses the httpOnly refresh cookie set at login to issue a fresh access token without asking the user to log in again. Each refresh token can only be used once, and using it issues a new one.",
         "operationId": "AuthController_refresh",
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 200
+                  }
+                },
+                "additionalProperties": false
+              },
+              "examples": {
+                "default": {
+                  "summary": "Non-browser client holding the token itself",
+                  "value": {
+                    "refreshToken": "a-refresh-token-from-a-previous-login"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "401": {
             "description": "The refresh token had already been used once before. That looks like the token was stolen and replayed, so every session descended from it has been signed out as a precaution — the user needs to log in again."
@@ -1871,6 +1911,32 @@
         "description": "Ends the current session by invalidating the refresh cookie. The access token you were holding will simply expire on its own shortly after (it is not individually revoked).",
         "operationId": "AuthController_logout",
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 200
+                  }
+                },
+                "additionalProperties": false
+              },
+              "examples": {
+                "default": {
+                  "summary": "Non-browser client holding the token itself",
+                  "value": {
+                    "refreshToken": "a-refresh-token-from-a-previous-login"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": ""
@@ -2001,6 +2067,22 @@
           }
         ],
         "summary": "Get your own profile",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "description": "A cheap, never-401 check for public pages. Answers `{ authenticated: false }` for a signed-out visitor, or `{ authenticated: true, user }` when the httpOnly refresh cookie is still valid — which is the only way a browser can know it is signed in after a reload, since the access token is held in memory only. Reading the cookie here does not rotate or consume it. Returns `user: null` rather than a 401 so a public page does not have to treat \"nobody is signed in\" as an error.",
+        "operationId": "AuthController_session",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Ask whether there is a session, without failing when there is not",
         "tags": [
           "auth"
         ]
@@ -3051,7 +3133,7 @@
     },
     "/api/v1/places/cities": {
       "get": {
-        "description": "The platform currently launches in a single city, but the catalogue is city-aware from the outset.",
+        "description": "The platform currently launches in a single city, but the catalogue is city-aware from the outset. Each city carries the lat/lng of the centre of the areas it contains, usable directly as the lat/lng of GET /search/providers when no better point is known.",
         "operationId": "PlacesController_listCities",
         "parameters": [],
         "responses": {
@@ -3067,7 +3149,7 @@
     },
     "/api/v1/places/cities/{cityId}/areas": {
       "get": {
-        "description": "Use one of these area ids when creating a customer address.",
+        "description": "Use one of these area ids when creating a customer address. Each area carries the lat/lng of its centroid, so an area can be used directly as the lat/lng of GET /search/providers, and as the point for an address when the customer has not given an exact one. lat/lng are null only for an area whose centroid has not been surveyed yet.",
         "operationId": "PlacesController_listAreas",
         "parameters": [],
         "responses": {
@@ -4020,14 +4102,14 @@
     },
     "/api/v1/search/providers": {
       "get": {
-        "description": "Starts from a service (not a person): pass the service's slug and the customer's coordinates. Returns only approved providers with an approved offer for that service, whose configured radius covers the given point, ranked by distance. Rating/completion-rate weighting is not applied yet — there's no verified rating or booking history to weight by until later modules exist.",
+        "description": "Starts from a service (not a person): pass the service's slug and the customer's coordinates. Returns only approved providers with an approved offer for that service, whose configured radius covers the given point, ranked by a weighted blend of rating and distance (`ranking.weights`, rating 0.35 and distance 0.25 by default), then by distance. `ratingScore` is the provider's weighted score, or null when nobody has rated them yet — rank on it, do not render it as a rating.",
         "operationId": "SearchController_searchProviders",
         "parameters": [
           {
             "name": "lng",
             "required": true,
             "in": "query",
-            "description": "The customer's longitude, e.g. 74.3587 (Lahore).",
+            "description": "The customer's longitude, e.g. 74.3587 (Lahore). An area's own lng from GET /places/cities/{cityId}/areas can be used when the exact point is not known.",
             "schema": {
               "type": "number"
             }
@@ -4036,7 +4118,7 @@
             "name": "lat",
             "required": true,
             "in": "query",
-            "description": "The customer's latitude, e.g. 31.5204 (Lahore).",
+            "description": "The customer's latitude, e.g. 31.5204 (Lahore). An area's own lat/lng from GET /places/cities/{cityId}/areas can be used when the exact point is not known.",
             "schema": {
               "type": "number"
             }
@@ -4347,7 +4429,7 @@
     },
     "/api/v1/bookings": {
       "post": {
-        "description": "Books a service at a chosen time, with a specific provider (found through search) or, when providerId is left out, whichever ranked provider accepts first. A cash booking goes straight to REQUESTED. An online booking is held as PENDING_PAYMENT for a short window and returns a payment redirectUrl; it becomes REQUESTED only when the gateway's signed webhook confirms payment. The time must fall inside the provider's declared availability; the database itself refuses two overlapping bookings for one provider, so of two customers racing for a slot exactly one wins and the other gets 409 SLOT_TAKEN.",
+        "description": "Books a service at a chosen time, with a specific provider (found through search) or, when providerId is left out, whichever ranked provider accepts first. A cash booking goes straight to REQUESTED. An online booking is held as PENDING_PAYMENT for a short window and returns `payment`: a `redirectUrl` to send the customer to, and the absolute `returnUrl` the gateway will send them back to (on PUBLIC_BASE_URL, in the account's own language). A 201 on an online booking means the slot is *held*, not booked — it becomes REQUESTED only when the gateway's signed webhook confirms payment, so the return route must re-read GET /bookings/{id} rather than announce success. The time must fall inside the provider's declared availability; the database itself refuses two overlapping bookings for one provider, so of two customers racing for a slot exactly one wins and the other gets 409 SLOT_TAKEN.",
         "operationId": "BookingController_create",
         "parameters": [],
         "requestBody": {
@@ -4466,7 +4548,7 @@
         ]
       },
       "get": {
-        "description": "Returns every booking you are the customer or the provider on, most recent first. Optionally filter by status.",
+        "description": "Returns every booking you are the customer or the provider on, most recent first. Optionally filter by status — any value of the booking status enum (PENDING_PAYMENT, REQUESTED, SCHEDULED, EN_ROUTE, IN_PROGRESS, QUOTE_REVISION, WORK_COMPLETED, AWAITING_VERIFICATION, REWORK_REQUIRED, VERIFIED, AUTO_RELEASED, DISPUTED, PAYMENT_RELEASED, PARTIALLY_REFUNDED, REFUNDED, CLOSED, UNFULFILLED, ABANDONED, ACCEPTED, CANCELLED_CUSTOMER, CANCELLED_PROVIDER, NO_SHOW). Each row carries readable names as well as ids: serviceName, serviceNameUr, serviceSlug, providerQualification, addressLabel, addressLine1, addressLine2, areaName.",
         "operationId": "BookingController_listMine",
         "parameters": [
           {
@@ -4475,16 +4557,28 @@
             "in": "query",
             "schema": {
               "enum": [
+                "PENDING_PAYMENT",
+                "ABANDONED",
                 "REQUESTED",
+                "UNFULFILLED",
+                "ACCEPTED",
                 "SCHEDULED",
                 "EN_ROUTE",
                 "IN_PROGRESS",
                 "QUOTE_REVISION",
                 "WORK_COMPLETED",
-                "UNFULFILLED",
+                "AWAITING_VERIFICATION",
+                "REWORK_REQUIRED",
+                "VERIFIED",
+                "AUTO_RELEASED",
+                "DISPUTED",
+                "PAYMENT_RELEASED",
+                "PARTIALLY_REFUNDED",
+                "REFUNDED",
                 "CANCELLED_CUSTOMER",
                 "CANCELLED_PROVIDER",
-                "NO_SHOW"
+                "NO_SHOW",
+                "CLOSED"
               ],
               "type": "string"
             }
@@ -4628,7 +4722,7 @@
     },
     "/api/v1/bookings/{id}": {
       "get": {
-        "description": "Returns full booking detail. Visible only to the booking's own customer or its assigned provider — anyone else gets a 404, same as everywhere else in this API that hides existence from non-owners.",
+        "description": "Full booking detail: the booking itself, the readable names behind its ids (serviceName, serviceNameUr, serviceSlug, providerQualification, addressLabel, addressLine1, addressLine2, areaName), the line items it was priced for under `items`, and the cancellation rule for this booking right now under `cancellation` (`freeCancelHours`, `lateCancelFeePaisa`, `hoursUntilStart`, `isLate`, `feeDuePaisa`) alongside `cancellationPolicy` in words. Visible only to the booking's own customer or its assigned provider — anyone else gets a 404, same as everywhere else in this API that hides existence from non-owners.",
         "operationId": "BookingController_getOne",
         "parameters": [],
         "responses": {
@@ -4663,6 +4757,27 @@
           }
         ],
         "summary": "Who will receive the provider, when the booking is for someone else",
+        "tags": [
+          "booking"
+        ]
+      }
+    },
+    "/api/v1/bookings/{id}/service-address": {
+      "get": {
+        "description": "The address the job is at: label, line1, line2, areaId, areaName, and the lat/lng the arrival check-in is measured against. The booking row itself carries only an addressId, because every provider-facing endpoint returns that row and an address on it would be handed out with the offer list, before anyone has accepted. So this is the one route that answers it, under the same rule as the on-behalf contact number: the customer who booked it, and the assigned provider once the job has left REQUESTED. Anyone else — and the provider while it is still REQUESTED, i.e. before they commit — gets 404, the same answer as a booking that does not exist.",
+        "operationId": "BookingController_serviceAddress",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Where this job is",
         "tags": [
           "booking"
         ]
@@ -4845,6 +4960,27 @@
           }
         ],
         "summary": "Reschedule a booking",
+        "tags": [
+          "booking"
+        ]
+      }
+    },
+    "/api/v1/bookings/{id}/checklist": {
+      "get": {
+        "description": "The steps this service defines, in order, with what has been done on the current visit: `itemId` (the integer POST /bookings/{id}/checklist/{itemId} expects), `position`, `labelEn`/`labelUr`, `requiresPhoto`, `done`, `evidenceId` and `doneAt`. `outstanding` is how many steps are not yet done — the same count POST /bookings/{id}/complete refuses on, so this and that 409 cannot disagree. Visible to the booking's customer and provider only.",
+        "operationId": "BookingController_listChecklist",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read the service’s checklist for this booking",
         "tags": [
           "booking"
         ]
@@ -5273,7 +5409,7 @@
     },
     "/api/v1/bookings/{id}/cancel": {
       "post": {
-        "description": "Either party cancels a SCHEDULED booking, freeing the slot. Records which side cancelled (CANCELLED_CUSTOMER or CANCELLED_PROVIDER) so later reporting can tell them apart. The cancellation-fee rules (FR-BK-06) are not applied here yet — there is no ledger to post a fee to until M8 exists; this only records the cancellation and the optional reason.",
+        "description": "Either party cancels a SCHEDULED booking, freeing the slot. Records which side cancelled (CANCELLED_CUSTOMER or CANCELLED_PROVIDER) so later reporting can tell them apart. The FR-BK-06 fee is applied in the same transaction: a customer cancelling less than `booking.free_cancel_hours` before the slot pays `booking.late_cancel_fee_paisa` (never more than the booking total) — taken from escrow for an online booking, or booked as a receivable against the customer for a cash one, where it appears as `outstandingReceivablePaisa` on their next quote. A provider cancelling, or a cancellation before anyone accepted, is always free. GET /bookings/{id} publishes what cancelling this booking would cost right now, under `cancellation`, built from the same rule.",
         "operationId": "BookingController_cancel",
         "parameters": [],
         "requestBody": {
@@ -5886,7 +6022,7 @@
     },
     "/api/v1/search/providers/{providerId}/reputation": {
       "get": {
-        "description": "The published score (average of the four criteria, weighted toward the last 20 jobs and pulled toward a neutral prior for providers with few ratings), how many ratings it rests on, the spread across 1–5 stars, verified jobs and badge.",
+        "description": "The published score (average of the four criteria, weighted toward the last 20 jobs and pulled toward a neutral prior for providers with few ratings), how many ratings it rests on, the spread across 1–5 stars, verified jobs and badge. `score` is null when `ratingCount` is 0 — nobody has rated this provider yet, so there is nothing to display. The number that exists internally for ranking purposes is the prior, and it is deliberately not published as if it were a rating.",
         "operationId": "ReputationController_publicReputation",
         "parameters": [],
         "responses": {
@@ -5902,7 +6038,7 @@
     },
     "/api/v1/search/providers/{providerId}/remarks": {
       "get": {
-        "description": "Customer remarks from verified jobs, newest first, shown as first name and last initial only, each with the provider’s reply if they gave one. Unpublished remarks never appear.",
+        "description": "Customer remarks from verified jobs, newest first, shown as first name and last initial only, each with the provider’s reply if they gave one. `reply` is an object `{ body, createdAt }` when there is a reply and `null` when there is not — it is not a string. Unpublished remarks never appear.",
         "operationId": "ReputationController_remarks",
         "parameters": [
           {

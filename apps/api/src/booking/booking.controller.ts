@@ -5,7 +5,21 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
-import { bookingCancelSchema, bookingChecklistSchema, bookingCompleteSchema, bookingEvidenceSchema, bookingCreateSchema, bookingListQuerySchema, bookingNoShowSchema, bookingQuoteSchema, bookingRaiseRevisionSchema, bookingRescheduleSchema, bookingStartSchema, bookingWarrantyClaimSchema } from './booking.schemas.js';
+import {
+  bookingCancelSchema,
+  bookingChecklistSchema,
+  bookingCompleteSchema,
+  bookingEvidenceSchema,
+  bookingCreateSchema,
+  bookingListQuerySchema,
+  bookingNoShowSchema,
+  bookingQuoteSchema,
+  bookingRaiseRevisionSchema,
+  bookingRescheduleSchema,
+  bookingStartSchema,
+  bookingWarrantyClaimSchema
+} from './booking.schemas.js';
+import { BOOKING_STATUS_VALUES } from '@smart-home/domain';
 import { BookingService } from './booking.service.js';
 import { CompletionService } from './completion.service.js';
 import { ExecutionService } from './execution.service.js';
@@ -41,12 +55,20 @@ export class BookingController {
   @ApiOperation({
     summary: 'Check out a booking',
     description:
-      "Books a service at a chosen time, with a specific provider (found through search) or, when providerId is left out, whichever ranked provider accepts first. A cash booking goes straight to REQUESTED. An online booking is held as PENDING_PAYMENT for a short window and returns a payment redirectUrl; it becomes REQUESTED only when the gateway's signed webhook confirms payment. The time must fall inside the provider's declared availability; the database itself refuses two overlapping bookings for one provider, so of two customers racing for a slot exactly one wins and the other gets 409 SLOT_TAKEN."
+      "Books a service at a chosen time, with a specific provider (found through search) or, when providerId is left out, whichever ranked provider accepts first. A cash booking goes straight to REQUESTED. An online booking is held as PENDING_PAYMENT for a short window and returns `payment`: a `redirectUrl` to send the customer to, and the absolute `returnUrl` the gateway will send them back to (on PUBLIC_BASE_URL, in the account's own language). A 201 on an online booking means the slot is *held*, not booked — it becomes REQUESTED only when the gateway's signed webhook confirms payment, so the return route must re-read GET /bookings/{id} rather than announce success. The time must fall inside the provider's declared availability; the database itself refuses two overlapping bookings for one provider, so of two customers racing for a slot exactly one wins and the other gets 409 SLOT_TAKEN."
   })
   @ApiZodBody(bookingCreateSchema, {
     default: {
       summary: 'Book a plumber for a leak repair',
-      value: { providerId: '00000000-0000-4000-8000-000000000000', serviceId: 1, addressId: '00000000-0000-4000-8000-000000000001', scheduledStart: '2026-10-01T10:00:00.000Z', scheduledEnd: '2026-10-01T11:00:00.000Z', problemText: 'Kitchen tap is leaking', paymentMode: 'ONLINE' }
+      value: {
+        providerId: '00000000-0000-4000-8000-000000000000',
+        serviceId: 1,
+        addressId: '00000000-0000-4000-8000-000000000001',
+        scheduledStart: '2026-10-01T10:00:00.000Z',
+        scheduledEnd: '2026-10-01T11:00:00.000Z',
+        problemText: 'Kitchen tap is leaking',
+        paymentMode: 'ONLINE'
+      }
     }
   })
   async create(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
@@ -57,14 +79,30 @@ export class BookingController {
   @HttpCode(201)
   @PolicyDecorator({ roles: ['CUSTOMER'] })
   @ApiOperation({ summary: 'Check out a booking (alias of POST /bookings)', description: 'Identical to POST /bookings; the name the payment flow documentation uses for it.' })
-  @ApiZodBody(bookingCreateSchema, { default: { summary: 'Cash booking', value: { providerId: '00000000-0000-4000-8000-000000000000', serviceId: 1, addressId: '00000000-0000-4000-8000-000000000001', scheduledStart: '2026-10-01T10:00:00.000Z', scheduledEnd: '2026-10-01T11:00:00.000Z', paymentMode: 'CASH' } } })
+  @ApiZodBody(bookingCreateSchema, {
+    default: {
+      summary: 'Cash booking',
+      value: {
+        providerId: '00000000-0000-4000-8000-000000000000',
+        serviceId: 1,
+        addressId: '00000000-0000-4000-8000-000000000001',
+        scheduledStart: '2026-10-01T10:00:00.000Z',
+        scheduledEnd: '2026-10-01T11:00:00.000Z',
+        paymentMode: 'CASH'
+      }
+    }
+  })
   async checkout(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return this.bookings.create(principal.userId, parseWith(bookingCreateSchema, body));
   }
 
   @Get(':id')
   @PolicyDecorator({ roles: ['CUSTOMER', 'PROVIDER'] })
-  @ApiOperation({ summary: 'Read one booking', description: 'Returns full booking detail. Visible only to the booking\'s own customer or its assigned provider — anyone else gets a 404, same as everywhere else in this API that hides existence from non-owners.' })
+  @ApiOperation({
+    summary: 'Read one booking',
+    description:
+      "Full booking detail: the booking itself, the readable names behind its ids (serviceName, serviceNameUr, serviceSlug, providerQualification, addressLabel, addressLine1, addressLine2, areaName), the line items it was priced for under `items`, and the cancellation rule for this booking right now under `cancellation` (`freeCancelHours`, `lateCancelFeePaisa`, `hoursUntilStart`, `isLate`, `feeDuePaisa`) alongside `cancellationPolicy` in words. Visible only to the booking's own customer or its assigned provider — anyone else gets a 404, same as everywhere else in this API that hides existence from non-owners."
+  })
   async getOne(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return this.bookings.getOwned(id, principal.userId);
   }
@@ -80,13 +118,24 @@ export class BookingController {
     return { contact: await this.bookings.onBehalfContact(id, principal.userId) };
   }
 
+  @Get(':id/service-address')
+  @PolicyDecorator({ roles: ['CUSTOMER', 'PROVIDER'] })
+  @ApiOperation({
+    summary: 'Where this job is',
+    description:
+      'The address the job is at: label, line1, line2, areaId, areaName, and the lat/lng the arrival check-in is measured against. The booking row itself carries only an addressId, because every provider-facing endpoint returns that row and an address on it would be handed out with the offer list, before anyone has accepted. So this is the one route that answers it, under the same rule as the on-behalf contact number: the customer who booked it, and the assigned provider once the job has left REQUESTED. Anyone else — and the provider while it is still REQUESTED, i.e. before they commit — gets 404, the same answer as a booking that does not exist.'
+  })
+  async serviceAddress(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.bookings.serviceAddress(id, principal.userId);
+  }
+
   @Post(':id/accept')
   @HttpCode(200)
   @PolicyDecorator({ roles: ['PROVIDER'] })
   @ApiOperation({
     summary: 'Accept a booking request',
     description:
-      "The assigned provider accepts a REQUESTED booking, moving it to SCHEDULED and locking the slot. Only the provider this booking was requested for can accept it — anyone else gets a 404, and any other status gets 409 ILLEGAL_TRANSITION. Also issues the start code the customer will read out to the provider on arrival (FR-EX-02), sent by SMS."
+      'The assigned provider accepts a REQUESTED booking, moving it to SCHEDULED and locking the slot. Only the provider this booking was requested for can accept it — anyone else gets a 404, and any other status gets 409 ILLEGAL_TRANSITION. Also issues the start code the customer will read out to the provider on arrival (FR-EX-02), sent by SMS.'
   })
   async accept(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     const booking = await this.bookings.apply(id, 'accept', principal.userId);
@@ -105,7 +154,10 @@ export class BookingController {
   @Post(':id/depart')
   @HttpCode(200)
   @PolicyDecorator({ roles: ['PROVIDER'] })
-  @ApiOperation({ summary: 'Mark yourself en route', description: 'The provider marks themselves en route for a SCHEDULED booking, moving it to EN_ROUTE. The customer is notified once notifications exist (FR-EX-01).' })
+  @ApiOperation({
+    summary: 'Mark yourself en route',
+    description: 'The provider marks themselves en route for a SCHEDULED booking, moving it to EN_ROUTE. The customer is notified once notifications exist (FR-EX-01).'
+  })
   async depart(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return this.bookings.apply(id, 'depart', principal.userId);
   }
@@ -116,7 +168,7 @@ export class BookingController {
   @ApiOperation({
     summary: 'Start the job with the customer’s code',
     description:
-      "The provider enters the 6-digit code the customer was sent when the booking was accepted, moving an EN_ROUTE booking to IN_PROGRESS (FR-EX-02). Optionally sends their location (lat, lng, accuracyM), recorded as the check-in and reported back as distanceM and withinGeofence — a shortfall is flagged, never blocking. A wrong code returns 422 OTP_INVALID with the remaining attempts; the fifth wrong attempt locks the code for 15 minutes and returns 423 OTP_LOCKED."
+      'The provider enters the 6-digit code the customer was sent when the booking was accepted, moving an EN_ROUTE booking to IN_PROGRESS (FR-EX-02). Optionally sends their location (lat, lng, accuracyM), recorded as the check-in and reported back as distanceM and withinGeofence — a shortfall is flagged, never blocking. A wrong code returns 422 OTP_INVALID with the remaining attempts; the fifth wrong attempt locks the code for 15 minutes and returns 423 OTP_LOCKED.'
   })
   @ApiZodBody(bookingStartSchema, { default: { summary: 'Code the customer read out', value: { code: '123456' } } })
   async start(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
@@ -134,6 +186,17 @@ export class BookingController {
   @ApiZodBody(bookingRescheduleSchema, { default: { summary: 'Move to a later time the same week', value: { scheduledStart: '2026-10-02T10:00:00.000Z', scheduledEnd: '2026-10-02T11:00:00.000Z' } } })
   async reschedule(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return this.bookings.reschedule(id, principal.userId, parseWith(bookingRescheduleSchema, body));
+  }
+
+  @Get(':id/checklist')
+  @PolicyDecorator({ roles: ['CUSTOMER', 'PROVIDER'] })
+  @ApiOperation({
+    summary: 'Read the service’s checklist for this booking',
+    description:
+      "The steps this service defines, in order, with what has been done on the current visit: `itemId` (the integer POST /bookings/{id}/checklist/{itemId} expects), `position`, `labelEn`/`labelUr`, `requiresPhoto`, `done`, `evidenceId` and `doneAt`. `outstanding` is how many steps are not yet done — the same count POST /bookings/{id}/complete refuses on, so this and that 409 cannot disagree. Visible to the booking's customer and provider only."
+  })
+  async listChecklist(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.execution.listChecklist(id, principal.userId);
   }
 
   @Post(':id/checklist/:itemId')
@@ -155,9 +218,14 @@ export class BookingController {
   @ApiOperation({
     summary: 'Upload a photo',
     description:
-      "Stores one photo (JPEG, PNG or WebP, base64, within the size limit) with a server timestamp. The customer attaches up to 5 CUSTOMER_PROBLEM photos before the visit; the provider records BEFORE, AFTER and per-step CHECKLIST photos while the job is in progress. clientUuid makes retries safe: uploading the same clientUuid twice stores it once and returns the original (200 with duplicate: true instead of 201). Evidence is insert-only — it can never be edited or deleted."
+      'Stores one photo (JPEG, PNG or WebP, base64, within the size limit) with a server timestamp. The customer attaches up to 5 CUSTOMER_PROBLEM photos before the visit; the provider records BEFORE, AFTER and per-step CHECKLIST photos while the job is in progress. clientUuid makes retries safe: uploading the same clientUuid twice stores it once and returns the original (200 with duplicate: true instead of 201). Evidence is insert-only — it can never be edited or deleted.'
   })
-  @ApiZodBody(bookingEvidenceSchema, { default: { summary: 'After photo', value: { clientUuid: '11111111-1111-4111-8111-111111111111', kind: 'AFTER', contentType: 'image/jpeg', contentBase64: '/9j/4AAQSkZJRg==', lat: 31.52, lng: 74.35 } } })
+  @ApiZodBody(bookingEvidenceSchema, {
+    default: {
+      summary: 'After photo',
+      value: { clientUuid: '11111111-1111-4111-8111-111111111111', kind: 'AFTER', contentType: 'image/jpeg', contentBase64: '/9j/4AAQSkZJRg==', lat: 31.52, lng: 74.35 }
+    }
+  })
   async addEvidence(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @Res({ passthrough: true }) response: Response, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     const result = await this.execution.addEvidence(id, principal.userId, parseWith(bookingEvidenceSchema, body));
     response.status(result.duplicate ? 200 : 201);
@@ -166,7 +234,10 @@ export class BookingController {
 
   @Get(':id/evidence')
   @PolicyDecorator({ roles: ['CUSTOMER', 'PROVIDER'] })
-  @ApiOperation({ summary: 'List a booking’s photos', description: "Lists every photo recorded against the booking, oldest first, with when the server received each. Visible to the booking's customer and provider only." })
+  @ApiOperation({
+    summary: 'List a booking’s photos',
+    description: "Lists every photo recorded against the booking, oldest first, with when the server received each. Visible to the booking's customer and provider only."
+  })
   async listEvidence(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return { items: await this.execution.listEvidence(id, principal.userId) };
   }
@@ -190,7 +261,7 @@ export class BookingController {
   @ApiOperation({
     summary: 'Confirm the customer paid cash',
     description:
-      "For a cash job whose verification has authorised collection: records that you were paid. Your commission is debited to your wallet (a negative wallet is commission debt; above the ceiling you stop receiving offers until you pay it down), the job becomes PAYMENT_RELEASED, and the customer is texted a receipt with a link to report a problem. 409 for an online job or before verification."
+      'For a cash job whose verification has authorised collection: records that you were paid. Your commission is debited to your wallet (a negative wallet is commission debt; above the ceiling you stop receiving offers until you pay it down), the job becomes PAYMENT_RELEASED, and the customer is texted a receipt with a link to report a problem. 409 for an online job or before verification.'
   })
   async cashReceived(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return this.bookings.confirmCashReceived(id, principal.userId);
@@ -212,7 +283,10 @@ export class BookingController {
   @Get(':id/invoice.pdf')
   @PolicyDecorator({ roles: ['CUSTOMER', 'PROVIDER'] })
   @Header('Content-Type', 'application/pdf')
-  @ApiOperation({ summary: 'Download the invoice', description: "The itemised invoice as a PDF, available once the job is completed, to the booking's customer and provider only (anyone else gets a 404)." })
+  @ApiOperation({
+    summary: 'Download the invoice',
+    description: "The itemised invoice as a PDF, available once the job is completed, to the booking's customer and provider only (anyone else gets a 404)."
+  })
   async invoicePdf(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) response: Response, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     const { filename, content } = await this.completion.invoicePdf(id, principal.userId);
     response.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -225,7 +299,7 @@ export class BookingController {
   @ApiOperation({
     summary: 'Raise a revised quote for extra work',
     description:
-      "The provider proposes extra work found on site, moving an IN_PROGRESS booking to QUOTE_REVISION until the customer decides. Only one revision can be pending at a time (FR-EX-05) — the database enforces that, not just this endpoint."
+      'The provider proposes extra work found on site, moving an IN_PROGRESS booking to QUOTE_REVISION until the customer decides. Only one revision can be pending at a time (FR-EX-05) — the database enforces that, not just this endpoint.'
   })
   @ApiZodBody(bookingRaiseRevisionSchema, { default: { summary: 'Found a burst pipe behind the wall', value: { deltaPaisa: 500000, reason: 'Additional pipe section needs replacing' } } })
   async raiseRevision(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
@@ -260,7 +334,7 @@ export class BookingController {
   @ApiOperation({
     summary: 'Cancel a scheduled booking',
     description:
-      "Either party cancels a SCHEDULED booking, freeing the slot. Records which side cancelled (CANCELLED_CUSTOMER or CANCELLED_PROVIDER) so later reporting can tell them apart. The cancellation-fee rules (FR-BK-06) are not applied here yet — there is no ledger to post a fee to until M8 exists; this only records the cancellation and the optional reason."
+      'Either party cancels a SCHEDULED booking, freeing the slot. Records which side cancelled (CANCELLED_CUSTOMER or CANCELLED_PROVIDER) so later reporting can tell them apart. The FR-BK-06 fee is applied in the same transaction: a customer cancelling less than `booking.free_cancel_hours` before the slot pays `booking.late_cancel_fee_paisa` (never more than the booking total) — taken from escrow for an online booking, or booked as a receivable against the customer for a cash one, where it appears as `outstandingReceivablePaisa` on their next quote. A provider cancelling, or a cancellation before anyone accepted, is always free. GET /bookings/{id} publishes what cancelling this booking would cost right now, under `cancellation`, built from the same rule.'
   })
   @ApiZodBody(bookingCancelSchema, { default: { summary: 'Cancel with a reason', value: { reason: 'Found a closer provider' } } })
   async cancel(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
@@ -273,7 +347,7 @@ export class BookingController {
   @PolicyDecorator({ roles: ['CUSTOMER', 'PROVIDER'] })
   @ApiOperation({
     summary: 'Report a no-show',
-    description: "Either party reports that the other did not show up for an EN_ROUTE booking, moving it to NO_SHOW and recording which side failed to show."
+    description: 'Either party reports that the other did not show up for an EN_ROUTE booking, moving it to NO_SHOW and recording which side failed to show.'
   })
   @ApiZodBody(bookingNoShowSchema, { default: { summary: 'Customer did not answer the door', value: { party: 'CUSTOMER' } } })
   async noShow(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
@@ -283,8 +357,12 @@ export class BookingController {
 
   @Get()
   @PolicyDecorator({ roles: ['CUSTOMER', 'PROVIDER'] })
-  @ApiOperation({ summary: 'List my bookings', description: 'Returns every booking you are the customer or the provider on, most recent first. Optionally filter by status.' })
-  @ApiQueryField('status', { enum: ['REQUESTED', 'SCHEDULED', 'EN_ROUTE', 'IN_PROGRESS', 'QUOTE_REVISION', 'WORK_COMPLETED', 'UNFULFILLED', 'CANCELLED_CUSTOMER', 'CANCELLED_PROVIDER', 'NO_SHOW'] })
+  @ApiOperation({
+    summary: 'List my bookings',
+    description:
+      'Returns every booking you are the customer or the provider on, most recent first. Optionally filter by status — any value of the booking status enum (PENDING_PAYMENT, REQUESTED, SCHEDULED, EN_ROUTE, IN_PROGRESS, QUOTE_REVISION, WORK_COMPLETED, AWAITING_VERIFICATION, REWORK_REQUIRED, VERIFIED, AUTO_RELEASED, DISPUTED, PAYMENT_RELEASED, PARTIALLY_REFUNDED, REFUNDED, CLOSED, UNFULFILLED, ABANDONED, ACCEPTED, CANCELLED_CUSTOMER, CANCELLED_PROVIDER, NO_SHOW). Each row carries readable names as well as ids: serviceName, serviceNameUr, serviceSlug, providerQualification, addressLabel, addressLine1, addressLine2, areaName.'
+  })
+  @ApiQueryField('status', { enum: BOOKING_STATUS_VALUES })
   async listMine(@Query() query: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     const { status } = parseWith(bookingListQuerySchema, query);
     return { items: await this.bookings.listMine(principal.userId, status) };

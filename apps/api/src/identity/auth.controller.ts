@@ -7,15 +7,7 @@ import { Authenticated, CurrentPrincipal, Public, type AuthenticatedPrincipal } 
 import { parseWith } from '../common/validation.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { AuthService, type AuthResult } from './auth.service.js';
-import {
-  loginSchema,
-  otpRequestSchema,
-  otpVerifySchema,
-  passwordForgotSchema,
-  passwordResetSchema,
-  registerSchema,
-  totpVerifySchema
-} from './auth.schemas.js';
+import { loginSchema, otpRequestSchema, otpVerifySchema, passwordForgotSchema, passwordResetSchema, refreshSchema, registerSchema, logoutSchema, totpVerifySchema } from './auth.schemas.js';
 
 export const REFRESH_COOKIE = 'shm_rt';
 const REFRESH_COOKIE_PATH = '/api/v1/auth';
@@ -53,7 +45,8 @@ export class AuthController {
   @Public()
   @ApiOperation({
     summary: 'Send a one-time verification code',
-    description: 'Sends a short-lived numeric code by SMS or email to the given phone number or email address. Used to verify a new account, to log in without a password, or to start a password reset — the "purpose" field tells the server which of these you are doing.'
+    description:
+      'Sends a short-lived numeric code by SMS or email to the given phone number or email address. Used to verify a new account, to log in without a password, or to start a password reset — the "purpose" field tells the server which of these you are doing.'
   })
   @ApiZodBody(otpRequestSchema, { login: { summary: 'Request a login code', value: { target: '+923001234567', purpose: 'LOGIN' } } })
   async requestOtp(@Body() body: unknown, @Headers('accept-language') acceptLanguage?: string) {
@@ -96,14 +89,21 @@ export class AuthController {
   @Public()
   @ApiOperation({
     summary: 'Get a new access token',
-    description: 'Uses the httpOnly refresh cookie set at login to issue a fresh access token without asking the user to log in again. Each refresh token can only be used once, and using it issues a new one.'
+    description:
+      'Uses the httpOnly refresh cookie set at login to issue a fresh access token without asking the user to log in again. Each refresh token can only be used once, and using it issues a new one.'
   })
   @ApiResponse({
     status: 401,
-    description: 'The refresh token had already been used once before. That looks like the token was stolen and replayed, so every session descended from it has been signed out as a precaution — the user needs to log in again.'
+    description:
+      'The refresh token had already been used once before. That looks like the token was stolen and replayed, so every session descended from it has been signed out as a precaution — the user needs to log in again.'
   })
-  async refresh(@Req() request: Request, @Ip() ip: string, @Res({ passthrough: true }) response: Response) {
-    const presented = this.cookieOf(request);
+  @ApiZodBody(refreshSchema, { default: { summary: 'Non-browser client holding the token itself', value: { refreshToken: 'a-refresh-token-from-a-previous-login' } } })
+  async refresh(@Body() body: unknown, @Req() request: Request, @Ip() ip: string, @Res({ passthrough: true }) response: Response) {
+    // The cookie is the browser transport and the body is the fallback for
+    // clients that cannot hold an httpOnly cookie. An empty body is valid, so a
+    // browser that sends no content type is not rejected for it.
+    const fromBody = parseWith(refreshSchema, body ?? {}).refreshToken;
+    const presented = this.cookieOf(request) ?? fromBody;
     if (presented === undefined) throw new DomainError('UNAUTHENTICATED', 'A refresh token is required');
     return this.issue(await this.auth.refresh(presented, this.metaOf(request, ip)), response);
   }
@@ -111,9 +111,13 @@ export class AuthController {
   @Post('logout')
   @HttpCode(204)
   @Public()
-  @ApiOperation({ summary: 'Log out', description: 'Ends the current session by invalidating the refresh cookie. The access token you were holding will simply expire on its own shortly after (it is not individually revoked).' })
-  async logout(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
-    const presented = this.cookieOf(request);
+  @ApiOperation({
+    summary: 'Log out',
+    description: 'Ends the current session by invalidating the refresh cookie. The access token you were holding will simply expire on its own shortly after (it is not individually revoked).'
+  })
+  @ApiZodBody(logoutSchema, { default: { summary: 'Non-browser client holding the token itself', value: { refreshToken: 'a-refresh-token-from-a-previous-login' } } })
+  async logout(@Body() body: unknown, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const presented = this.cookieOf(request) ?? parseWith(logoutSchema, body ?? {}).refreshToken;
     if (presented !== undefined) await this.auth.logout(presented);
     this.clearCookie(response);
   }
@@ -123,7 +127,8 @@ export class AuthController {
   @Public()
   @ApiOperation({
     summary: 'Request a password reset code',
-    description: 'Sends a reset code to the given phone number or email if an account exists for it. To stop attackers from being able to guess which accounts exist, this endpoint always returns the same response whether or not a matching account was found.'
+    description:
+      'Sends a reset code to the given phone number or email if an account exists for it. To stop attackers from being able to guess which accounts exist, this endpoint always returns the same response whether or not a matching account was found.'
   })
   @ApiZodBody(passwordForgotSchema, { default: { summary: 'By phone', value: { identifier: '+923001234567' } } })
   async forgot(@Body() body: unknown, @Headers('accept-language') acceptLanguage?: string) {
@@ -135,7 +140,8 @@ export class AuthController {
   @Public()
   @ApiOperation({
     summary: 'Reset your password',
-    description: 'Submits the reset code from POST /auth/password/forgot along with a new password. On success, every other active session on the account is signed out for safety, and this response logs you in with a fresh session.'
+    description:
+      'Submits the reset code from POST /auth/password/forgot along with a new password. On success, every other active session on the account is signed out for safety, and this response logs you in with a fresh session.'
   })
   @ApiZodBody(passwordResetSchema, { default: { summary: 'Reset with the emailed/texted code', value: { identifier: '+923001234567', code: '123456', newPassword: 'BrandNewPass9' } } })
   async reset(@Body() body: unknown, @Req() request: Request, @Ip() ip: string, @Res({ passthrough: true }) response: Response) {
@@ -146,9 +152,44 @@ export class AuthController {
   @Get('me')
   @Authenticated()
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Get your own profile', description: "Returns the currently logged-in user's details, including their roles (e.g. CUSTOMER, PROVIDER, ADMIN) and, for providers, their approval status. Useful right after login to know what the user is allowed to do." })
+  @ApiOperation({
+    summary: 'Get your own profile',
+    description:
+      "Returns the currently logged-in user's details, including their roles (e.g. CUSTOMER, PROVIDER, ADMIN) and, for providers, their approval status. Useful right after login to know what the user is allowed to do."
+  })
   async me(@CurrentPrincipal() principal: AuthenticatedPrincipal | undefined) {
     return { user: await this.auth.describe(this.requirePrincipal(principal)) };
+  }
+
+  /**
+   * "Is this browser signed in?", answerable from the httpOnly refresh cookie
+   * alone and never a 401.
+   *
+   * A page reload destroys the in-memory access token, so the only evidence a
+   * session survived is the cookie — and `GET /auth/me` cannot read it, because
+   * it needs a bearer token. A client therefore has to call /auth/me, get a 401,
+   * then call /auth/refresh to rebuild a session it already has, which logs two
+   * errors on every public page for every signed-out visitor and makes the
+   * signed-in and signed-out states indistinguishable at the first question.
+   *
+   * This reads the cookie without rotating it (see `SessionService.identify`), so
+   * the token is still usable for the real refresh afterwards, and answers 200
+   * either way: `{ authenticated: false }` with no user for a signed-out
+   * visitor, or the same `user` object `GET /auth/me` returns.
+   */
+  @Get('session')
+  @Public()
+  @ApiOperation({
+    summary: 'Ask whether there is a session, without failing when there is not',
+    description:
+      'A cheap, never-401 check for public pages. Answers `{ authenticated: false }` for a signed-out visitor, or `{ authenticated: true, user }` when the httpOnly refresh cookie is still valid — which is the only way a browser can know it is signed in after a reload, since the access token is held in memory only. Reading the cookie here does not rotate or consume it. Returns `user: null` rather than a 401 so a public page does not have to treat "nobody is signed in" as an error.'
+  })
+  async session(@Req() request: Request) {
+    const presented = this.cookieOf(request);
+    if (presented === undefined) return { authenticated: false, user: null };
+    const userId = await this.auth.userIdOfRefresh(presented);
+    if (userId === null) return { authenticated: false, user: null };
+    return { authenticated: true, user: await this.auth.describe(userId) };
   }
 
   @Post('totp/setup')
@@ -156,7 +197,8 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Start setting up two-factor authentication',
-    description: 'Generates a new secret key and QR-code link for an authenticator app (e.g. Google Authenticator, Authy). This is shown only this one time, so save it — then confirm it works with POST /auth/totp/verify before it is treated as active.'
+    description:
+      'Generates a new secret key and QR-code link for an authenticator app (e.g. Google Authenticator, Authy). This is shown only this one time, so save it — then confirm it works with POST /auth/totp/verify before it is treated as active.'
   })
   async totpSetup(@CurrentPrincipal() principal: AuthenticatedPrincipal | undefined) {
     return this.auth.beginTotpSetup(this.requirePrincipal(principal));
@@ -165,7 +207,10 @@ export class AuthController {
   @Post('totp/verify')
   @Authenticated()
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Confirm and turn on two-factor authentication', description: 'Verifies the 6-digit code currently showing in your authenticator app. If it matches, two-factor authentication is switched on for the account from now on.' })
+  @ApiOperation({
+    summary: 'Confirm and turn on two-factor authentication',
+    description: 'Verifies the 6-digit code currently showing in your authenticator app. If it matches, two-factor authentication is switched on for the account from now on.'
+  })
   @ApiZodBody(totpVerifySchema, { default: { summary: 'Authenticator code', value: { code: '123456' } } })
   async totpVerify(@CurrentPrincipal() principal: AuthenticatedPrincipal | undefined, @Body() body: unknown) {
     return this.auth.confirmTotpSetup(this.requirePrincipal(principal), parseWith(totpVerifySchema, body));

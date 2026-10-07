@@ -11,6 +11,7 @@ import { appendOutboxEvent } from '../platform/audit.service.js';
 import { AppClock } from '../platform/app-clock.js';
 import { SettingsService } from '../platform/settings.service.js';
 import { BOOKING_COLUMNS, toBookingRow, type BookingRow, type BookingRowRaw } from './booking.row.js';
+import { PricingService } from './pricing.service.js';
 
 export type ApplyOptions = { reason?: string; noShowParty?: 'CUSTOMER' | 'PROVIDER' };
 
@@ -35,11 +36,12 @@ export class BookingStateService {
     @Inject(LedgerService) private readonly ledger: LedgerService,
     @Inject(SettingsService) private readonly settings: SettingsService,
     @Inject(AppClock) private readonly clock: AppClock,
-    @Inject(ConductService) private readonly conduct: ConductService
+    @Inject(ConductService) private readonly conduct: ConductService,
+    @Inject(PricingService) private readonly pricing: PricingService
   ) {}
 
   async apply(bookingId: string, event: BookingEvent, actorUserId: string, options: ApplyOptions = {}): Promise<BookingRow> {
-    const result = await this.prisma.$transaction(tx => this.applyInTx(tx, bookingId, event, actorUserId, options));
+    const result = await this.prisma.$transaction((tx) => this.applyInTx(tx, bookingId, event, actorUserId, options));
     await this.settleRefunds(result.refundIds);
     return result.booking;
   }
@@ -122,7 +124,13 @@ export class BookingStateService {
 
     if (event === 'decline' || (event === 'cancel' && actorRole === 'PROVIDER')) {
       if (online) {
-        const queued = await this.payments.queueRefund(tx, { bookingId: row.id, amountPaisa: row.approvedTotalPaisa, reasonCode: event === 'decline' ? 'PROVIDER_DECLINED' : 'PROVIDER_CANCELLED', idempotencyKey: `booking:${row.id}:${event}`, requestedBy: actorUserId });
+        const queued = await this.payments.queueRefund(tx, {
+          bookingId: row.id,
+          amountPaisa: row.approvedTotalPaisa,
+          reasonCode: event === 'decline' ? 'PROVIDER_DECLINED' : 'PROVIDER_CANCELLED',
+          idempotencyKey: `booking:${row.id}:${event}`,
+          requestedBy: actorUserId
+        });
         refundIds.push(...queued);
       }
       return { refundIds, metadata };
@@ -138,14 +146,12 @@ export class BookingStateService {
       return { refundIds, metadata };
     }
 
-    const freeHours = await this.settings.getNumber('booking.free_cancel_hours');
-    const hoursAhead = (row.scheduledStart.getTime() - Date.now()) / 3_600_000;
-    const late = row.status === 'SCHEDULED' && hoursAhead < freeHours;
-    let feePaisa = 0n;
-    if (late) {
-      const configured = BigInt(await this.settings.getNumber('booking.late_cancel_fee_paisa'));
-      feePaisa = configured > row.approvedTotalPaisa ? row.approvedTotalPaisa : configured;
-    }
+    // One source for the fee rule: `PricingService.cancellationQuote()` is what the
+    // quote endpoint's cancellationPolicy sentence is built from and what
+    // GET /bookings/:id publishes, so the promise and the charge cannot drift.
+    const quote = await this.pricing.cancellationQuote(row);
+    const late = quote.isLate;
+    const feePaisa = BigInt(quote.feeDuePaisa);
     metadata.lateCancel = late;
     metadata.feePaisa = feePaisa.toString();
 
@@ -165,7 +171,13 @@ export class BookingStateService {
       }
       const refundable = row.approvedTotalPaisa - feePaisa;
       if (refundable > 0n) {
-        const queued = await this.payments.queueRefund(tx, { bookingId: row.id, amountPaisa: refundable, reasonCode: late ? 'CUSTOMER_LATE_CANCEL' : 'CUSTOMER_CANCELLED', idempotencyKey: `booking:${row.id}:cancel`, requestedBy: actorUserId });
+        const queued = await this.payments.queueRefund(tx, {
+          bookingId: row.id,
+          amountPaisa: refundable,
+          reasonCode: late ? 'CUSTOMER_LATE_CANCEL' : 'CUSTOMER_CANCELLED',
+          idempotencyKey: `booking:${row.id}:cancel`,
+          requestedBy: actorUserId
+        });
         refundIds.push(...queued);
       }
     } else if (feePaisa > 0n) {
@@ -237,7 +249,12 @@ export class BookingStateService {
       const freeHours = await this.settings.getNumber('booking.free_cancel_hours');
       const hoursAhead = (row.scheduledStart.getTime() - Date.now()) / 3_600_000;
       if (hoursAhead < freeHours) {
-        await this.conduct.autoPropose(tx, { providerId: row.providerId, breachCode: 'LATE_CANCEL', bookingId: row.id, evidence: { hoursBeforeSlot: Math.max(0, Math.round(hoursAhead * 10) / 10), bookingCode: row.code } });
+        await this.conduct.autoPropose(tx, {
+          providerId: row.providerId,
+          breachCode: 'LATE_CANCEL',
+          bookingId: row.id,
+          evidence: { hoursBeforeSlot: Math.max(0, Math.round(hoursAhead * 10) / 10), bookingCode: row.code }
+        });
       }
     }
   }
