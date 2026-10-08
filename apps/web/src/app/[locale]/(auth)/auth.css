@@ -1,0 +1,111 @@
+/* Authentication screens only. The shared Field, PasswordField and OtpField
+   components own heights and gaps that already match the auth rhythm
+   (44px controls, 8px label gaps), so this file only enforces the type
+   scale the shared tokens cannot reach without touching those components:
+   15px inputs and 13px helper/error/info text. */
+
+/* Body and inputs at 15px. OTP boxes carry no type attribute, so they keep
+   their own larger digits. */
+[data-auth-card] input[type="text"],
+[data-auth-card] input[type="email"],
+[data-auth-card] input[type="tel"],
+[data-auth-card] input[type="password"] {
+  font-size: 14px;
+}
+
+/* Helper and error text at 12px for compact, clean rhythm. */
+[data-auth-card] .text-xs {
+  font-size: 12px;
+}
+
+/* Standalone info lines directly inside a form read as 13px body copy. */
+[data-auth-card] form > p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Smooth focus styling with accessible focus-visible outline (NFR-US-04) */
+[data-auth-card] input,
+[data-auth-card] button,
+[data-auth-card] label,
+[data-auth-card] select {
+  outline: none;
+}
+
+[data-auth-card] input:focus,
+[data-auth-card] select:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+[data-auth-card] input:focus-visible,
+[data-auth-card] button:focus-visible,
+[data-auth-card] select:focus-visible {
+  outline: 2px solid #2563eb !important;
+  outline-offset: 2px !important;
+}
+
+[data-auth-heading]:focus {
+  outline: none !important;
+}
+
+/* Clean scrollbar suppression for fixed-height inner container */
+.auth-scroll-clean::-webkit-scrollbar {
+  display: none;
+}
+.auth-scroll-clean {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ---- auth mode transitions --------------------------------------------- */
+@keyframes auth-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes auth-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes auth-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.auth-anim-form {
+  animation: auth-slide-in-right 350ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+[dir="rtl"] .auth-anim-form {
+  animation-name: auth-slide-in-left;
+}
+
+@media (max-width: 1023.5px) {
+  .auth-anim-form {
+    animation: auth-fade-in 250ms ease-out both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-anim-form {
+    animation: auth-fade-in 150ms ease-out both;
+  }
+}

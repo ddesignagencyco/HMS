@@ -5,7 +5,8 @@ import { ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { AvailabilityService } from './availability.service.js';
 import { ProfileService } from './profile.service.js';
-import { availabilityReplaceSchema, profileUpdateSchema, serviceAreasReplaceSchema, timeOffCreateSchema } from './provider.schemas.js';
+import { ProviderOnboardingService } from './provider-onboarding.service.js';
+import { availabilityReplaceSchema, profileUpdateSchema, providerSubmitSchema, serviceAreasReplaceSchema, timeOffCreateSchema } from './provider.schemas.js';
 import { ServiceAreasService } from './service-areas.service.js';
 import { TimeOffService } from './time-off.service.js';
 
@@ -15,6 +16,7 @@ import { TimeOffService } from './time-off.service.js';
 export class ProviderController {
   constructor(
     @Inject(ProfileService) private readonly profile: ProfileService,
+    @Inject(ProviderOnboardingService) private readonly onboarding: ProviderOnboardingService,
     @Inject(AvailabilityService) private readonly availability: AvailabilityService,
     @Inject(TimeOffService) private readonly timeOff: TimeOffService,
     @Inject(ServiceAreasService) private readonly serviceAreas: ServiceAreasService
@@ -93,5 +95,18 @@ export class ProviderController {
   async replaceServiceAreas(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     const { areaIds } = parseWith(serviceAreasReplaceSchema, body);
     return { items: await this.serviceAreas.replaceMine(principal.userId, areaIds) };
+  }
+
+  @Post('submit')
+  @HttpCode(200)
+  @PolicyDecorator({ roles: ['PROVIDER'] })
+  @ApiOperation({
+    summary: 'Submit my profile for approval',
+    description: 'Moves your profile from DRAFT to PENDING_APPROVAL. Refused until your city and base location, at least one priced service, one area, one availability block and your CNIC are all on file, and until you accept the penalty schedule.'
+  })
+  @ApiZodBody(providerSubmitSchema, { default: { summary: 'Accept the penalty schedule and submit', value: { acceptPenaltySchedule: true } } })
+  async submit(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    parseWith(providerSubmitSchema, body);
+    return this.onboarding.submit(principal.userId);
   }
 }

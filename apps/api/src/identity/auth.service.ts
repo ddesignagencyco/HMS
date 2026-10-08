@@ -50,6 +50,7 @@ type UserRow = {
   totp_enabled_at: Date | null;
   totp_secret_enc: Buffer | null;
   password_hash: string;
+  provider_status: string | null;
 };
 
 @Injectable()
@@ -72,30 +73,34 @@ export class AuthService {
    */
   async register(input: RegisterInput): Promise<{ userId: string; requiresOtp: true }> {
     const passwordHash = await hashPassword(input.password);
-    const userId = await this.prisma.$transaction(async tx => {
-      const [row] = await tx.$queryRaw<{ id: string }[]>(
-        Prisma.sql`INSERT INTO users(phone_e164, email, password_hash, first_name, last_name, locale)
+    const userId = await this.prisma
+      .$transaction(async (tx) => {
+        const [row] = await tx.$queryRaw<{ id: string }[]>(
+          Prisma.sql`INSERT INTO users(phone_e164, email, password_hash, first_name, last_name, locale)
                    VALUES (${input.phoneE164}, ${input.email ?? null}, ${passwordHash}, ${input.firstName}, ${input.lastName}, ${input.locale})
                    RETURNING id`
-      );
-      if (row === undefined) throw new DomainError('INTERNAL_ERROR', 'The account could not be created');
-      await tx.$queryRaw(Prisma.sql`INSERT INTO user_roles(user_id, role_code) VALUES (${row.id}::uuid, ${input.role}::text)`);
-      if (input.role === 'CUSTOMER') {
-        await tx.$queryRaw(Prisma.sql`INSERT INTO customers(user_id) VALUES (${row.id}::uuid)`);
-      } else {
-        // FR-SP-01: a provider is PENDING_APPROVAL from the moment they register.
-        await tx.$queryRaw(Prisma.sql`INSERT INTO providers(user_id, status) VALUES (${row.id}::uuid, 'PENDING_APPROVAL')`);
-        // FR-NT-04: the admins are told a provider is waiting for approval.
-        await tx.$executeRaw(Prisma.sql`INSERT INTO outbox_events(aggregate, aggregate_id, type, payload) VALUES ('provider', ${row.id}, 'provider.awaiting_approval', ${JSON.stringify({ providerId: row.id })}::jsonb)`);
-      }
-      await tx.$queryRaw(
-        Prisma.sql`INSERT INTO audit_log(actor_user_id, actor_role, action, entity_type, entity_id, after)
+        );
+        if (row === undefined) throw new DomainError('INTERNAL_ERROR', 'The account could not be created');
+        await tx.$queryRaw(Prisma.sql`INSERT INTO user_roles(user_id, role_code) VALUES (${row.id}::uuid, ${input.role}::text)`);
+        if (input.role === 'CUSTOMER') {
+          await tx.$queryRaw(Prisma.sql`INSERT INTO customers(user_id) VALUES (${row.id}::uuid)`);
+        } else {
+          // FR-SP-01: a provider is PENDING_APPROVAL from the moment they register.
+          await tx.$queryRaw(Prisma.sql`INSERT INTO providers(user_id, status) VALUES (${row.id}::uuid, 'PENDING_APPROVAL')`);
+          // FR-NT-04: the admins are told a provider is waiting for approval.
+          await tx.$executeRaw(
+            Prisma.sql`INSERT INTO outbox_events(aggregate, aggregate_id, type, payload) VALUES ('provider', ${row.id}, 'provider.awaiting_approval', ${JSON.stringify({ providerId: row.id })}::jsonb)`
+          );
+        }
+        await tx.$queryRaw(
+          Prisma.sql`INSERT INTO audit_log(actor_user_id, actor_role, action, entity_type, entity_id, after)
                    VALUES (${row.id}::uuid, ${input.role}::actor_role, 'identity.register', 'user', ${row.id}::text, ${JSON.stringify({ role: input.role, providerStatus: input.role === 'PROVIDER' ? 'PENDING_APPROVAL' : null })}::jsonb)`
-      );
-      return row.id;
-    }).catch(error => {
-      throw describeRegistrationConflict(error);
-    });
+        );
+        return row.id;
+      })
+      .catch((error) => {
+        throw describeRegistrationConflict(error);
+      });
     await this.otp.issue(input.phoneE164, 'REGISTER', userId, input.locale);
     return { userId, requiresOtp: true };
   }
@@ -132,13 +137,20 @@ export class AuthService {
    */
   async login(input: LoginInput, meta: SessionMeta): Promise<AuthResult> {
     const config = await readAuthSettings(this.settings);
+    // The throttle is keyed on the identifier, not on the user row, so it is
+    // asserted before the lookup: guessing at identifiers that do not exist is
+    // exactly what the counter exists to bound.
+    await this.assertNotRateLimited(input.identifier, meta, config);
     const user = await this.findUserByIdentifier(input.identifier);
     if (user === null) {
       await dummyVerify(input.password);
+      await this.recordFailure(input.identifier, meta, config);
       throw new DomainError('INVALID_CREDENTIALS', GENERIC_CREDENTIALS_MESSAGE);
     }
-    await this.assertNotRateLimited(input.identifier, meta, config);
     if (user.status === 'DEACTIVATED') throw new DomainError('FORBIDDEN', 'This account has been deactivated');
+    // SHM-024: an admin block sets status LOCKED and revokes the existing sessions;
+    // without this check a blocked account could simply sign back in.
+    if (user.status === 'LOCKED') throw new DomainError('FORBIDDEN', 'This account has been locked');
     const passwordOk = await verifyPassword(user.password_hash, input.password);
     if (!passwordOk) {
       await this.recordFailure(input.identifier, meta, config);
@@ -250,6 +262,14 @@ export class AuthService {
 
   // ------------------------------------------------------------------ shared
 
+  /**
+   * Who a refresh token belongs to, without rotating it — the read `GET /auth/session`
+   * needs to tell a signed-in browser from a signed-out one after a reload.
+   */
+  async userIdOfRefresh(presented: string): Promise<string | null> {
+    return this.sessions.identify(presented);
+  }
+
   async describe(userId: string): Promise<AuthenticatedUser> {
     const user = await this.loadUser(userId);
     if (user === null) throw new DomainError('NOT_FOUND', 'The user was not found');
@@ -271,6 +291,9 @@ export class AuthService {
     const session = await this.sessions.start(userId, meta);
     const user = await this.loadUser(userId);
     if (user === null) throw new DomainError('UNAUTHENTICATED', 'The session could not be started');
+    // SHM-024: a blocked or deactivated account cannot open a fresh session, however
+    // it got here (login, an OTP verify, or a password reset).
+    if (user.status !== 'ACTIVE') throw new DomainError('FORBIDDEN', user.status === 'DEACTIVATED' ? 'This account has been deactivated' : 'This account has been locked');
     return this.issueFor(user, session, {
       roles: precomputed?.roles,
       totpVerified: precomputed?.totpVerified ?? false,
@@ -306,7 +329,7 @@ export class AuthService {
       status: user.status,
       roles,
       totpEnabled: user.totp_enabled_at !== null,
-      providerStatus: null
+      providerStatus: user.provider_status
     };
   }
 
@@ -333,15 +356,13 @@ export class AuthService {
   }
 
   private async findUserByTarget(target: string): Promise<UserRow | null> {
-    const [row] = await this.prisma.$queryRaw<UserRow[]>(
-      Prisma.sql`SELECT ${USER_COLUMNS} FROM users WHERE phone_e164 = ${target} OR email = ${target} LIMIT 1`
-    );
+    const [row] = await this.prisma.$queryRaw<UserRow[]>(Prisma.sql`SELECT ${USER_COLUMNS} FROM users WHERE phone_e164 = ${target} OR email = ${target} LIMIT 1`);
     return row ?? null;
   }
 
   private async rolesOf(userId: string): Promise<ActorRole[]> {
     const rows = await this.prisma.$queryRaw<{ role_code: ActorRole }[]>(Prisma.sql`SELECT role_code FROM user_roles WHERE user_id = ${userId}::uuid ORDER BY role_code`);
-    return rows.map(row => row.role_code);
+    return rows.map((row) => row.role_code);
   }
 
   private throttleKey(identifier: string, meta: SessionMeta): string {
@@ -366,7 +387,13 @@ export class AuthService {
   }
 }
 
-const USER_COLUMNS = Prisma.sql`id, phone_e164, email, first_name, last_name, locale, status, phone_verified_at, totp_enabled_at, totp_secret_enc, password_hash`;
+/**
+ * `provider_status` is a correlated subquery rather than a join: the three
+ * lookups below all read `FROM users` unaliased, and the field is only ever a
+ * label on the public shape of the user, never a filter.
+ */
+const USER_COLUMNS = Prisma.sql`id, phone_e164, email, first_name, last_name, locale, status, phone_verified_at, totp_enabled_at, totp_secret_enc, password_hash,
+       (SELECT p.status::text FROM providers p WHERE p.user_id = users.id LIMIT 1) as provider_status`;
 
 export const STAFF_ROLES = ['AGENT', 'FINANCE', 'ADMIN'] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];

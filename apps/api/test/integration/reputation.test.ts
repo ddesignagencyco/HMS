@@ -38,7 +38,7 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-type Reputation = { score: number; ratingCount: number; distribution: Record<string, number>; verifiedJobs: number; badge: string | null };
+type Reputation = { score: number | null; ratingCount: number; distribution: Record<string, number>; verifiedJobs: number; badge: string | null };
 
 const reputationOf = async (provider: Provider): Promise<Reputation> => (await callApi<Reputation>(app, `/search/providers/${provider.id}/reputation`)).body;
 
@@ -51,9 +51,13 @@ const ratedJob = async (provider: Provider, scores: { quality: number; punctuali
 };
 
 describe('SHM-063: ratings and the public reputation', () => {
-  it('a provider with no ratings shows the neutral prior; rating a job moves it, publishes it and counts it', async () => {
+  it('a provider with no ratings publishes no score at all; rating a job moves it, publishes it and counts it', async () => {
     const provider = await newProvider(app);
-    expect(await reputationOf(provider)).toMatchObject({ score: 3.5, ratingCount: 0, verifiedJobs: 0, badge: null });
+    // The weighted mean always exists (the prior fills both sides of the division),
+    // so it used to publish "3.5 out of 5" for somebody nobody had rated. Null is
+    // the honest answer: the number still ranks the provider, but it is not shown
+    // as though anybody had said it.
+    expect(await reputationOf(provider)).toMatchObject({ score: null, ratingCount: 0, verifiedJobs: 0, badge: null });
 
     await ratedJob(provider, { quality: 5, punctuality: 5, conduct: 5, cleanliness: 5 }, 'Excellent work');
     const after = await reputationOf(provider);
@@ -61,19 +65,36 @@ describe('SHM-063: ratings and the public reputation', () => {
     expect(after.verifiedJobs).toBe(1);
     expect(after.distribution['5']).toBe(1);
     // 1 rating of 5.0 with recent weight 2: (3.5*5 + 5*2) / (5 + 2)
-    expect(after.score).toBe(Math.round(((350 * 5 + 500 * 2) / 7)) / 100);
+    expect(after.score).toBe(Math.round((350 * 5 + 500 * 2) / 7) / 100);
   });
 
   it('shows up in search, with the score and rating count, and in the provider’s public profile', async () => {
     const where = { lat: 26.1 + Math.random(), lng: 66.1 + Math.random() };
     const provider = await newProvider(app, where);
     await ratedJob(provider, { quality: 5, punctuality: 4, conduct: 5, cleanliness: 4 });
-    const search = await callApi<{ items: { providerId: string; ratingScore: number; ratingCount: number; badge: string | null }[] }>(app, `/search/providers?serviceSlug=leak-repair&lat=${where.lat}&lng=${where.lng}`);
-    const hit = search.body.items.find(item => item.providerId === provider.id)!;
+    const search = await callApi<{ items: { providerId: string; ratingScore: number | null; ratingCount: number; badge: string | null }[] }>(
+      app,
+      `/search/providers?serviceSlug=leak-repair&lat=${where.lat}&lng=${where.lng}`
+    );
+    const hit = search.body.items.find((item) => item.providerId === provider.id)!;
     expect(hit.ratingCount).toBe(1);
     expect(hit.ratingScore).toBe((await reputationOf(provider)).score);
     const detail = await callApi<{ reputation: Reputation }>(app, `/search/providers/${provider.id}`);
     expect(detail.body.reputation.ratingCount).toBe(1);
+  });
+
+  it('an unrated provider is still ranked by the prior, and publishes null beside it', async () => {
+    const where = { lat: 27.9 + Math.random(), lng: 67.9 + Math.random() };
+    const unrated = await newProvider(app, where);
+    const items = (
+      await callApi<{ items: { providerId: string; ratingScore: number | null; ratingCount: number }[] }>(app, `/search/providers?serviceSlug=leak-repair&lat=${where.lat}&lng=${where.lng}`)
+    ).body.items;
+    // Present in the results — the prior is what puts them there — with nothing
+    // claimed about them.
+    expect(items.some((item) => item.providerId === unrated.id)).toBe(true);
+    const hit = items.find((item) => item.providerId === unrated.id)!;
+    expect(hit.ratingScore).toBeNull();
+    expect(hit.ratingCount).toBe(0);
   });
 
   it('ranks a proven provider above an unproven one at the same distance, and equal ratings fall back to distance', async () => {
@@ -81,12 +102,14 @@ describe('SHM-063: ratings and the public reputation', () => {
     const proven = await newProvider(app, where);
     const unrated = await newProvider(app, { lat: where.lat + 0.0001, lng: where.lng + 0.0001 });
     await ratedJob(proven, { quality: 5, punctuality: 5, conduct: 5, cleanliness: 5 });
-    const order = (await callApi<{ items: { providerId: string; distanceM: number }[] }>(app, `/search/providers?serviceSlug=leak-repair&lat=${where.lat}&lng=${where.lng}`)).body.items.map(item => item.providerId);
+    const order = (await callApi<{ items: { providerId: string; distanceM: number }[] }>(app, `/search/providers?serviceSlug=leak-repair&lat=${where.lat}&lng=${where.lng}`)).body.items.map(
+      (item) => item.providerId
+    );
     expect(order.indexOf(proven.id)).toBeLessThan(order.indexOf(unrated.id));
 
     const twin = await newProvider(app, { lat: where.lat + 0.0002, lng: where.lng + 0.0002 });
     const equal = await newProvider(app, { lat: where.lat + 0.0003, lng: where.lng + 0.0003 });
-    const both = (await callApi<{ items: { providerId: string }[] }>(app, `/search/providers?serviceSlug=leak-repair&lat=${where.lat}&lng=${where.lng}`)).body.items.map(item => item.providerId);
+    const both = (await callApi<{ items: { providerId: string }[] }>(app, `/search/providers?serviceSlug=leak-repair&lat=${where.lat}&lng=${where.lng}`)).body.items.map((item) => item.providerId);
     expect(both.indexOf(twin.id)).toBeLessThan(both.indexOf(equal.id));
   });
 
@@ -94,7 +117,9 @@ describe('SHM-063: ratings and the public reputation', () => {
     const provider = await newProvider(app);
     const job = await completedJob(app, provider, { mode: 'ONLINE' });
     await expect(
-      prisma.$executeRaw(Prisma.sql`INSERT INTO ratings(verification_call_id, booking_id, provider_id, customer_id, quality, punctuality, conduct, cleanliness) VALUES (${job.verificationId}::uuid, ${job.id}::uuid, ${provider.id}::uuid, ${job.customer.id}::uuid, 5, 5, 5, 5)`)
+      prisma.$executeRaw(
+        Prisma.sql`INSERT INTO ratings(verification_call_id, booking_id, provider_id, customer_id, quality, punctuality, conduct, cleanliness) VALUES (${job.verificationId}::uuid, ${job.id}::uuid, ${provider.id}::uuid, ${job.customer.id}::uuid, 5, 5, 5, 5)`
+      )
     ).rejects.toThrow(/rating requires a submitted verification/);
     expect((await reputationOf(provider)).ratingCount).toBe(0);
   });
@@ -115,9 +140,13 @@ describe('SHM-063: ratings and the public reputation', () => {
   it('flags a provider once their average falls to the poor threshold with enough ratings', async () => {
     const provider = await newProvider(app);
     for (let index = 0; index < 5; index += 1) await ratedJob(provider, { quality: 1, punctuality: 2, conduct: 2, cleanliness: 1 });
-    const flags = await prisma.$queryRaw<{ kind: string; n: bigint }[]>(Prisma.sql`SELECT kind::text, count(*)::bigint as n FROM provider_flags WHERE provider_id = ${provider.id}::uuid GROUP BY kind`);
+    const flags = await prisma.$queryRaw<{ kind: string; n: bigint }[]>(
+      Prisma.sql`SELECT kind::text, count(*)::bigint as n FROM provider_flags WHERE provider_id = ${provider.id}::uuid GROUP BY kind`
+    );
     expect(flags).toEqual([{ kind: 'LOW_RATING', n: 1n }]);
-    const events = await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM outbox_events WHERE type = 'provider.review_required' AND payload->>'providerId' = ${provider.id}`);
+    const events = await prisma.$queryRaw<{ n: bigint }[]>(
+      Prisma.sql`SELECT count(*)::bigint as n FROM outbox_events WHERE type = 'provider.review_required' AND payload->>'providerId' = ${provider.id}`
+    );
     expect(events[0]?.n).toBe(1n);
   }, 120_000);
 });
@@ -151,7 +180,11 @@ describe('SHM-063: remarks and replies', () => {
   it('a provider sees every rating they received, with the four criteria', async () => {
     const provider = await newProvider(app);
     await ratedJob(provider, { quality: 5, punctuality: 3, conduct: 4, cleanliness: 4 }, 'Good');
-    const own = await callApi<{ reputation: Reputation; items: { score: number; quality: number; punctuality: number; remark: { body: string; published: boolean } | null }[] }>(app, '/provider/ratings', bearer(provider.accessToken));
+    const own = await callApi<{ reputation: Reputation; items: { score: number; quality: number; punctuality: number; remark: { body: string; published: boolean } | null }[] }>(
+      app,
+      '/provider/ratings',
+      bearer(provider.accessToken)
+    );
     expect(own.status).toBe(200);
     expect(own.body.items).toHaveLength(1);
     expect(own.body.items[0]).toMatchObject({ score: 4, quality: 5, punctuality: 3, remark: { body: 'Good', published: true } });
@@ -191,9 +224,17 @@ describe('SHM-064: call recordings', () => {
     const provider = await newProvider(app);
     const job = await completedJob(app, provider, { mode: 'CASH' });
     await claim(app, agent.accessToken, job.verificationId);
-    const bridged = await callApi<{ recordingRef: string; callRef: string }>(app, `/agent/verifications/${job.verificationId}/call`, bearer(agent.accessToken, postJson({ agentEndpoint: '+923001112233' })));
+    const bridged = await callApi<{ recordingRef: string; callRef: string }>(
+      app,
+      `/agent/verifications/${job.verificationId}/call`,
+      bearer(agent.accessToken, postJson({ agentEndpoint: '+923001112233' }))
+    );
     expect(bridged.status).toBe(200);
-    const attempt = await callApi<{ id: string }>(app, `/agent/verifications/${job.verificationId}/attempts`, bearer(agent.accessToken, postJson({ result: 'ANSWERED', callRef: bridged.body.callRef, recordingRef: bridged.body.recordingRef, durationSeconds: 90 })));
+    const attempt = await callApi<{ id: string }>(
+      app,
+      `/agent/verifications/${job.verificationId}/attempts`,
+      bearer(agent.accessToken, postJson({ result: 'ANSWERED', callRef: bridged.body.callRef, recordingRef: bridged.body.recordingRef, durationSeconds: 90 }))
+    );
     expect(attempt.status).toBe(201);
     return { job, attemptId: attempt.body.id, recordingRef: bridged.body.recordingRef };
   };
@@ -208,7 +249,7 @@ describe('SHM-064: call recordings', () => {
     expect(new Date(played.body.expiresAt).getTime()).toBeLessThanOrEqual(Date.now() + 301_000);
     expect((await callApi(app, `/finance/recordings/${attemptId}`, bearer(admin.accessToken))).status).toBe(200);
     const audit = await prisma.$queryRaw<{ role: string }[]>(Prisma.sql`SELECT actor_role::text as role FROM audit_log WHERE action = 'recording.access' AND entity_id = ${attemptId} ORDER BY id`);
-    expect(audit.map(row => row.role)).toEqual(['FINANCE', 'ADMIN']);
+    expect(audit.map((row) => row.role)).toEqual(['FINANCE', 'ADMIN']);
   });
 
   it('an attempt with no recording is a 404', async () => {
@@ -230,7 +271,7 @@ describe('SHM-064: call recordings', () => {
 
     const recordings = app.get(RecordingService);
     expect(await recordings.purge()).toBe(0);
-    expect((await storage().head({ key: old.recordingRef, bucket: 'recordings' }))).not.toBeNull();
+    expect(await storage().head({ key: old.recordingRef, bucket: 'recordings' })).not.toBeNull();
 
     // 180 days plus a little after the older attempt began: the older is due, and so is the newer one a moment later — so purge exactly the older by stopping the clock between them.
     app.get(AppClock).travelTo(new Date(oldStarted.getTime() + 180 * 86_400_000 + 1_000));

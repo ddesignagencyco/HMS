@@ -1,5 +1,5 @@
 // apps/api/src/notification/notification.service.ts
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { formatPaisa } from '@smart-home/domain';
 import { signReceiptToken } from '../common/receipt-link.js';
@@ -25,10 +25,14 @@ const BOTH: readonly Channel[] = ['IN_APP', 'SMS'];
  * The planner matrix (FR-NT-01..04): every outbox event × who hears about it × on which channels, each naming a seeded template that exists in
  * English and Urdu. Adding an event means adding a row here and a template; nothing else changes. Templates themselves are editable at runtime
  * (`/admin/templates`), so wording is never a deploy.
+ *
+ * Every event the codebase emits must be accounted for: either it has a row here, or it is named in `NO_RULE_EVENTS` below with a reason. An event
+ * that is neither is dropped and `handle()` warns about it, so a missing row can never go unnoticed again.
  */
 export const RULES: Readonly<Record<string, readonly Rule[]>> = {
   // -- booking lifecycle (M5/M6)
   'booking.paymentCaptured': [{ recipient: 'customer', eventKey: 'booking.requested', channels: IN_APP }],
+  'booking.paymentAbandoned': [{ recipient: 'customer', eventKey: 'booking.payment_abandoned', channels: IN_APP }],
   'booking.offer_created': [{ recipient: { payload: 'providerId' }, eventKey: 'booking.offer', channels: ['SMS'] }],
   'booking.accept': [
     { recipient: 'customer', eventKey: 'booking.accepted', channels: IN_APP },
@@ -36,6 +40,13 @@ export const RULES: Readonly<Record<string, readonly Rule[]>> = {
   ],
   'booking.depart': [{ recipient: 'customer', eventKey: 'booking.on_the_way', channels: BOTH }],
   'booking.raiseQuoteRevision': [{ recipient: 'customer', eventKey: 'booking.quote_revision', channels: IN_APP }],
+  'booking.approveQuoteRevision': [{ recipient: 'provider', eventKey: 'booking.quote_approved', channels: IN_APP }],
+  'booking.rejectQuoteRevision': [{ recipient: 'provider', eventKey: 'booking.quote_rejected', channels: IN_APP }],
+  'booking.reschedule': [
+    { recipient: 'customer', eventKey: 'booking.rescheduled', channels: IN_APP },
+    { recipient: 'provider', eventKey: 'booking.rescheduled', channels: IN_APP }
+  ],
+  'booking.start': [{ recipient: 'customer', eventKey: 'booking.started', channels: IN_APP }],
   'booking.cancel': [{ recipient: 'other', eventKey: 'booking.cancelled', channels: IN_APP }],
   'booking.noShow': [{ recipient: 'other', eventKey: 'booking.no_show_reported', channels: IN_APP }],
   'booking.exhaustOffers': [{ recipient: 'customer', eventKey: 'booking.unfulfilled', channels: IN_APP }],
@@ -50,13 +61,26 @@ export const RULES: Readonly<Record<string, readonly Rule[]>> = {
     { recipient: 'provider', eventKey: 'booking.reminder_2h', channels: ['SMS'] }
   ],
   // -- verification and money (M7/M8)
-  'booking.handToVerification': [{ recipient: 'customer', eventKey: 'booking.awaiting_verification', channels: IN_APP }],
+  /**
+ * The provider has finished. This is the one notification in the product a customer
+ * has to act on before their money moves, so it goes by SMS as well as in-app: an
+ * in-app-only row is invisible to anyone who does not open the app, and a Tier B
+ * job whose money is released on the customer's answer would simply release itself
+ * after 72 hours with the customer never told there was anything to confirm.
+ */
+'booking.handToVerification': [{ recipient: 'customer', eventKey: 'booking.awaiting_verification', channels: BOTH }],
   'booking.release': [
     { recipient: 'customer', eventKey: 'payment.released', channels: IN_APP },
     { recipient: 'provider', eventKey: 'payment.released_provider', channels: IN_APP }
   ],
   'booking.autoRelease': [{ recipient: 'provider', eventKey: 'booking.cash_authorised', channels: IN_APP }],
   'booking.cash_authorised': [{ recipient: 'provider', eventKey: 'booking.cash_authorised', channels: IN_APP }],
+  'booking.completeAtVisitFee': [{ recipient: 'customer', eventKey: 'booking.visit_fee_charged', channels: IN_APP }],
+  'booking.linkConfirmed': [{ recipient: 'provider', eventKey: 'booking.customer_confirmed', channels: IN_APP }],
+  'booking.outcomeRework': [{ recipient: 'provider', eventKey: 'booking.rework_needed', channels: IN_APP }],
+  'booking.confirmCashReceived': [{ recipient: 'customer', eventKey: 'booking.cash_confirmed', channels: IN_APP }],
+  'booking.warrantyClaim': [{ recipient: 'provider', eventKey: 'booking.warranty_claim', channels: IN_APP }],
+  'ledger.drift_detected': [{ recipient: 'admins', eventKey: 'admin.ledger_drift', channels: IN_APP }],
   'payment.receipt_due': [{ recipient: 'customer', eventKey: 'payment.receipt', channels: ['SMS'] }],
   'refund.queued': [{ recipient: 'customer', eventKey: 'payment.refunded', channels: IN_APP }],
   'payout.paid': [{ recipient: { payload: 'providerId' }, eventKey: 'payout.paid', channels: IN_APP }],
@@ -76,6 +100,7 @@ export const RULES: Readonly<Record<string, readonly Rule[]>> = {
     { recipient: 'admins', eventKey: 'admin.dispute_opened', channels: IN_APP },
     { recipient: 'provider', eventKey: 'dispute.opened', channels: BOTH }
   ],
+  'dispute.replied': [{ recipient: 'admins', eventKey: 'admin.dispute_reply', channels: IN_APP }],
   'dispute.resolved': [
     { recipient: { payload: 'customerId' }, eventKey: 'dispute.resolved', channels: BOTH },
     { recipient: { payload: 'providerId' }, eventKey: 'dispute.resolved', channels: BOTH }
@@ -83,19 +108,42 @@ export const RULES: Readonly<Record<string, readonly Rule[]>> = {
   // -- conduct (M15)
   'penalty.proposed': [{ recipient: { payload: 'providerId' }, eventKey: 'penalty.proposed', channels: BOTH }],
   'penalty.applied': [{ recipient: { payload: 'providerId' }, eventKey: 'penalty.applied', channels: BOTH }],
+  'penalty.replied': [{ recipient: 'admins', eventKey: 'admin.penalty_reply', channels: IN_APP }],
   'penalty.appealed': [{ recipient: 'admins', eventKey: 'admin.appeal_filed', channels: IN_APP }],
   'appeal.decided': [{ recipient: { payload: 'providerId' }, eventKey: 'appeal.decided', channels: BOTH }],
   'provider.warned': [{ recipient: { payload: 'providerId' }, eventKey: 'provider.warned', channels: IN_APP }],
   'provider.suspended': [{ recipient: { payload: 'providerId' }, eventKey: 'provider.suspended', channels: BOTH }],
   'provider.blocked': [{ recipient: { payload: 'providerId' }, eventKey: 'provider.blocked', channels: BOTH }],
   // -- admin work queue
-  'provider.awaiting_approval': [{ recipient: 'admins', eventKey: 'admin.provider_pending', channels: IN_APP }]
+  'provider.awaiting_approval': [{ recipient: 'admins', eventKey: 'admin.provider_pending', channels: IN_APP }],
+  'provider.review_required': [{ recipient: 'admins', eventKey: 'admin.provider_review_required', channels: IN_APP }]
+};
+
+/**
+ * Events that intentionally notify nobody. Each carries the reason the human is still told elsewhere — a dedicated handler, a sibling event that
+ * already routes — or why the event is purely internal. Anything the codebase emits must be here or in `RULES`; `handle()` warns and
+ * `test/notification-rules.test.ts` fails over anything that is neither.
+ */
+export const NO_RULE_EVENTS: Readonly<Record<string, string>> = {
+  'booking.complete': 'the customer is told immediately after by handToVerification (awaiting_verification)',
+  'booking.verified': 'release/autoRelease raise the payment notifications that follow',
+  'booking.outcomeDisputed': 'dispute.opened already notifies admins and the provider',
+  'booking.reworkWindowExpired': 'internal sweep; the booking re-enters the dispute flow which notifies',
+  'booking.close': 'end of the booking lifecycle; nothing to say',
+  'booking.resolveRelease': 'disbursement mechanics; dispute.resolved notifies both parties of the ruling',
+  'booking.resolvePartial': 'disbursement mechanics; dispute.resolved notifies both parties of the ruling',
+  'booking.resolveRefund': 'disbursement mechanics; dispute.resolved notifies both parties of the ruling',
+  'complaint.replied': 'an in-app thread; complaint.status_changed covers every status move',
+  'payment.webhook.received': 'infrastructure/audit only',
+  'payment.captured': 'the user-visible path is booking.paymentCaptured',
+  'payout.requested': 'provider-triggered; payout.paid is the notification that matters',
+  'verification.link_requested': 'handled by the dedicated verification-link SMS handler'
 };
 
 /** Every placeholder a template may use. A template that names anything else is refused when it is saved, so a typo cannot ship as a blank. */
 export const TEMPLATE_VARIABLES = [
   'bookingRef', 'serviceName', 'providerName', 'slotLabel', 'total', 'amount', 'problemLink', 'code', 'otp', 'link',
-  'complaintRef', 'category', 'to', 'resolution', 'consequence', 'until', 'points', 'decision', 'breachCode', 'releasePaisa', 'refundPaisa', 'replyDueAt', 'pointsAfter', 'penaltyId', 'amountPaisa'
+  'complaintRef', 'category', 'to', 'resolution', 'consequence', 'until', 'points', 'decision', 'breachCode', 'releasePaisa', 'refundPaisa', 'replyDueAt', 'pointsAfter', 'penaltyId', 'amountPaisa', 'providerId', 'reason'
 ] as const;
 
 export const renderTemplate = (template: string, values: Record<string, string>): string => template.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => values[name] ?? '');
@@ -113,6 +161,8 @@ const MAX_ATTEMPTS = 5;
  */
 @Injectable()
 export class NotificationService implements OnModuleInit {
+  private readonly logger = new Logger(NotificationService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
@@ -129,7 +179,10 @@ export class NotificationService implements OnModuleInit {
   /** Returns how many notifications were created (0 for an event with no rule, or one already handled). */
   async handle(job: OutboxJob): Promise<number> {
     const rules = RULES[job.eventType];
-    if (rules === undefined) return 0;
+    if (rules === undefined) {
+      if (!(job.eventType in NO_RULE_EVENTS)) this.logger.warn(`outbox event \`${job.eventType}\` has no notification rule and is not classified in NO_RULE_EVENTS`);
+      return 0;
+    }
     const bookingId = typeof job.payload.bookingId === 'string' ? job.payload.bookingId : undefined;
     const context = bookingId === undefined ? null : await this.context(bookingId);
     const actor = typeof job.payload.actorUserId === 'string' ? job.payload.actorUserId : typeof job.payload.senderUserId === 'string' ? job.payload.senderUserId : undefined;

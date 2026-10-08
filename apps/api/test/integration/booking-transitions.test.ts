@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { PrismaService } from '../../src/database/prisma.service.js';
+import { AppClock } from '../../src/platform/app-clock.js';
 import { callApi, createTestApp, postJson, readyBookableProvider, registerAndVerify } from './harness.js';
 
 let app: NestExpressApplication;
@@ -137,18 +138,18 @@ describe('FR-EX-01 / FR-BK-06 / SHM-034: depart, cancel and no-show', () => {
   });
 
   /** Registers a fresh customer, books the shared provider, and accepts it — returns both tokens plus the now-SCHEDULED booking. */
-  const scheduledBooking = async (): Promise<{ id: string; customerAccessToken: string }> => {
+  const scheduledBooking = async (): Promise<{ id: string; customerAccessToken: string; scheduledStart: string }> => {
     const customer = await registerAndVerify(app, 'CUSTOMER');
     const address = await callApi<{ id: string }>(app, '/customer/addresses', asCustomer(customer.accessToken, postJson({ label: 'Home', line1: 'House 1', areaId: shared.areaId, lat: 31.52, lng: 74.35, isDefault: true })));
     const slot = aFutureSlot(nextSlotOffsetHours);
     nextSlotOffsetHours += 24;
     const created = await callApi<{ id: string }>(app, '/bookings', asCustomer(customer.accessToken, postJson({ providerId: shared.providerId, serviceId: shared.serviceId, addressId: address.body.id, ...slot })));
     await callApi(app, `/bookings/${created.body.id}/accept`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
-    return { id: created.body.id, customerAccessToken: customer.accessToken };
+    return { id: created.body.id, customerAccessToken: customer.accessToken, scheduledStart: slot.scheduledStart };
   };
 
   /** A `scheduledBooking()` moved on to EN_ROUTE, for the no-show tests. */
-  const enRouteBooking = async (): Promise<{ id: string; customerAccessToken: string }> => {
+  const enRouteBooking = async (): Promise<{ id: string; customerAccessToken: string; scheduledStart: string }> => {
     const booking = await scheduledBooking();
     await callApi(app, `/bookings/${booking.id}/depart`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
     return booking;
@@ -209,6 +210,8 @@ describe('FR-EX-01 / FR-BK-06 / SHM-034: depart, cancel and no-show', () => {
 
   it('lets either party report a no-show on an EN_ROUTE booking, recording which side failed to show', async () => {
     const booking = await enRouteBooking();
+    // BR-04: the report is only legal once the grace window after the slot start has passed.
+    app.get(AppClock).travelTo(new Date(new Date(booking.scheduledStart).getTime() + 40 * 60_000));
 
     const response = await callApi<{ status: string }>(app, `/bookings/${booking.id}/no-show`, asCustomer(shared.providerAccessToken, postJson({ party: 'CUSTOMER' })));
     expect(response.status).toBe(200);
@@ -219,12 +222,16 @@ describe('FR-EX-01 / FR-BK-06 / SHM-034: depart, cancel and no-show', () => {
     expect(rows[0]?.noShowParty).toBe('CUSTOMER');
   });
 
-  it('rejects a no-show reported on a booking still SCHEDULED (not yet EN_ROUTE) with 409 ILLEGAL_TRANSITION', async () => {
+  it('rejects a no-show reported on a SCHEDULED booking before the grace window ends, naming the wait', async () => {
+    // SRS T13 lets a report come from SCHEDULED (a provider who never taps depart), but
+    // BR-04 still gates it on the grace window: a minute early is a BAD_REQUEST, not a 200.
     const booking = await scheduledBooking();
 
-    const response = await callApi<{ code: string }>(app, `/bookings/${booking.id}/no-show`, asCustomer(shared.providerAccessToken, postJson({ party: 'CUSTOMER' })));
-    expect(response.status).toBe(409);
-    expect(response.body.code).toBe('ILLEGAL_TRANSITION');
+    app.get(AppClock).travelTo(new Date(new Date(booking.scheduledStart).getTime() - 60_000));
+    const response = await callApi<{ code: string; detail: string }>(app, `/bookings/${booking.id}/no-show`, asCustomer(shared.providerAccessToken, postJson({ party: 'CUSTOMER' })));
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('BAD_REQUEST');
+    expect(response.body.detail).toContain('30 minutes');
   });
 
   it('rejects a no-show body naming neither CUSTOMER nor PROVIDER', async () => {

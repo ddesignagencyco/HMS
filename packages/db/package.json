@@ -10,6 +10,7 @@
     "db:migrate": "node scripts/dbmate.mjs",
     "db:new": "cross-env DBMATE_COMMAND=new node scripts/dbmate.mjs",
     "db:status": "cross-env DBMATE_COMMAND=status node scripts/dbmate.mjs",
+    "db:check-schema": "node scripts/check-schema-fidelity.mjs",
     "db:drop": "cross-env DBMATE_COMMAND=drop node scripts/dbmate.mjs",
     "db:pull": "dotenv -e ../../.env -- prisma db pull --schema prisma/schema.prisma && npm run db:generate",
     "db:generate": "prisma generate --schema prisma/schema.prisma",

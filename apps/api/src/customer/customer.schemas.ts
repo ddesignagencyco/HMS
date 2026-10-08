@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { password } from '../identity/auth.schemas.js';
 
 const label = z.string().trim().min(1).max(100);
 const line = z.string().trim().min(1).max(300);
@@ -34,3 +35,28 @@ export const addressUpdateSchema = z
 
 export type AddressCreateInput = z.infer<typeof addressCreateSchema>;
 export type AddressUpdateInput = z.infer<typeof addressUpdateSchema>;
+
+/**
+ * SHM-020 profile update. Only the fields a customer owns change here: the phone
+ * number and email are login identifiers, so changing either has to go through an
+ * OTP (`PHONE_CHANGE` flow) rather than a silent write. `locale` is the one
+ * preference the profile carries today.
+ */
+export const profileUpdateSchema = z
+  .object({
+    firstName: z.string().trim().min(1).max(80).optional(),
+    lastName: z.string().trim().max(80).optional(),
+    locale: z.enum(['en', 'ur']).optional()
+  })
+  .strict()
+  .refine(input => Object.keys(input).length > 0, { message: 'Provide at least one field to update' });
+
+export const passwordChangeSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(200),
+    newPassword: password
+  })
+  .strict();
+
+export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
+export type PasswordChangeInput = z.infer<typeof passwordChangeSchema>;

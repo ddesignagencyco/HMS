@@ -236,6 +236,26 @@ CREATE TABLE service_checklist_items (
   UNIQUE (service_id, position)
 );
 
+-- The common faults a customer picks from when booking ("the AC is not cooling").
+-- A booking may still carry free text alongside the chosen option, or instead of
+-- one: the list is a shortcut for a customer who does not know how to describe the
+-- problem, never a constraint on what they may say about it.
+CREATE TABLE service_issue_options (
+  id         serial PRIMARY KEY,
+  service_id int NOT NULL REFERENCES services(id),
+  slug       text NOT NULL,
+  label_en   text NOT NULL,
+  label_ur   text NOT NULL,
+  position   int NOT NULL,
+  is_active  boolean NOT NULL DEFAULT true,
+  UNIQUE (service_id, slug),
+  UNIQUE (service_id, position),
+  -- An option is only ever a booking-time convenience, so it is never the sole
+  -- evidence of what was reported: free text and photos carry that.
+  CHECK (char_length(trim(label_en)) BETWEEN 1 AND 120)
+);
+CREATE INDEX service_issue_options_service_idx ON service_issue_options(service_id) WHERE is_active;
+
 -- ---------------------------------------------------------------------
 -- CUSTOMERS & PROVIDERS
 -- ---------------------------------------------------------------------
@@ -469,6 +489,19 @@ CREATE TABLE bookings (
   scheduled_start        timestamptz NOT NULL,
   scheduled_end          timestamptz NOT NULL,
   problem_text           text,
+  -- "Book this for someone who isn't you." The booker's account still pays, rates,
+  -- disputes and is verified against; these columns only record who will actually
+  -- receive the provider, so the provider can reach the door. Either both are set
+  -- or neither is — a booking cannot claim to be on someone's behalf and then not
+  -- say who.
+  is_on_behalf           boolean NOT NULL DEFAULT false,
+  on_behalf_name         text,
+  on_behalf_phone_e164   text,
+  -- The option the customer picked from the service's common-faults list, if any.
+  -- Optional and unconstrained against service_id on purpose: the list is a
+  -- convenience the customer may decline to use, and problem_text may be written
+  -- instead, so a booking may carry neither, one, or both.
+  issue_option_id        int REFERENCES service_issue_options(id),
   quoted_amount_paisa    bigint NOT NULL CHECK (quoted_amount_paisa >= 0),
   approved_total_paisa   bigint NOT NULL,
   final_amount_paisa     bigint,
@@ -505,6 +538,12 @@ CREATE TABLE bookings (
          OR start_otp_verified_at IS NOT NULL),
   CHECK (status NOT IN ('ACCEPTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION','WORK_COMPLETED')
          OR provider_id IS NOT NULL),
+  -- An on-behalf-of booking must actually name and number the person, and a booking
+  -- that is not on someone's behalf must not carry a contact for one.
+  CONSTRAINT bookings_on_behalf_consistent CHECK ((is_on_behalf AND on_behalf_name IS NOT NULL AND on_behalf_phone_e164 IS NOT NULL)
+         OR (NOT is_on_behalf AND on_behalf_name IS NULL AND on_behalf_phone_e164 IS NULL)),
+  CONSTRAINT bookings_on_behalf_phone_e164 CHECK (on_behalf_phone_e164 IS NULL OR on_behalf_phone_e164 ~ '^\+[1-9][0-9]{7,14}$'),
+  CONSTRAINT bookings_on_behalf_name CHECK (on_behalf_name IS NULL OR char_length(trim(on_behalf_name)) BETWEEN 1 AND 120),
   -- no double booking of a provider (FR-BK-02)
   CONSTRAINT bookings_no_provider_overlap EXCLUDE USING gist (provider_id WITH =, slot WITH &&)
     WHERE (status IN ('PENDING_PAYMENT','REQUESTED','ACCEPTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION'))

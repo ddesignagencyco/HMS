@@ -1,0 +1,17 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { VerifyOtpPage } from "@/features/auth/verify-otp-form";
+import { getDictionary } from "@/lib/dictionaries";
+import { isLocale } from "@/lib/utils";
+
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  const dict = isLocale(locale) ? getDictionary(locale) : getDictionary("en");
+  return { title: dict.auth.verifyTitle, description: dict.auth.verifyAccent };
+}
+
+export default async function VerifyOtpRoute({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params;
+  if (!isLocale(locale)) notFound();
+  return <VerifyOtpPage locale={locale} dict={getDictionary(locale)} />;
+}

@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
-import { categoryCreateSchema, categoryUpdateSchema, checklistReplaceSchema, commissionRuleCreateSchema, commissionRuleListQuerySchema, serviceCreateSchema, serviceUpdateSchema } from './catalogue.schemas.js';
+import { categoryCreateSchema, categoryUpdateSchema, checklistReplaceSchema, commissionRuleCreateSchema, commissionRuleListQuerySchema, issueOptionsReplaceSchema, serviceCreateSchema, serviceUpdateSchema } from './catalogue.schemas.js';
 import { CatalogueService } from './catalogue.service.js';
 
 @ApiTags('catalogue')
@@ -17,16 +17,16 @@ export class CatalogueAdminController {
   @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
   @ApiOperation({ summary: 'Create a service category', description: 'Admin only. Adds a new category to the catalogue, such as "Plumbing" or "Electrical".' })
   @ApiZodBody(categoryCreateSchema, { default: { summary: 'New category', value: { slug: 'roofing', nameEn: 'Roofing', nameUr: 'چھت سازی', sortOrder: 10, defaultWarrantyDays: 30 } } })
-  async createCategory(@Body() body: unknown) {
-    return this.catalogue.createCategory(parseWith(categoryCreateSchema, body));
+  async createCategory(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.catalogue.createCategory(parseWith(categoryCreateSchema, body), principal.userId);
   }
 
   @Patch('categories/:id')
   @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
   @ApiOperation({ summary: 'Update a service category', description: 'Admin only. Renames, reorders, or activates/deactivates a category. Deactivating removes it (and its services) from the public catalogue without deleting any history.' })
   @ApiZodBody(categoryUpdateSchema, { rename: { summary: 'Rename', value: { nameEn: 'Roofing & Waterproofing' } }, deactivate: { summary: 'Deactivate', value: { isActive: false } } })
-  async updateCategory(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
-    return this.catalogue.updateCategory(id, parseWith(categoryUpdateSchema, body));
+  async updateCategory(@Param('id', ParseIntPipe) id: number, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.catalogue.updateCategory(id, parseWith(categoryUpdateSchema, body), principal.userId);
   }
 
   @Post('services')
@@ -54,16 +54,16 @@ export class CatalogueAdminController {
       }
     }
   })
-  async createService(@Body() body: unknown) {
-    return this.catalogue.createService(parseWith(serviceCreateSchema, body));
+  async createService(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.catalogue.createService(parseWith(serviceCreateSchema, body), principal.userId);
   }
 
   @Patch('services/:id')
   @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
   @ApiOperation({ summary: 'Update a bookable service', description: 'Admin only. Adjusts pricing, duration, or eligibility flags, or activates/deactivates the service.' })
   @ApiZodBody(serviceUpdateSchema, { reprice: { summary: 'Adjust the price band', value: { minPricePaisa: 150_000, maxPricePaisa: 350_000 } } })
-  async updateService(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
-    return this.catalogue.updateService(id, parseWith(serviceUpdateSchema, body));
+  async updateService(@Param('id', ParseIntPipe) id: number, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.catalogue.updateService(id, parseWith(serviceUpdateSchema, body), principal.userId);
   }
 
   @Put('services/:id/checklist')
@@ -75,9 +75,32 @@ export class CatalogueAdminController {
       value: { items: [{ labelEn: 'Clear debris from gutters', labelUr: 'گٹر سے ملبہ صاف کریں', requiresPhoto: true }, { labelEn: 'Check downpipes flow freely', labelUr: 'پائپوں کا بہاؤ چیک کریں', requiresPhoto: false }] }
     }
   })
-  async replaceChecklist(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
+  async replaceChecklist(@Param('id', ParseIntPipe) id: number, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     const { items } = parseWith(checklistReplaceSchema, body);
-    return { items: await this.catalogue.replaceChecklist(id, items) };
+    return { items: await this.catalogue.replaceChecklist(id, items, principal.userId) };
+  }
+
+  @Put('services/:id/issue-options')
+  @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
+  @ApiOperation({
+    summary: "Replace a service's common-faults list",
+    description:
+      'Admin only. Replaces the full ordered dropdown the booking screen offers for this service. Bookings that already recorded an option keep the label they were shown, but the ids change, so an option id from before this call will no longer resolve.'
+  })
+  @ApiZodBody(issueOptionsReplaceSchema, {
+    default: {
+      summary: 'Two common faults',
+      value: {
+        items: [
+          { slug: 'not-cooling', labelEn: 'Runs but does not cool', labelUr: 'چلتا ہے لیکن ٹھنڈا نہیں کرتا' },
+          { slug: 'not-powering-on', labelEn: 'Does not switch on at all', labelUr: 'بالکل آن نہیں ہوتا' }
+        ]
+      }
+    }
+  })
+  async replaceIssueOptions(@Param('id', ParseIntPipe) id: number, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    const { items } = parseWith(issueOptionsReplaceSchema, body);
+    return { items: await this.catalogue.replaceIssueOptions(id, items, principal.userId) };
   }
 
   @Get('commission-rules')
@@ -109,7 +132,7 @@ export class CatalogueAdminController {
   @HttpCode(200)
   @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
   @ApiOperation({ summary: 'Close a commission rule', description: "Admin only. Stamps the rule's effectiveTo as now, ending it. Commission rules are never deleted so the financial history they drove stays explainable." })
-  async endCommissionRule(@Param('id', ParseUUIDPipe) id: string) {
-    return this.catalogue.endCommissionRule(id);
+  async endCommissionRule(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.catalogue.endCommissionRule(id, principal.userId);
   }
 }

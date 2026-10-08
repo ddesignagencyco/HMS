@@ -19,6 +19,7 @@ export const BODY_LIMIT = '1mb';
  */
 export const EVIDENCE_BODY_LIMIT = '8mb';
 const EVIDENCE_PATH = /^\/api\/v1\/(bookings\/[0-9a-fA-F-]{36}\/evidence|complaints(\/[0-9a-fA-F-]{36}\/evidence|\/from-receipt)?)\/?$/;
+const DEV_STORAGE_PATH = /^\/api\/v1\/dev\/storage\/[^/]+\/.+$/;
 export const RATE_LIMIT_MAX = 300;
 export const RATE_LIMIT_WINDOW_MS = 60_000;
 
@@ -55,16 +56,19 @@ export const createRateLimitMiddleware = (max: number, windowMs: number): Reques
     response.setHeader('X-RateLimit-Remaining', Math.max(0, max - current.count));
     if (current.count > max) {
       response.setHeader('Retry-After', Math.ceil((current.resetAt - now) / 1000));
-      response.status(429).type('application/problem+json').send({
-        type: 'https://smart-home.local/problems/rate-limited',
-        title: 'Too Many Requests',
-        status: 429,
-        code: 'RATE_LIMITED',
-        detail: `Rate limit of ${max} requests per ${Math.round(windowMs / 1000)} seconds exceeded`,
-        instance: request.url,
-        requestId: request.requestId,
-        errors: []
-      });
+      response
+        .status(429)
+        .type('application/problem+json')
+        .send({
+          type: 'https://smart-home.local/problems/rate-limited',
+          title: 'Too Many Requests',
+          status: 429,
+          code: 'RATE_LIMITED',
+          detail: `Rate limit of ${max} requests per ${Math.round(windowMs / 1000)} seconds exceeded`,
+          instance: request.url,
+          requestId: request.requestId,
+          errors: []
+        });
       return;
     }
     next();
@@ -89,6 +93,13 @@ export const registerHttpPlugins = async (app: HttpApplication, environment: Env
   const standardJson = express.json({ limit: BODY_LIMIT, verify: keepRawBody });
   const photoJson = express.json({ limit: EVIDENCE_BODY_LIMIT, verify: keepRawBody });
   server.use((request: Request, response: Response, next: NextFunction) => (request.method === 'POST' && EVIDENCE_PATH.test(request.path) ? photoJson : standardJson)(request, response, next));
+  // The mock storage adapter hands the browser a presigned PUT URL, so the
+  // matching verb has to exist and has to receive the bytes as they were sent —
+  // not JSON-encoded. Raw, and only for that one route.
+  server.use((request: Request, response: Response, next: NextFunction) => {
+    if (request.method !== 'PUT' || !DEV_STORAGE_PATH.test(request.path)) return next();
+    return express.raw({ type: '*/*', limit: EVIDENCE_BODY_LIMIT })(request, response, next);
+  });
   app.useBodyParser('urlencoded', { limit: BODY_LIMIT, extended: true });
   app.use(createRateLimitMiddleware(RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS));
   void environment;
@@ -100,7 +111,8 @@ export const registerHttpPlugins = async (app: HttpApplication, environment: Env
  * against a separately built document would not notice a change to the
  * description, tags or server list.
  */
-export const buildOpenApiConfig = (): Omit<OpenAPIObject, 'paths'> => new DocumentBuilder()
+export const buildOpenApiConfig = (): Omit<OpenAPIObject, 'paths'> =>
+  new DocumentBuilder()
     .setTitle('Smart Home Maintenance Services API')
     .setDescription(
       [
@@ -121,8 +133,11 @@ export const buildOpenApiConfig = (): Omit<OpenAPIObject, 'paths'> => new Docume
     .addTag('booking', 'Request a provider for a service and carry the job through to completion: accept/decline, cancel/reschedule, arrival OTP, checklist, quote revisions, and finishing the job.')
     .addTag('auth', 'Sign up, log in, and manage your account: passwords, one-time verification codes (OTP), sessions, and two-factor authentication (TOTP).')
     .addTag('settings', 'Admin only. View and change platform-wide configuration values. Requires an ADMIN account with two-factor authentication turned on.')
-    .addTag('webhooks', "Called automatically by external providers (e.g. the payment gateway) to report events. Not meant to be called directly by client apps.")
-    .addTag('development', 'Local/dev-only helpers for inspecting what the mock SMS, email and file-storage providers received, so flows like OTP login can be tested without real providers. Disabled in production.')
+    .addTag('webhooks', 'Called automatically by external providers (e.g. the payment gateway) to report events. Not meant to be called directly by client apps.')
+    .addTag(
+      'development',
+      'Local/dev-only helpers for inspecting what the mock SMS, email and file-storage providers received, so flows like OTP login can be tested without real providers. Disabled in production.'
+    )
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'access-token')
     .addServer('/')
     .build();

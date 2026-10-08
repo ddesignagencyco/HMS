@@ -182,12 +182,17 @@ model bookings {
   version                Int                      @default(1)
   created_at             DateTime                 @default(now()) @db.Timestamptz(6)
   updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  is_on_behalf           Boolean                  @default(false)
+  on_behalf_name         String?
+  on_behalf_phone_e164   String?
+  issue_option_id        Int?
   booking_items          booking_items[]
   booking_offers         booking_offers[]
   booking_status_history booking_status_history[]
   addresses              addresses                @relation(fields: [address_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   coupons                coupons?                 @relation(fields: [coupon_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers              customers                @relation(fields: [customer_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  service_issue_options  service_issue_options?   @relation(fields: [issue_option_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   providers              providers?               @relation(fields: [provider_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   services               services                 @relation(fields: [service_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   subscriptions          subscriptions?           @relation(fields: [subscription_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -1097,6 +1102,7 @@ model services {
   plan_visits             plan_visits[]
   provider_services       provider_services[]
   service_checklist_items service_checklist_items[]
+  service_issue_options   service_issue_options[]
   categories              categories                @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
@@ -1345,6 +1351,22 @@ model verification_links {
   responded_at         DateTime?              @db.Timestamptz(6)
   answers              Json?
   verification_calls   verification_calls     @relation(fields: [verification_call_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model service_issue_options {
+  id         Int        @id @default(autoincrement())
+  service_id Int
+  slug       String
+  label_en   String
+  label_ur   String
+  position   Int
+  is_active  Boolean    @default(true)
+  bookings   bookings[]
+  services   services   @relation(fields: [service_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([service_id, position])
+  @@unique([service_id, slug])
 }
 
 enum account_type {

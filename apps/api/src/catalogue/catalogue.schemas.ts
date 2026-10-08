@@ -96,6 +96,30 @@ export type ServiceCreateInput = z.infer<typeof serviceCreateSchema>;
 export type ServiceUpdateInput = z.infer<typeof serviceUpdateSchema>;
 export type ChecklistReplaceInput = z.infer<typeof checklistReplaceSchema>;
 
+/**
+ * The common faults a customer picks from on the booking screen. Replaced wholesale
+ * like the checklist, because the list is a curated catalogue rather than something
+ * customers append to: an option that is no longer true of the service should
+ * disappear, and bookings that already recorded it keep the label they were given.
+ */
+export const issueOptionsReplaceSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            slug,
+            labelEn: name,
+            labelUr: name
+          })
+          .strict()
+      )
+      .max(50)
+  })
+  .strict();
+
+export type IssueOptionsReplaceInput = z.infer<typeof issueOptionsReplaceSchema>;
+
 const commissionScope = z.enum(['GLOBAL', 'CATEGORY', 'PROVIDER']);
 
 const scopeMatchesTarget = (input: { scope: z.infer<typeof commissionScope>; categoryId?: number | null; providerId?: string | null }): boolean => {

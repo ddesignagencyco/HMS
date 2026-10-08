@@ -532,11 +532,11 @@ server for the exact current list, or see `apps/api/test/api-surface.baseline.js
 | Area | Endpoints |
 |---|---|
 | Auth | `POST /auth/register` (public) · `POST /auth/otp/request` · `POST /auth/otp/verify` · `POST /auth/login` · `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/password/forgot` · `POST /auth/password/reset` · `POST /auth/totp/setup\|verify` |
-| Catalogue | `GET /categories` (public) · `GET /services?categoryId` (public) · admin CRUD under `/admin/catalogue/*` |
+| Catalogue | `GET /categories` (public) · `GET /services?categoryId` (public) · `GET /services/:slug/issue-options` (public, the booking screen's common-faults dropdown) · admin CRUD under `/admin/catalogue/*` |
 | Customer | `GET/PATCH /me` · `CRUD /me/addresses` · `GET /me/bookings` · `POST/DELETE /me/favourites/:providerId` · `POST /me/deactivate` |
 | Provider | `GET/PATCH /provider/me` · `POST /provider/documents` · `PUT /provider/services` · `PUT /provider/areas` · `PUT /provider/availability` · `CRUD /provider/time-off` · `POST /provider/submit` · `GET /provider/offers` · `POST /provider/offers/:id/accept\|decline` · `GET /provider/earnings` · `POST /provider/payouts` · `GET /provider/conduct` · `POST /provider/remarks/:id/reply` · `POST /provider/debt/pay` |
-| Search | `GET /search/providers?serviceId&addressId&filters…` · `GET /providers/:id` (public) · `GET /providers/:id/slots?serviceId&from&to` |
-| Bookings | `POST /bookings/quote` · `POST /bookings/checkout` · `GET /bookings/:id` · `POST /bookings/:id/cancel` · `POST /bookings/:id/reschedule` · `POST /bookings/:id/no-show` · `GET/POST /bookings/:id/messages` · `POST /bookings/:id/warranty-claim` |
+| Search | `GET /search/providers?serviceId&addressId&filters…` · `GET /providers/:id` (public) · `GET /providers/:id/slots?serviceId&from&to` · `GET /providers/:id/next-slots?serviceId&limit` (public, soonest availability across days) |
+| Bookings | `POST /bookings/quote` · `POST /bookings/checkout` · `GET /bookings/:id` · `POST /bookings/:id/cancel` · `POST /bookings/:id/reschedule` · `POST /bookings/:id/no-show` · `GET/POST /bookings/:id/messages` · `POST /bookings/:id/warranty-claim` · `GET /bookings/:id/on-behalf-contact` |
 | Execution | `POST /bookings/:id/depart` · `POST /bookings/:id/start {otp, geo}` · `POST /uploads/presign` · `POST /bookings/:id/evidence` · `PUT /bookings/:id/checklist` · `POST /bookings/:id/revisions` · `POST /revisions/:id/approve\|reject` · `POST /bookings/:id/complete` · `POST /bookings/:id/cash-received` · `GET /bookings/:id/invoice.pdf` |
 | Verification (agent) | `GET /agent/queue` · `POST /agent/queue/claim` · `POST /agent/verifications/:id/release-lock` · `POST /agent/verifications/:id/attempts` · `POST /agent/verifications/:id/call` (click-to-call) · `POST /agent/verifications/:id/submit` |
 | Verification (public link) | `GET /v/:token` · `POST /v/:token {otp, answers}` |

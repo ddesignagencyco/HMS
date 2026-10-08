@@ -17,8 +17,9 @@ export const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 
 /** The next moment (at or after now) that is `hour`:`minute` Pakistan time: Pakistan is UTC+5 all year. */
 export const nextLocalTime = (hour: number, minute = 0): Date => {
   const now = new Date();
-  const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour - 5, minute));
-  return candidate.getTime() >= now.getTime() ? candidate : new Date(candidate.getTime() + 24 * 3_600_000);
+  let candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour - 5, minute));
+  while (candidate.getTime() < now.getTime()) candidate = new Date(candidate.getTime() + 24 * 3_600_000);
+  return candidate;
 };
 
 /** Makes the application's clock read 10:30 Pakistan time — inside calling hours whenever the suite really runs. Real elapsed time still counts. */

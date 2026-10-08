@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { adminSession, callApi, createTestApp, patchJson, putJson, registerAndVerify, type TestUser } from './harness.js';
+import { adminSession, callApi, createTestApp, patchJson, postJson, putJson, registerAndVerify, verifyCnicFor, type TestUser } from './harness.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -39,6 +40,7 @@ const readyProvider = async (radiusM = 5000): Promise<TestUser> => {
   await callApi(app, '/provider/service-areas', asProvider(provider.accessToken, putJson({ areaIds: [gulbergAreaId] })));
   await callApi(app, `/provider/services/${leakRepair.id}`, putJson({ pricePaisa: leakRepair.minPricePaisa }, provider.accessToken));
   await callApi(app, `/admin/provider-services/${provider.id}/${leakRepair.id}/approve`, asAdmin({ method: 'POST' }));
+  await verifyCnicFor(app, provider);
   await callApi(app, `/admin/providers/${provider.id}/approve`, asAdmin({ method: 'POST' }));
   return provider;
 };
@@ -86,6 +88,19 @@ describe('FR-SR-03/04/06: provider search', () => {
     const response = await callApi<{ code: string }>(app, `/search/providers?serviceSlug=does-not-exist&lat=${BASE_LAT}&lng=${BASE_LNG}`);
     expect(response.status).toBe(404);
     expect(response.body.code).toBe('NOT_FOUND');
+  });
+
+  it('drops a service from search once an admin deactivates it', async () => {
+    const category = await callApi<{ id: number }>(app, '/admin/catalogue/categories', asAdmin(postJson({ slug: `srch-cat-${randomUUID().slice(0, 8)}`, nameEn: 'Search Category', nameUr: 'ٹیسٹ', defaultWarrantyDays: 0 })));
+    const slug = `srch-svc-${randomUUID().slice(0, 8)}`;
+    const service = await callApi<{ id: number }>(app, '/admin/catalogue/services', asAdmin(postJson({
+      categoryId: category.body.id, slug, nameEn: 'Search Service', nameUr: 'ٹیسٹ', description: 'A service for the search test.',
+      pricingModel: 'FLAT' as const, basePricePaisa: 10_000, minPricePaisa: 5_000, maxPricePaisa: 20_000, expectedDurationMin: 30
+    })));
+    expect((await callApi(app, `/search/providers?serviceSlug=${slug}&lat=${BASE_LAT}&lng=${BASE_LNG}`)).status).toBe(200);
+
+    await callApi(app, `/admin/catalogue/services/${service.body.id}`, asAdmin(patchJson({ isActive: false })));
+    expect((await callApi(app, `/search/providers?serviceSlug=${slug}&lat=${BASE_LAT}&lng=${BASE_LNG}`)).status).toBe(404);
   });
 });
 

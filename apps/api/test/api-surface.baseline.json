@@ -93,6 +93,15 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/api/v1/admin/audit",
+      "operationId": "AdminAuditController_query",
+      "summary": "Query the audit log",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
       "method": "POST",
       "path": "/api/v1/admin/catalogue/categories",
       "operationId": "CatalogueAdminController_createCategory",
@@ -165,6 +174,15 @@
       ]
     },
     {
+      "method": "PUT",
+      "path": "/api/v1/admin/catalogue/services/{id}/issue-options",
+      "operationId": "CatalogueAdminController_replaceIssueOptions",
+      "summary": "Replace a service's common-faults list",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
       "method": "GET",
       "path": "/api/v1/admin/complaints",
       "operationId": "ComplaintsController_queue",
@@ -211,6 +229,24 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/admin/customers",
+      "operationId": "AdminCustomersController_list",
+      "summary": "List customer accounts",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/customers/{customerId}/deactivate",
+      "operationId": "AdminCustomersController_deactivate",
+      "summary": "Deactivate a customer",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/admin/disputes",
       "operationId": "DisputesController_list",
       "summary": "The dispute queue",
@@ -234,6 +270,24 @@
       "summary": "Rule on a dispute",
       "tags": [
         "disputes"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/documents/{documentId}/review",
+      "operationId": "ProviderDocumentsAdminController_review",
+      "summary": "Verify or reject a document",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/documents/{documentId}/url",
+      "operationId": "ProviderDocumentsAdminController_documentUrl",
+      "summary": "Get a short-lived link to a document",
+      "tags": [
+        "provider"
       ]
     },
     {
@@ -327,6 +381,33 @@
       ]
     },
     {
+      "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/block",
+      "operationId": "ProviderAdminController_block",
+      "summary": "Block a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/deactivate",
+      "operationId": "ProviderAdminController_deactivate",
+      "summary": "Deactivate a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/providers/{providerId}/documents",
+      "operationId": "ProviderDocumentsAdminController_listForProvider",
+      "summary": "List a provider's documents for review",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
       "method": "GET",
       "path": "/api/v1/admin/providers/{providerId}/ratings",
       "operationId": "ReputationController_adminRatings",
@@ -346,11 +427,29 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/unblock",
+      "operationId": "ProviderAdminController_unblock",
+      "summary": "Unblock a provider",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/admin/remarks/{id}/unpublish",
       "operationId": "ReputationController_unpublish",
       "summary": "Unpublish an abusive remark",
       "tags": [
         "reputation"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/roles",
+      "operationId": "AdminRolesController_listRoles",
+      "summary": "List roles and their permissions",
+      "tags": [
+        "admin"
       ]
     },
     {
@@ -378,6 +477,33 @@
       "summary": "Change a setting's value",
       "tags": [
         "settings"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/staff-conflicts",
+      "operationId": "AdminStaffConflictsController_list",
+      "summary": "List declared staff conflicts",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/staff-conflicts",
+      "operationId": "AdminStaffConflictsController_declare",
+      "summary": "Declare a staff conflict",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/staff-conflicts/{id}",
+      "operationId": "AdminStaffConflictsController_remove",
+      "summary": "Withdraw a declared conflict",
+      "tags": [
+        "admin"
       ]
     },
     {
@@ -423,6 +549,69 @@
       "summary": "Preview a template",
       "tags": [
         "notifications"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/users",
+      "operationId": "AdminUsersController_list",
+      "summary": "List user accounts",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/block",
+      "operationId": "AdminUsersController_block",
+      "summary": "Block a user",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/deactivate",
+      "operationId": "AdminUsersController_deactivate",
+      "summary": "Deactivate a user",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/users/{userId}/roles/{roleCode}",
+      "operationId": "AdminRolesController_revoke",
+      "summary": "Revoke a role",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/roles/{roleCode}",
+      "operationId": "AdminRolesController_grant",
+      "summary": "Grant a role",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/send-reset",
+      "operationId": "AdminUsersController_sendReset",
+      "summary": "Send a password reset",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/users/{userId}/unblock",
+      "operationId": "AdminUsersController_unblock",
+      "summary": "Unblock a user",
+      "tags": [
+        "admin"
       ]
     },
     {
@@ -579,6 +768,15 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/api/v1/auth/session",
+      "operationId": "AuthController_session",
+      "summary": "Ask whether there is a session, without failing when there is not",
+      "tags": [
+        "auth"
+      ]
+    },
+    {
       "method": "DELETE",
       "path": "/api/v1/auth/totp",
       "operationId": "AuthController_totpDisable",
@@ -655,6 +853,15 @@
       "path": "/api/v1/bookings/{id}/cash-received",
       "operationId": "BookingController_cashReceived",
       "summary": "Confirm the customer paid cash",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/checklist",
+      "operationId": "BookingController_listChecklist",
+      "summary": "Read the service’s checklist for this booking",
       "tags": [
         "booking"
       ]
@@ -750,6 +957,15 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/on-behalf-contact",
+      "operationId": "BookingController_onBehalfContact",
+      "summary": "Who will receive the provider, when the booking is for someone else",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
       "method": "POST",
       "path": "/api/v1/bookings/{id}/reschedule",
       "operationId": "BookingController_reschedule",
@@ -781,6 +997,15 @@
       "path": "/api/v1/bookings/{id}/revisions/reject",
       "operationId": "BookingController_rejectRevision",
       "summary": "Reject the pending revised quote",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bookings/{id}/service-address",
+      "operationId": "BookingController_serviceAddress",
+      "summary": "Where this job is",
       "tags": [
         "booking"
       ]
@@ -844,6 +1069,15 @@
       "path": "/api/v1/catalogue/services/{slug}",
       "operationId": "CatalogueController_serviceDetail",
       "summary": "Get one service, including its checklist",
+      "tags": [
+        "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/catalogue/services/{slug}/issue-options",
+      "operationId": "CatalogueController_issueOptions",
+      "summary": "The common faults a customer can pick from when booking this service",
       "tags": [
         "catalogue"
       ]
@@ -970,6 +1204,15 @@
       "path": "/api/v1/dev/storage/{bucket}/{key}",
       "operationId": "DevController_storageObject",
       "summary": "Download a file from the mock file storage",
+      "tags": [
+        "development"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/dev/storage/{bucket}/{key}",
+      "operationId": "DevController_uploadObject",
+      "summary": "Upload a file to the mock file storage",
       "tags": [
         "development"
       ]
@@ -1111,6 +1354,69 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/me",
+      "operationId": "MeController_get",
+      "summary": "Get your own profile",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me",
+      "operationId": "MeController_update",
+      "summary": "Update your own profile",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/deactivate",
+      "operationId": "MeController_deactivate",
+      "summary": "Deactivate your account",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me/favourites",
+      "operationId": "MeController_listFavourites",
+      "summary": "List your favourite providers",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/me/favourites/{providerId}",
+      "operationId": "MeController_removeFavourite",
+      "summary": "Remove a provider from your favourites",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/me/favourites/{providerId}",
+      "operationId": "MeController_addFavourite",
+      "summary": "Add a provider to your favourites",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/me/password",
+      "operationId": "MeController_changePassword",
+      "summary": "Change your password",
+      "tags": [
+        "customer"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/notifications",
       "operationId": "NotificationController_own",
       "summary": "My notification centre",
@@ -1215,6 +1521,24 @@
       "summary": "Reply to a dispute",
       "tags": [
         "disputes"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/documents",
+      "operationId": "ProviderDocumentsController_list",
+      "summary": "List my uploaded documents",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/provider/documents",
+      "operationId": "ProviderDocumentsController_submit",
+      "summary": "Submit an identity document",
+      "tags": [
+        "provider"
       ]
     },
     {
@@ -1407,6 +1731,15 @@
       ]
     },
     {
+      "method": "POST",
+      "path": "/api/v1/provider/submit",
+      "operationId": "ProviderController_submit",
+      "summary": "Submit my profile for approval",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
       "method": "GET",
       "path": "/api/v1/provider/time-off",
       "operationId": "ProviderController_listTimeOff",
@@ -1462,6 +1795,15 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/search/providers/{providerId}/next-slots",
+      "operationId": "SearchController_nextSlots",
+      "summary": "When is this provider next free?",
+      "tags": [
+        "search"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/search/providers/{providerId}/remarks",
       "operationId": "ReputationController_remarks",
       "summary": "A provider’s published remarks",
@@ -1485,6 +1827,15 @@
       "summary": "List the times a provider can be booked on a day",
       "tags": [
         "search"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/uploads/presign",
+      "operationId": "UploadsController_presign",
+      "summary": "Get an upload target for a document",
+      "tags": [
+        "provider"
       ]
     },
     {

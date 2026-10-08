@@ -81,7 +81,7 @@ export class OtpService {
       locale === 'ur'
         ? `آپ کا تصدیقی کوڈ ${code} ہے۔ یہ ${config.otpTtlMinutes} منٹ میں میعاد ختم ہو جائے گا۔`
         : `Your Smart Home verification code is ${code}. It expires in ${config.otpTtlMinutes} minutes.`;
-    if (normalised.startsWith('@')) await this.email.send(normalised, 'Your Smart Home verification code', body, { purpose });
+    if (isEmailTarget(normalised)) await this.email.send(normalised, 'Your Smart Home verification code', body, { purpose });
     else await this.sms.send(normalised, body, { purpose });
     return { expiresAt: expiresAt.toISOString(), resendAfterSeconds: config.otpResendCooldownSeconds };
   }

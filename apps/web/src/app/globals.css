@@ -1,0 +1,732 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-navy: #0b1b3f;
+  --color-navy-950: #07152f;
+  --color-navy-900: #0b1b3f;
+  --color-navy-800: #102a56;
+  --color-ink: #0f172a;
+  --color-secondary: #475569;
+  --color-muted: #64748b;
+  --color-line: #e2e8f0;
+  --color-page: #f8fafc;
+  --color-surface: #f8fafc;
+  --color-surface-2: #f1f5f9;
+  --color-primary: #2563eb;
+  --color-primary-strong: #1d4ed8;
+  --color-primary-foreground: #ffffff;
+  --color-blue-500: #3b82f6;
+  --color-blue-50: #eff6ff;
+  --color-yellow-500: #facc15;
+  --color-yellow-400: #fde047;
+  --color-yellow-50: #fefce8;
+  --color-destructive: #e11d48;
+  --color-destructive-foreground: #ffffff;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --font-sans: var(--font-geist-sans);
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --shadow-hover: 0 10px 28px rgba(15, 23, 42, 0.08);
+  --shadow-soft: 0 12px 34px rgba(15, 23, 42, 0.07);
+  --shadow-lifted: 0 20px 55px rgba(15, 23, 42, 0.12);
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--color-page);
+}
+
+body {
+  min-height: 100vh;
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: #dbeafe;
+  color: var(--color-navy);
+}
+
+:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.25);
+  outline-offset: 2px;
+}
+
+/* Standardize form inputs focus state and accessible focus-visible ring (NFR-US-04) */
+input:focus,
+select:focus,
+textarea:focus,
+.focus-none:focus,
+.focus-none:focus-visible {
+  outline: none;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  display: none;
+}
+
+button:not(:disabled),
+a[href] {
+  cursor: pointer;
+}
+
+.container-shell {
+  width: 100%;
+  max-width: 1240px;
+  margin-inline: auto;
+  padding-inline: 18px;
+}
+
+@media (min-width: 640px) {
+  .container-shell {
+    padding-inline: 24px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container-shell {
+    padding-inline: 32px;
+  }
+}
+
+/* Section rhythm: three tokens, used intentionally. Every section on the
+   page picks one of these — no arbitrary padding anywhere. */
+.section-compact {
+  --section-space: 48px;
+  padding-block: var(--section-space);
+}
+
+.section-default {
+  --section-space: 64px;
+  padding-block: var(--section-space);
+}
+
+.section-feature {
+  --section-space: 76px;
+  padding-block: var(--section-space);
+}
+
+/* The hero's search panel deliberately hangs half its height over the first
+   boundary. Below the three-column breakpoint the panel stacks and grows, so
+   the section underneath reserves that overhang instead of being covered. */
+.section-after-hero {
+  padding-top: 152px;
+}
+
+@media (min-width: 1024px) {
+  .section-compact {
+    --section-space: 64px;
+  }
+
+  .section-default {
+    --section-space: 88px;
+  }
+
+  .section-feature {
+    --section-space: 104px;
+  }
+
+  .section-after-hero {
+    padding-top: var(--section-space);
+  }
+}
+
+/* Display ramps ------------------------------------------------------------
+   Every display size is authored in one of four tokens and multiplied by
+   --display-scale. Nastaliq's em box is far taller than a Latin face's, so
+   the Urdu locale turns the same ramp down (see the Urdu block at the end of
+   this file) instead of every heading carrying its own override. */
+:root {
+  --display-scale: 1;
+}
+
+/* The largest display size on the site: the homepage hero only. */
+.title-hero {
+  font-size: calc(38px * var(--display-scale));
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+@media (min-width: 640px) {
+  .title-hero {
+    font-size: calc(48px * var(--display-scale));
+  }
+}
+
+@media (min-width: 1024px) {
+  .title-hero {
+    font-size: calc(52px * var(--display-scale));
+  }
+}
+
+@media (min-width: 1280px) {
+  .title-hero {
+    font-size: calc(60px * var(--display-scale));
+  }
+}
+
+/* Section header typography (single source for every H2).
+   The ramp steps at 1280 rather than 1024 so two-column bands keep a
+   comfortable measure on a 1024 laptop. */
+.title-section {
+  font-size: calc(32px * var(--display-scale));
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+@media (min-width: 640px) {
+  .title-section {
+    font-size: calc(40px * var(--display-scale));
+  }
+}
+
+@media (min-width: 1024px) {
+  .title-section {
+    font-size: calc(44px * var(--display-scale));
+  }
+}
+
+@media (min-width: 1280px) {
+  .title-section {
+    font-size: calc(50px * var(--display-scale));
+  }
+}
+
+/* Page banner title: one step below the hero, one step above a section, so
+   every inner page opens at the same weight. */
+.title-page {
+  font-size: calc(32px * var(--display-scale));
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+@media (min-width: 640px) {
+  .title-page {
+    font-size: calc(40px * var(--display-scale));
+  }
+}
+
+@media (min-width: 1024px) {
+  .title-page {
+    font-size: calc(44px * var(--display-scale));
+  }
+}
+
+@media (min-width: 1280px) {
+  .title-page {
+    font-size: calc(52px * var(--display-scale));
+  }
+}
+
+/* The quietest display size: a heading that sits above a short block rather
+   than owning the page. */
+.title-lead {
+  font-size: calc(28px * var(--display-scale));
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+@media (min-width: 640px) {
+  .title-lead {
+    font-size: calc(32px * var(--display-scale));
+  }
+}
+
+@media (min-width: 1024px) {
+  .title-lead {
+    font-size: calc(36px * var(--display-scale));
+  }
+}
+
+@media (min-width: 1280px) {
+  .title-lead {
+    font-size: calc(40px * var(--display-scale));
+  }
+}
+
+/* Premium depth: a soft brand-tinted lift used on the raised surfaces */
+.shadow-float {
+  box-shadow:
+    0 1px 2px rgba(11, 27, 63, 0.04),
+    0 12px 28px -12px rgba(11, 27, 63, 0.16),
+    0 40px 80px -40px rgba(11, 27, 63, 0.24);
+}
+
+/* Eyebrow: one size / weight / tracking for the whole product */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.eyebrow::before {
+  content: "";
+  display: block;
+  width: 28px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.eyebrow-light {
+  color: var(--color-primary-strong);
+}
+
+.eyebrow-dark {
+  color: var(--color-yellow-500);
+}
+
+/* Section header rhythm: eyebrow -> heading -> description -> content.
+   One rule set for every section on the page. */
+.header-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.header-stack-split {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+@media (min-width: 768px) {
+  .header-stack-split {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 48px;
+  }
+}
+
+.header-copy {
+  max-width: 40rem;
+}
+
+.header-gap {
+  margin-top: 40px;
+}
+
+@media (min-width: 1024px) {
+  .header-gap {
+    margin-top: 48px;
+  }
+}
+
+/* Hover contract, applied identically to every card family and every button:
+   card lifts 3px, media scales inside its own clipped frame, buttons lift 1px,
+   arrows travel 3px. Nothing animates width, height, padding or border width,
+   so no hover can ever shift the layout or escape its parent background. */
+.lift {
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lift:hover {
+  transform: translateY(-3px);
+}
+
+.lift-sm {
+  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lift-sm:hover {
+  transform: translateY(-1px);
+}
+
+.media-hover {
+  transform: scale(1);
+  transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.group:hover .media-hover {
+  transform: scale(1.025);
+}
+
+/* Professional portraits answer the hover a little more quietly. */
+.media-hover-soft {
+  transform: scale(1);
+  transition:
+    transform 460ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 460ms ease-out;
+}
+
+.group:hover .media-hover-soft {
+  transform: scale(1.02);
+  filter: brightness(1.04);
+}
+
+.badge-hover {
+  transition:
+    background-color 200ms ease-out,
+    box-shadow 200ms ease-out;
+}
+
+.group:hover .badge-hover {
+  background-color: #fff;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+}
+
+.arrow-slide {
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.group:hover .arrow-slide {
+  transform: translateX(3px);
+}
+
+[dir="rtl"] .group:hover .arrow-slide {
+  transform: translateX(-3px);
+}
+
+.arrow-slide-diag {
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.group:hover .arrow-slide-diag {
+  transform: translate(3px, -3px);
+}
+
+[dir="rtl"] .group:hover .arrow-slide-diag {
+  transform: translate(-3px, -3px);
+}
+
+/* ---- 3D card depth -------------------------------------------------
+   TiltCard tilts the surface; these layers are pushed forward on Z so the
+   tilt reads as real parallax rather than a flat rotation. */
+[data-tilt-depth="media"] {
+  transform: translateZ(26px);
+}
+
+[data-tilt-depth="body"] {
+  transform: translateZ(12px);
+}
+
+[data-tilt-depth="chip"] {
+  transform: translateZ(34px);
+}
+
+/* Optical edge: a light top rim that only shows while the card is alive */
+[data-tilt]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: opacity 220ms ease-out;
+}
+
+[data-tilt]:hover::before {
+  opacity: 1;
+}
+
+/* Glass surface for banner bars and floating search */
+.glass {
+  background: color-mix(in srgb, #ffffff 82%, transparent);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 24px 60px -24px rgba(11, 27, 63, 0.35);
+}
+
+/* One tiny technical detail on selected cards: the corner mark grows 4px */
+.card-mark {
+  position: absolute;
+  inset: 10px auto auto 10px;
+  width: 14px;
+  height: 14px;
+  border-top: 1px solid var(--color-primary);
+  border-left: 1px solid var(--color-primary);
+  opacity: 0;
+  transform: translate(4px, 4px);
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms ease-out;
+  pointer-events: none;
+}
+
+.group:hover .card-mark {
+  opacity: 0.55;
+  transform: translate(0, 0);
+}
+
+/* Blueprint line drawing — only while JS marks the group as pending */
+.draw-group[data-draw="pending"] path {
+  stroke-dasharray: 2400;
+  stroke-dashoffset: 2400;
+  transition: stroke-dashoffset var(--draw-duration, 1200ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.draw-group[data-draw="drawn"] path {
+  stroke-dashoffset: 0;
+}
+
+/* Link motion: colour shift + 3px arrow travel, one behaviour everywhere */
+.link-motion {
+  transition: color 180ms ease-out;
+}
+
+.link-motion .link-arrow {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.link-motion:hover .link-arrow {
+  transform: translateX(3px);
+}
+
+[dir="rtl"] .link-motion:hover .link-arrow {
+  transform: translateX(-3px);
+}
+
+/* Section wave boundaries ----------------------------------------------------
+   Three authored variants (left-heavy, right-heavy, very shallow) plus a
+   straight edge. Depth is set per boundary through --wave-sm / --wave-md /
+   --wave-lg and is never scaled proportionally. Every wave is painted inside
+   its own section, so nothing overflows and nothing shifts the layout. */
+.wave-boundary {
+  --wave-sm: 20px;
+  --wave-md: 34px;
+  --wave-lg: 64px;
+  height: var(--wave-sm);
+}
+
+@media (min-width: 640px) {
+  .wave-boundary {
+    --wave-sm: 30px;
+    --wave-md: 50px;
+    --wave-lg: 88px;
+    height: var(--wave-md);
+  }
+}
+
+@media (min-width: 1024px) {
+  .wave-boundary {
+    height: var(--wave-lg);
+  }
+}
+
+.section-wave-top {
+  padding-top: calc(var(--wave-sm) + 1.5rem);
+}
+
+@media (min-width: 640px) {
+  .section-wave-top {
+    padding-top: calc(var(--wave-md) + 2.25rem);
+  }
+}
+
+@media (min-width: 1024px) {
+  .section-wave-top {
+    padding-top: calc(var(--wave-lg) + 2.75rem);
+  }
+}
+
+.text-pretty {
+  text-wrap: pretty;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #e8edf4;
+}
+
+.reveal {
+  animation: reveal-up 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes review-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Urdu (Nastaliq) ----------------------------------------------------
+   Noto Nastaliq is fetched by the locale layout but was never applied, so
+   Urdu was rendering in a Latin-only face. Nastaliq also has far taller
+   vertical metrics than a Latin face and no kerning pair, so the display
+   leading (1.05–1.12) would cut its ascenders off and the negative tracking
+   would break the joins. Both are replaced here rather than per component.
+
+   The Latin face is named directly instead of through --font-geist-sans.
+   That variable expands to "Geist, Geist Fallback", and the fallback is a
+   metric-adjusted local() face with unicode-range U+0-10FFFF — so it answers
+   for Arabic before the browser ever reaches Noto Nastaliq Urdu, and the
+   whole Urdu locale renders in Arial. Naming "Geist" on its own keeps Latin
+   text in Geist and lets Nastaliq take every glyph Geist does not carry. The
+   variable is kept last as a no-op safety net if the family is ever renamed. */
+[lang="ur"],
+[lang="ur"] * {
+  font-family: "Geist", var(--font-urdu), var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  letter-spacing: 0;
+}
+
+/* Nastaliq draws far larger at the same pixel size than a Latin face does, so
+   the whole Urdu locale is turned down at the root rather than by patching
+   individual utilities: the root size carries every rem in the stylesheet, so
+   a scale change lands on body copy, labels and controls at the same time.
+   The display ramp is raised to compensate, which keeps the large headings at
+   the same optical size they had before the root was scaled. */
+[lang="ur"] {
+  --display-scale: 0.86;
+  font-size: 93%;
+}
+
+/* Nastaliq's ascenders and descenders sit far outside the Latin em box, so a
+   single leading cannot serve both ends of the ramp: the display sizes need
+   less relative leading or the display copy reads loose, and the card and
+   body sizes need more or the marks of one line run into the next. */
+[lang="ur"] :where(h1, h2) {
+  line-height: 1.6;
+}
+
+[lang="ur"] :where(h3, h4, h5, h6) {
+  line-height: 1.9;
+}
+
+[lang="ur"] :where(p, li, dt, dd, figcaption, blockquote, summary, label, a, button) {
+  line-height: 1.95;
+}
+
+/* A two-line clamp is a hard crop. Nastaliq needs the extra half-line at
+   both ends of the box or the marks on the first and last line are cut
+   off, which is what "half the title has vanished" looks like. */
+[lang="ur"] .clamp-lines-2 {
+  line-height: 2.05;
+  padding-block: 0.12em;
+}
+
+[lang="ur"] .clamp-lines-1 {
+  line-height: 1.9;
+  padding-block: 0.08em;
+}
+
+/* Uppercase tracking is a Latin device, and at Nastaliq's proportions the
+   extra line box it needs clips the script. The row keeps its size floor
+   and gives the text the room it actually needs. */
+[lang="ur"] .eyebrow-row {
+  height: auto;
+  min-height: 1.25rem;
+}
+
+/* Display figures stay Latin — Geist carries the digits — so the tight
+   leading that keeps a number on a single line is left untouched. */
+[lang="ur"] :where(dd, p, span, div).tabular-nums {
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .reveal {
+    animation: none;
+  }
+
+  /* Motion off: no drawing, no travel, no image scale, no parallax. */
+  .draw-group[data-draw="pending"] path {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+    transition: none;
+  }
+
+  [data-reveal][data-state="hidden"] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Motion off: no lift, no travel, no image scale, no parallax. */
+  .lift:hover,
+  .lift-sm:hover,
+  .media-hover,
+  .group:hover .media-hover,
+  .media-hover-soft,
+  .group:hover .media-hover-soft,
+  .arrow-slide,
+  .group:hover .arrow-slide,
+  .arrow-slide-diag,
+  .group:hover .arrow-slide-diag {
+    transition: none !important;
+  }
+
+  .lift:hover,
+  .lift-sm:hover,
+  .group:hover .media-hover,
+  .group:hover .media-hover-soft,
+  .group:hover .arrow-slide,
+  .group:hover .arrow-slide-diag {
+    transform: none !important;
+  }
+}

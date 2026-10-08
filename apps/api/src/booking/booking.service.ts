@@ -1,7 +1,7 @@
 // apps/api/src/booking/booking.service.ts
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { canTransition, type BookingEvent, type BookingStatus } from '@smart-home/domain';
+import { canTransition, paisaToNumber, resolveCommissionRateBp as selectCommissionRateBp, splitAtLocalMidnight, windowRefusal, type BookingEvent, type BookingStatus, type CommissionScope } from '@smart-home/domain';
 import { DomainError, badRequest, conflict, notFound } from '../common/domain-error.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -17,11 +17,50 @@ import { BookingStateService } from './booking-state.service.js';
 import { CompletionService } from './completion.service.js';
 import { ExecutionService } from './execution.service.js';
 import { OfferService } from './offer.service.js';
+import { contactFor, maySeeFullContact, type OnBehalfContact } from './on-behalf.js';
 import { PricingService } from './pricing.service.js';
 import type { BookingCreateInput, BookingRescheduleInput } from './booking.schemas.js';
 
-export { BOOKING_COLUMNS, toBookingRow, type BookingRow, type BookingRowRaw } from './booking.row.js';
-import { BOOKING_COLUMNS, toBookingRow, type BookingRow, type BookingRowRaw } from './booking.row.js';
+/**
+ * The service address, revealed only to the customer who booked it and to the
+ * provider the booking belongs to once it has left `REQUESTED`. `revealed` is
+ * always true when this is returned — `serviceAddress` 404s rather than handing
+ * back a masked row — but it is carried so a client never has to infer it.
+ */
+export type ServiceAddress = {
+  label: string | null;
+  line1: string | null;
+  line2: string | null;
+  areaId: number | null;
+  areaName: string | null;
+  lat: number | null;
+  lng: number | null;
+  revealed: true;
+};
+
+export {
+  BOOKING_COLUMNS,
+  BOOKING_READ_COLUMNS,
+  BOOKING_READ_JOIN,
+  toBookingRow,
+  type BookingItemRow,
+  type BookingReadRaw,
+  type BookingReadRow,
+  type BookingRow,
+  type BookingRowRaw
+} from './booking.row.js';
+import {
+  BOOKING_COLUMNS,
+  BOOKING_READ_COLUMNS,
+  BOOKING_READ_JOIN,
+  toBookingReadRow,
+  toBookingRow,
+  type BookingItemRow,
+  type BookingReadRaw,
+  type BookingReadRow,
+  type BookingRow,
+  type BookingRowRaw
+} from './booking.row.js';
 
 const EXCLUSION_VIOLATION = '23P01';
 
@@ -65,10 +104,11 @@ export class BookingService {
    * online stays PENDING_PAYMENT (holding the slot for `booking.pending_payment_timeout_min`) until the gateway's signed webhook captures it.
    * A clash on the provider's slot is refused by the database's exclusion constraint, whoever wins the race.
    */
-  async create(customerId: string, input: BookingCreateInput): Promise<BookingRow & { payment?: { paymentId: string; redirectUrl: string } }> {
+  async create(customerId: string, input: BookingCreateInput): Promise<BookingRow & { payment?: { paymentId: string; redirectUrl: string; returnUrl: string } }> {
     const start = new Date(input.scheduledStart);
     const end = new Date(input.scheduledEnd);
-    if (start.getTime() <= Date.now()) throw badRequest('The booking must start in the future');
+    const refusal = await this.refuseWindow(start, end);
+    if (refusal !== null) throw badRequest(refusal);
 
     if (input.providerId !== undefined) {
       const blocked = await this.prisma.$queryRaw<{ reason: string | null }[]>(Prisma.sql`SELECT offer_blocked_reason as reason FROM providers WHERE user_id = ${input.providerId}::uuid`);
@@ -82,8 +122,8 @@ export class BookingService {
     );
     if (addresses.length === 0) throw notFound('Address');
 
-    const startWeekday = localWeekday(start);
-    if (startWeekday !== localWeekday(end)) throw badRequest('A booking must start and end on the same calendar day');
+    const issueOptionId = await this.resolveIssueOption(input.serviceId, input.issueOptionId);
+
     if (input.providerId !== undefined) await this.assertWindowIsBookable(input.providerId, start, end);
 
     const bufferMin = await this.settings.getNumber('booking.travel_buffer_min');
@@ -93,14 +133,16 @@ export class BookingService {
     const total = BigInt(quote.totalPaisa);
 
     try {
-      const created = await this.prisma.$transaction(async tx => {
+      const created = await this.prisma.$transaction(async (tx) => {
         const rows = await tx.$queryRaw<BookingRowRaw[]>(
           Prisma.sql`INSERT INTO bookings(customer_id, provider_id, service_id, address_id, status, payment_mode, payment_status, is_emergency, is_auto_assign, slot, scheduled_start, scheduled_end,
-              problem_text, quoted_amount_paisa, approved_total_paisa, discount_paisa, coupon_id, commission_rate_bp)
+              problem_text, issue_option_id, is_on_behalf, on_behalf_name, on_behalf_phone_e164, quoted_amount_paisa, approved_total_paisa, discount_paisa, coupon_id, commission_rate_bp)
             VALUES (${customerId}::uuid, ${input.providerId ?? null}::uuid, ${input.serviceId}, ${input.addressId}::uuid,
               ${online ? 'PENDING_PAYMENT' : 'REQUESTED'}::booking_status, ${online ? 'ONLINE' : 'CASH'}::payment_mode, ${online ? 'PENDING' : 'NONE'}::booking_payment_status,
               ${input.isEmergency}, ${input.providerId === undefined}, ${this.slotRange(start, end, bufferMin)},
-              ${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, ${input.problemText ?? null}, ${total}, ${total},
+              ${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, ${input.problemText ?? null}, ${issueOptionId ?? null}::int,
+              ${input.onBehalfOf !== undefined}, ${input.onBehalfOf?.name ?? null}, ${input.onBehalfOf?.phoneE164 ?? null},
+              ${total}, ${total},
               ${BigInt(quote.discountPaisa)}, ${priced.couponId}::uuid, ${commissionRateBp})
             RETURNING ${BOOKING_COLUMNS}`
         );
@@ -116,7 +158,8 @@ export class BookingService {
         }
         await tx.$executeRaw(
           Prisma.sql`INSERT INTO booking_status_history(booking_id, from_status, to_status, event, actor_user_id, actor_role, metadata)
-            VALUES (${row.id}::uuid, NULL, ${row.status}::booking_status, 'create', ${customerId}::uuid, 'CUSTOMER'::actor_role, ${JSON.stringify({ paymentMode: input.paymentMode, isEmergency: input.isEmergency })}::jsonb)`
+            VALUES (${row.id}::uuid, NULL, ${row.status}::booking_status, 'create', ${customerId}::uuid, 'CUSTOMER'::actor_role,
+              ${JSON.stringify({ paymentMode: input.paymentMode, isEmergency: input.isEmergency, isOnBehalf: input.onBehalfOf !== undefined, issueOptionId: issueOptionId ?? null })}::jsonb)`
         );
 
         let paymentId: string | null = null;
@@ -131,13 +174,34 @@ export class BookingService {
 
       const booking = toBookingRow(created.row);
       if (created.paymentId === null) return booking;
-      const payment = await this.payments.startCheckout(created.paymentId, { userId: customerId }, `/checkout/return?bookingId=${booking.id}`);
-      return { ...booking, payment };
+      const payment = await this.payments.startCheckout(created.paymentId, { userId: customerId }, await this.checkoutReturnUrl(booking.id, customerId));
+      return { ...booking, payment: { ...payment, returnUrl: payment.returnUrl } };
     } catch (error) {
       const meta = error instanceof Prisma.PrismaClientKnownRequestError ? (error.meta as { code?: unknown } | undefined) : undefined;
       if (meta?.code === EXCLUSION_VIOLATION) throw new DomainError('SLOT_TAKEN', 'That provider is no longer free at this time');
       throw error;
     }
+  }
+
+  /**
+   * Where the gateway sends an online customer back to, as an absolute URL on
+   * `PUBLIC_BASE_URL` and in the customer's own language.
+   *
+   * Both halves of that used to be missing: the path was hardcoded and relative,
+   * so it could not match a locale-prefixed route and could not point at a real
+   * origin; and it carried no locale, so somebody who paid in Urdu came back in
+   * English. The locale is read from the account rather than guessed.
+   *
+   * The caller still has to read `GET /bookings/:id` to learn whether the
+   * payment actually landed — this route observes the redirect, not the
+   * gateway's signed webhook.
+   */
+  private async checkoutReturnUrl(bookingId: string, customerId: string): Promise<string> {
+    const rows = await this.prisma.$queryRaw<{ locale: string }[]>(Prisma.sql`SELECT locale FROM users WHERE id = ${customerId}::uuid`);
+    const locale = rows[0]?.locale === 'ur' ? 'ur' : 'en';
+    const url = new URL(`/${locale}/checkout/return`, this.environment.values.PUBLIC_BASE_URL);
+    url.searchParams.set('bookingId', bookingId);
+    return url.toString();
   }
 
   /**
@@ -155,7 +219,7 @@ export class BookingService {
    * the money already moved, a claim that fails verification a second time is a dispute rather than another rework loop.
    */
   async warrantyClaim(bookingId: string, customerId: string, reason: string): Promise<BookingRow> {
-    const result = await this.prisma.$transaction(async tx => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ warrantyUntil: Date | null; status: string; customerId: string }[]>(
         Prisma.sql`SELECT warranty_until as "warrantyUntil", status::text as status, customer_id as "customerId" FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`
       );
@@ -179,7 +243,7 @@ export class BookingService {
    * The customer is then texted a receipt with a link to report a problem (FR-CP, source RECEIPT_LINK).
    */
   async confirmCashReceived(bookingId: string, providerId: string): Promise<BookingRow> {
-    return this.prisma.$transaction(async tx => {
+    return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ paymentMode: string; finalAmountPaisa: bigint | null; discountPaisa: bigint; commissionRateBp: number; providerId: string | null }[]>(
         Prisma.sql`SELECT payment_mode::text as "paymentMode", final_amount_paisa as "finalAmountPaisa", discount_paisa as "discountPaisa", commission_rate_bp as "commissionRateBp", provider_id as "providerId"
           FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`
@@ -188,7 +252,11 @@ export class BookingService {
       if (row === undefined || row.providerId !== providerId) throw notFound('Booking');
       if (row.paymentMode !== 'CASH') throw new DomainError('ILLEGAL_TRANSITION', 'Only a cash booking is settled by confirming cash was received');
       const applied = await this.state.applyInTx(tx, bookingId, 'confirmCashReceived', providerId);
-      await this.release.settleCash(tx, { bookingId, providerId, finalPaisa: row.finalAmountPaisa ?? 0n, discountPaisa: row.discountPaisa, commissionRateBp: row.commissionRateBp, paymentMode: 'CASH' }, providerId);
+      await this.release.settleCash(
+        tx,
+        { bookingId, providerId, finalPaisa: row.finalAmountPaisa ?? 0n, discountPaisa: row.discountPaisa, commissionRateBp: row.commissionRateBp, paymentMode: 'CASH' },
+        providerId
+      );
       await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'payment.receipt_due', payload: { bookingId } });
       const refreshed = await tx.$queryRaw<BookingRowRaw[]>(Prisma.sql`SELECT ${BOOKING_COLUMNS} FROM bookings WHERE id = ${bookingId}::uuid`);
       return refreshed[0] === undefined ? applied.booking : toBookingRow(refreshed[0]);
@@ -204,15 +272,54 @@ export class BookingService {
     );
   }
 
-  /** FR-BK-02: the same availability/leave checks for a fresh booking and a reschedule. */
-  private async assertWindowIsBookable(providerId: string, start: Date, end: Date): Promise<void> {
-    const weekday = localWeekday(start);
-    const availability = await this.prisma.$queryRaw<{ id: string }[]>(
-      Prisma.sql`SELECT id FROM provider_availability WHERE provider_id = ${providerId}::uuid AND weekday = ${weekday}
-        AND start_time <= ${localTimeOfDay(start)}::time AND end_time >= ${localTimeOfDay(end)}::time`
-    );
-    if (availability.length === 0) throw badRequest("The requested time falls outside the provider's declared availability");
-    const timeOff = await this.prisma.$queryRaw<{ id: string }[]>(
+  /**
+   * The common fault the customer picked, if any. Checked against the service being
+   * booked rather than merely well-formed, so an option from another service cannot
+   * be attached to this booking and later read back to a provider as the reported
+   * fault. An inactive option is refused too: it has been retired, and a retired
+   * option is not what anyone agreed to.
+   */
+  private async resolveIssueOption(serviceId: number, issueOptionId: number | undefined): Promise<number | null> {
+    if (issueOptionId === undefined) return null;
+    const rows = await this.prisma.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM service_issue_options WHERE id = ${issueOptionId} AND service_id = ${serviceId} AND is_active = true`);
+    if (rows[0] === undefined) throw notFound('Issue option');
+    return rows[0].id;
+  }
+
+  /**
+   * Same-day / next-hour booking: the shortest notice and the widest window the
+   * platform accepts. Both thresholds are settings, and the identical rule is
+   * applied by `SearchService.listSlots` when it offers start times — a listing
+   * that offers a start time checkout would refuse is worse than no listing.
+   */
+  async refuseWindow(start: Date, end: Date): Promise<string | null> {
+    return windowRefusal(this.clock.now(), start, end, {
+      minNoticeMin: await this.settings.getNumber('booking.min_notice_min'),
+      maxDaySpan: await this.settings.getNumber('booking.max_day_span')
+    });
+  }
+
+  /**
+   * FR-BK-02: the same availability/leave checks for a fresh booking and a reschedule.
+   *
+   * Availability is a wall-clock range inside *one* local day, so a window that
+   * crosses local midnight is asked about one piece per local day: 22:30–00:30
+   * needs the provider free until close on the first day *and* from opening on the
+   * next. Without the split, a provider who genuinely works late could never be
+   * booked for a job that ends just after midnight.
+   */
+  private async assertWindowIsBookable(providerId: string, start: Date, end: Date, tx?: Prisma.TransactionClient): Promise<void> {
+    const client = tx ?? this.prisma;
+    const pieces = splitAtLocalMidnight(start, end);
+    for (const piece of pieces) {
+      const weekday = localWeekday(piece.start);
+      const availability = await client.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT id FROM provider_availability WHERE provider_id = ${providerId}::uuid AND weekday = ${weekday}
+          AND start_time <= ${localTimeOfDay(piece.start)}::time AND end_time >= ${localTimeOfDay(piece.end)}::time`
+      );
+      if (availability.length === 0) throw badRequest("The requested time falls outside the provider's declared availability");
+    }
+    const timeOff = await client.$queryRaw<{ id: string }[]>(
       Prisma.sql`SELECT id FROM provider_time_off WHERE provider_id = ${providerId}::uuid AND period && tstzrange(${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, '[)')`
     );
     if (timeOff.length > 0) throw badRequest('The provider has recorded leave over part of this window');
@@ -233,17 +340,13 @@ export class BookingService {
    * re-sending if the customer says they never got the SMS.
    */
   async issueStartOtp(bookingId: string): Promise<void> {
-    const rows = await this.prisma.$queryRaw<{ phone: string }[]>(
-      Prisma.sql`SELECT u.phone_e164 as phone FROM bookings b JOIN users u ON u.id = b.customer_id WHERE b.id = ${bookingId}::uuid`
-    );
+    const rows = await this.prisma.$queryRaw<{ phone: string }[]>(Prisma.sql`SELECT u.phone_e164 as phone FROM bookings b JOIN users u ON u.id = b.customer_id WHERE b.id = ${bookingId}::uuid`);
     const row = rows[0];
     if (row === undefined) throw notFound('Booking');
 
     const code = generateOtpCode();
     const hash = hashStartOtp(this.environment.values.OTP_PEPPER, bookingId, code);
-    await this.prisma.$executeRaw(
-      Prisma.sql`UPDATE bookings SET start_otp_hash = ${hash}, start_otp_attempts = 0, start_otp_locked_until = NULL WHERE id = ${bookingId}::uuid`
-    );
+    await this.prisma.$executeRaw(Prisma.sql`UPDATE bookings SET start_otp_hash = ${hash}, start_otp_attempts = 0, start_otp_locked_until = NULL WHERE id = ${bookingId}::uuid`);
     await this.sms.send(row.phone, `Your Smart Home start code is ${code}. Give it to your provider when they arrive.`, { purpose: 'BOOKING_START' });
   }
 
@@ -253,7 +356,11 @@ export class BookingService {
    * `START_OTP_LOCK_MINUTES` — state lives on the booking row itself, not
    * Redis, since it's scoped to one booking rather than a user or IP.
    */
-  async startWork(bookingId: string, actorUserId: string, input: { code: string; lat?: number | undefined; lng?: number | undefined; accuracyM?: number | undefined }): Promise<BookingRow & { checkin?: { distanceM: number; withinGeofence: boolean } }> {
+  async startWork(
+    bookingId: string,
+    actorUserId: string,
+    input: { code: string; lat?: number | undefined; lng?: number | undefined; accuracyM?: number | undefined }
+  ): Promise<BookingRow & { checkin?: { distanceM: number; withinGeofence: boolean } }> {
     const code = input.code;
     // The attempts/lock bookkeeping below has to survive even when this call
     // ultimately reports failure — but a DomainError thrown from inside
@@ -261,7 +368,7 @@ export class BookingService {
     // including that bookkeeping. So the callback never throws for an
     // expected wrong-code/locked outcome; it returns a result, and this
     // method throws afterwards, once the attempt has already been committed.
-    const outcome = await this.prisma.$transaction(async tx => {
+    const outcome = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<(BookingRowRaw & { startOtpHash: string | null; startOtpAttempts: number; startOtpLockedUntil: Date | null })[]>(
         Prisma.sql`SELECT ${BOOKING_COLUMNS}, start_otp_hash as "startOtpHash", start_otp_attempts as "startOtpAttempts", start_otp_locked_until as "startOtpLockedUntil"
           FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`
@@ -292,6 +399,7 @@ export class BookingService {
       await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
       const updated = await tx.$queryRaw<BookingRowRaw[]>(
         // A rework visit is a new visit: visit_no moves on, so its checklist, photos and verification are separate records from the first.
+        // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingService.start (FR-EX-02), transition_ctx set above
         Prisma.sql`UPDATE bookings SET status = 'IN_PROGRESS'::booking_status, start_otp_verified_at = now(), start_otp_attempts = 0, start_otp_locked_until = NULL,
             visit_no = CASE WHEN ${row.status} = 'REWORK_REQUIRED' THEN visit_no + 1 ELSE visit_no END
           WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`
@@ -306,7 +414,8 @@ export class BookingService {
       await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.start', payload: { bookingId, from: row.status, to: 'IN_PROGRESS' } });
 
       // FR-EX-09 / BR-09: where the provider says they are, against the customer's door. Flagged when outside the geofence, never blocking.
-      const checkin = input.lat !== undefined && input.lng !== undefined ? await this.execution.recordCheckin(tx, bookingId, 'checkin', { lat: input.lat, lng: input.lng, accuracyM: input.accuracyM }) : undefined;
+      const checkin =
+        input.lat !== undefined && input.lng !== undefined ? await this.execution.recordCheckin(tx, bookingId, 'checkin', { lat: input.lat, lng: input.lng, accuracyM: input.accuracyM }) : undefined;
       return { ok: true as const, booking: toBookingRow(next), checkin };
     });
 
@@ -328,7 +437,7 @@ export class BookingService {
     const end = new Date(input.scheduledEnd);
 
     try {
-      return await this.prisma.$transaction(async tx => {
+      return await this.prisma.$transaction(async (tx) => {
         const rows = await tx.$queryRaw<BookingRowRaw[]>(Prisma.sql`SELECT ${BOOKING_COLUMNS} FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`);
         const row = rows[0];
         if (row === undefined) throw notFound('Booking');
@@ -342,19 +451,9 @@ export class BookingService {
         const noticeCutoff = new Date(row.scheduledStart.getTime() - RESCHEDULE_NOTICE_HOURS * 60 * 60 * 1000);
         if (new Date() > noticeCutoff) throw badRequest(`A booking can only be rescheduled at least ${RESCHEDULE_NOTICE_HOURS} hours before its current slot`);
 
-        const startWeekday = localWeekday(start);
-        if (startWeekday !== localWeekday(end)) throw badRequest('A booking must start and end on the same calendar day');
-
-        const availability = await tx.$queryRaw<{ id: string }[]>(
-          Prisma.sql`SELECT id FROM provider_availability WHERE provider_id = ${row.providerId}::uuid AND weekday = ${startWeekday}
-            AND start_time <= ${localTimeOfDay(start)}::time AND end_time >= ${localTimeOfDay(end)}::time`
-        );
-        if (availability.length === 0) throw badRequest("The requested time falls outside the provider's declared availability");
-
-        const timeOff = await tx.$queryRaw<{ id: string }[]>(
-          Prisma.sql`SELECT id FROM provider_time_off WHERE provider_id = ${row.providerId}::uuid AND period && tstzrange(${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz, '[)')`
-        );
-        if (timeOff.length > 0) throw badRequest('The provider has recorded leave over part of this window');
+        const windowRefusalMessage = await this.refuseWindow(start, end);
+        if (windowRefusalMessage !== null) throw badRequest(windowRefusalMessage);
+        await this.assertWindowIsBookable(row.providerId as string, start, end, tx);
 
         // Status is unchanged (SCHEDULED -> SCHEDULED), so `trg_booking_status_guard`
         // never fires here — no `app.transition_ctx` needed for this update.
@@ -374,7 +473,12 @@ export class BookingService {
             VALUES (${bookingId}::uuid, 'SCHEDULED'::booking_status, 'SCHEDULED'::booking_status, 'reschedule', ${actorUserId}::uuid, 'CUSTOMER'::actor_role,
               ${JSON.stringify({ previousStart: row.scheduledStart.toISOString(), previousEnd: row.scheduledEnd.toISOString() })}::jsonb)`
         );
-        await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.reschedule', payload: { previousStart: row.scheduledStart.toISOString(), newStart: start.toISOString() } });
+        await appendOutboxEvent(tx, {
+          aggregate: 'booking',
+          aggregateId: bookingId,
+          type: 'booking.reschedule',
+          payload: { bookingId, previousStart: row.scheduledStart.toISOString(), newStart: start.toISOString() }
+        });
 
         return toBookingRow(next);
       });
@@ -393,7 +497,7 @@ export class BookingService {
    * since the first one already moved the booking out of `IN_PROGRESS`.
    */
   async raiseQuoteRevision(bookingId: string, providerId: string, input: { deltaPaisa: number; reason: string }): Promise<BookingRow> {
-    return this.prisma.$transaction(async tx => {
+    return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<BookingRowRaw[]>(Prisma.sql`SELECT ${BOOKING_COLUMNS} FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`);
       const row = rows[0];
       if (row === undefined) throw notFound('Booking');
@@ -402,12 +506,11 @@ export class BookingService {
       const transition = canTransition(row.status as BookingStatus, 'raiseQuoteRevision', 'PROVIDER');
       if (transition === null) throw new DomainError('ILLEGAL_TRANSITION', `Cannot raise a quote revision on a booking in status ${row.status}`);
 
-      await tx.$executeRaw(
-        Prisma.sql`INSERT INTO quote_revisions(booking_id, reason, delta_paisa, raised_by) VALUES (${bookingId}::uuid, ${input.reason}, ${input.deltaPaisa}, ${providerId}::uuid)`
-      );
+      await tx.$executeRaw(Prisma.sql`INSERT INTO quote_revisions(booking_id, reason, delta_paisa, raised_by) VALUES (${bookingId}::uuid, ${input.reason}, ${input.deltaPaisa}, ${providerId}::uuid)`);
 
       await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
       const updated = await tx.$queryRaw<BookingRowRaw[]>(
+        // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingService.raiseQuoteRevision (FR-EX-05), transition_ctx set above
         Prisma.sql`UPDATE bookings SET status = 'QUOTE_REVISION'::booking_status WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`
       );
       const next = updated[0];
@@ -429,8 +532,8 @@ export class BookingService {
    * stays in QUOTE_REVISION, and the customer gets a payment redirect; the gateway's signed capture then approves
    * it — in the same transaction as the money landing in escrow, so approved ⇔ paid.
    */
-  async approveQuoteRevision(bookingId: string, customerId: string): Promise<BookingRow & { payment?: { paymentId: string; redirectUrl: string } }> {
-    const outcome = await this.prisma.$transaction(async tx => {
+  async approveQuoteRevision(bookingId: string, customerId: string): Promise<BookingRow & { payment?: { paymentId: string; redirectUrl: string; returnUrl: string } }> {
+    const outcome = await this.prisma.$transaction(async (tx) => {
       const { row, revision } = await this.lockRevision(tx, bookingId, customerId, 'approveQuoteRevision');
       if (row.paymentMode === 'CASH') {
         const booking = await this.approveRevisionInTx(tx, row.id, revision.id, customerId);
@@ -444,21 +547,20 @@ export class BookingService {
       return { booking: toBookingRow(row), paymentId };
     });
     if (outcome.paymentId === null) return outcome.booking;
-    const payment = await this.payments.startCheckout(outcome.paymentId, { userId: customerId }, `/checkout/return?bookingId=${bookingId}`);
+    const payment = await this.payments.startCheckout(outcome.paymentId, { userId: customerId }, await this.checkoutReturnUrl(bookingId, customerId));
     return { ...outcome.booking, payment };
   }
 
   async rejectQuoteRevision(bookingId: string, customerId: string): Promise<BookingRow> {
-    return this.prisma.$transaction(async tx => {
+    return this.prisma.$transaction(async (tx) => {
       const { row, revision } = await this.lockRevision(tx, bookingId, customerId, 'rejectQuoteRevision');
-      await tx.$executeRaw(
-        Prisma.sql`UPDATE quote_revisions SET status = 'REJECTED'::revision_status, decided_by = ${customerId}::uuid, decided_at = now() WHERE id = ${revision.id}::uuid`
-      );
+      await tx.$executeRaw(Prisma.sql`UPDATE quote_revisions SET status = 'REJECTED'::revision_status, decided_by = ${customerId}::uuid, decided_at = now() WHERE id = ${revision.id}::uuid`);
       // A top-up the customer had started but not paid is void now.
       if (revision.topupPaymentId !== null) {
         await tx.$executeRaw(Prisma.sql`UPDATE payments SET status = 'EXPIRED'::payment_status WHERE id = ${revision.topupPaymentId}::uuid AND status = 'INITIATED'`);
       }
       await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
+      // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingService.rejectQuoteRevision (FR-EX-05), transition_ctx set above
       const updated = await tx.$queryRaw<BookingRowRaw[]>(Prisma.sql`UPDATE bookings SET status = 'IN_PROGRESS'::booking_status WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`);
       const next = updated[0];
       if (next === undefined) throw new Error('Booking update did not return a row');
@@ -466,7 +568,7 @@ export class BookingService {
         Prisma.sql`INSERT INTO booking_status_history(booking_id, from_status, to_status, event, actor_user_id, actor_role, metadata)
           VALUES (${bookingId}::uuid, 'QUOTE_REVISION'::booking_status, 'IN_PROGRESS'::booking_status, 'rejectQuoteRevision', ${customerId}::uuid, 'CUSTOMER'::actor_role, ${JSON.stringify({ revisionId: revision.id })}::jsonb)`
       );
-      await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.rejectQuoteRevision', payload: { revisionId: revision.id } });
+      await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.rejectQuoteRevision', payload: { revisionId: revision.id, bookingId } });
 
       // FR-EX-11: an inspection-first job whose extra work is refused ends here, at the visit fee.
       const services = await tx.$queryRaw<{ pricingModel: string }[]>(Prisma.sql`SELECT pricing_model as "pricingModel" FROM services WHERE id = ${row.serviceId}`);
@@ -495,12 +597,15 @@ export class BookingService {
 
   /** Adds the revision's amount to the approved total and returns the booking to IN_PROGRESS. Shared by the cash path and the top-up capture. */
   async approveRevisionInTx(tx: Prisma.TransactionClient, bookingId: string, revisionId: string, customerId: string): Promise<BookingRow> {
-    const revisions = await tx.$queryRaw<{ deltaPaisa: bigint; reason: string }[]>(Prisma.sql`SELECT delta_paisa as "deltaPaisa", reason FROM quote_revisions WHERE id = ${revisionId}::uuid AND status = 'PENDING' FOR UPDATE`);
+    const revisions = await tx.$queryRaw<{ deltaPaisa: bigint; reason: string }[]>(
+      Prisma.sql`SELECT delta_paisa as "deltaPaisa", reason FROM quote_revisions WHERE id = ${revisionId}::uuid AND status = 'PENDING' FOR UPDATE`
+    );
     const revision = revisions[0];
     if (revision === undefined) throw new DomainError('ILLEGAL_TRANSITION', 'That revision is no longer pending');
     await tx.$executeRaw(Prisma.sql`UPDATE quote_revisions SET status = 'APPROVED'::revision_status, decided_by = ${customerId}::uuid, decided_at = now() WHERE id = ${revisionId}::uuid`);
     await tx.$executeRaw(Prisma.sql`SET LOCAL app.transition_ctx = 'on'`);
     const updated = await tx.$queryRaw<BookingRowRaw[]>(
+      // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingService.approveRevisionInTx (FR-EX-05), transition_ctx set above
       Prisma.sql`UPDATE bookings SET status = 'IN_PROGRESS'::booking_status, approved_total_paisa = approved_total_paisa + ${revision.deltaPaisa} WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`
     );
     const next = updated[0];
@@ -513,40 +618,140 @@ export class BookingService {
       Prisma.sql`INSERT INTO booking_status_history(booking_id, from_status, to_status, event, actor_user_id, actor_role, metadata)
         VALUES (${bookingId}::uuid, 'QUOTE_REVISION'::booking_status, 'IN_PROGRESS'::booking_status, 'approveQuoteRevision', ${customerId}::uuid, 'CUSTOMER'::actor_role, ${JSON.stringify({ revisionId })}::jsonb)`
     );
-    await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.approveQuoteRevision', payload: { revisionId } });
+    await appendOutboxEvent(tx, { aggregate: 'booking', aggregateId: bookingId, type: 'booking.approveQuoteRevision', payload: { revisionId, bookingId } });
     return toBookingRow(next);
   }
 
-  async getOwned(bookingId: string, actorUserId: string): Promise<BookingRow> {
-    const rows = await this.prisma.$queryRaw<BookingRowRaw[]>(
-      Prisma.sql`SELECT ${BOOKING_COLUMNS} FROM bookings WHERE id = ${bookingId}::uuid AND (customer_id = ${actorUserId}::uuid OR provider_id = ${actorUserId}::uuid)`
+  /**
+   * Who will receive the provider when a booking was made for someone other than
+   * the customer, or `null` when it was not.
+   *
+   * This is the only way a third party's phone number leaves the database. It is
+   * masked for anyone who has not accepted the job, in full for the customer who
+   * entered it and for the provider the job belongs to — see `on-behalf.ts`.
+   */
+  async onBehalfContact(bookingId: string, actorUserId: string): Promise<OnBehalfContact | null> {
+    const rows = await this.prisma.$queryRaw<{ customerId: string; providerId: string | null; status: string; isOnBehalf: boolean; onBehalfName: string | null; onBehalfPhoneE164: string | null }[]>(
+      Prisma.sql`SELECT customer_id as "customerId", provider_id as "providerId", status, is_on_behalf as "isOnBehalf",
+          on_behalf_name as "onBehalfName", on_behalf_phone_e164 as "onBehalfPhoneE164"
+        FROM bookings WHERE id = ${bookingId}::uuid AND (customer_id = ${actorUserId}::uuid OR provider_id = ${actorUserId}::uuid)`
     );
     const row = rows[0];
     if (row === undefined) throw notFound('Booking');
-    return toBookingRow(row);
+    if (!row.isOnBehalf || row.onBehalfName === null || row.onBehalfPhoneE164 === null) return null;
+    const revealed = maySeeFullContact({ userId: actorUserId, isCustomer: row.customerId === actorUserId, isProvider: row.providerId === actorUserId }, row);
+    return contactFor({ name: row.onBehalfName, phone: row.onBehalfPhoneE164 }, revealed);
   }
 
-  async listMine(actorUserId: string, status?: string): Promise<BookingRow[]> {
-    const rows = await this.prisma.$queryRaw<BookingRowRaw[]>(
-      Prisma.sql`SELECT ${BOOKING_COLUMNS} FROM bookings
-        WHERE (customer_id = ${actorUserId}::uuid OR provider_id = ${actorUserId}::uuid)
-          AND (${status ?? null}::booking_status IS NULL OR status = ${status ?? null}::booking_status)
-        ORDER BY created_at DESC`
+  /**
+   * The detail view: the booking with the names a person recognises, the line
+   * items it was priced for, and the cancellation rule *for this booking right
+   * now* — so the detail page can state the rule at the moment the customer is
+   * deciding, rather than only during checkout (where `POST /bookings/quote`
+   * already returns the same words).
+   */
+  /**
+   * Where the job is, for the provider the booking belongs to and nobody else.
+   *
+   * `GET /bookings/:id` returns an `addressId` and no address text on purpose:
+   * every provider-facing endpoint returns that row, so anything on it would be
+   * handed out with the offer list, where a provider is still deciding whether to
+   * take the job. The customer cannot reach it either through this route. So the
+   * address is read through the one method that decides who may have it, under
+   * the same rule as the on-behalf contact number: refused while the booking is
+   * still `REQUESTED`, revealed from the moment it is accepted.
+   *
+   * Coordinates are not optional decoration — `POST /bookings/:id/start` reports
+   * `distanceM` and `withinGeofence` against the customer's door, and that check
+   * is meaningless without the destination.
+   */
+  async serviceAddress(bookingId: string, actorUserId: string): Promise<ServiceAddress> {
+    const rows = await this.prisma.$queryRaw<
+      {
+        customerId: string;
+        providerId: string | null;
+        status: string;
+        label: string | null;
+        line1: string | null;
+        line2: string | null;
+        areaId: number | null;
+        areaName: string | null;
+        lat: number | null;
+        lng: number | null;
+      }[]
+    >(
+      Prisma.sql`SELECT b.customer_id as "customerId", b.provider_id as "providerId", b.status,
+          a.label, a.line1, a.line2, a.area_id as "areaId", ar.name as "areaName",
+          ST_Y(a.location::geometry) as lat, ST_X(a.location::geometry) as lng
+        FROM bookings b JOIN addresses a ON a.id = b.address_id LEFT JOIN areas ar ON ar.id = a.area_id
+        WHERE b.id = ${bookingId}::uuid`
     );
-    return rows.map(toBookingRow);
+    const row = rows[0];
+    if (row === undefined) throw notFound('Booking');
+    const isCustomer = row.customerId === actorUserId;
+    const isProvider = row.providerId === actorUserId;
+    const revealed = maySeeFullContact({ userId: actorUserId, isCustomer, isProvider }, row);
+    if (!revealed) throw notFound('Booking');
+    return {
+      label: revealed ? row.label : null,
+      line1: revealed ? row.line1 : null,
+      line2: revealed ? row.line2 : null,
+      areaId: revealed ? row.areaId : null,
+      areaName: revealed ? row.areaName : null,
+      lat: revealed ? row.lat : null,
+      lng: revealed ? row.lng : null,
+      revealed
+    };
   }
 
-  /** Provider-scoped rate wins, then category-scoped, then the platform GLOBAL default (always seeded). */
+  async getOwned(
+    bookingId: string,
+    actorUserId: string
+  ): Promise<BookingReadRow & { items: BookingItemRow[]; cancellationPolicy: string; cancellation: Awaited<ReturnType<PricingService['cancellationQuote']>> }> {
+    const rows = await this.prisma.$queryRaw<BookingReadRaw[]>(
+      Prisma.sql`SELECT ${BOOKING_READ_COLUMNS} ${BOOKING_READ_JOIN}
+        WHERE b.id = ${bookingId}::uuid AND (b.customer_id = ${actorUserId}::uuid OR b.provider_id = ${actorUserId}::uuid)`
+    );
+    const row = rows[0];
+    if (row === undefined) throw notFound('Booking');
+    return {
+      ...toBookingReadRow(row),
+      items: await this.itemsOf(bookingId),
+      cancellationPolicy: await this.pricing.cancellationPolicy(),
+      cancellation: await this.pricing.cancellationQuote(row)
+    };
+  }
+
+  /** What the booking was priced for. Written by `create()`, read here and by the invoice; nothing else reads `booking_items`. */
+  async itemsOf(bookingId: string): Promise<BookingItemRow[]> {
+    const rows = await this.prisma.$queryRaw<{ id: string; kind: string; description: string; quantity: number; unitPricePaisa: bigint; amountPaisa: bigint }[]>(
+      Prisma.sql`SELECT id, kind::text as kind, description, quantity, unit_price_paisa as "unitPricePaisa", amount_paisa as "amountPaisa"
+        FROM booking_items WHERE booking_id = ${bookingId}::uuid ORDER BY id`
+    );
+    return rows.map((row) => ({ ...row, unitPricePaisa: paisaToNumber(row.unitPricePaisa), amountPaisa: paisaToNumber(row.amountPaisa) }));
+  }
+
+  async listMine(actorUserId: string, status?: string): Promise<BookingReadRow[]> {
+    const rows = await this.prisma.$queryRaw<BookingReadRaw[]>(
+      Prisma.sql`SELECT ${BOOKING_READ_COLUMNS} ${BOOKING_READ_JOIN}
+        WHERE (b.customer_id = ${actorUserId}::uuid OR b.provider_id = ${actorUserId}::uuid)
+          AND (${status ?? null}::booking_status IS NULL OR b.status = ${status ?? null}::booking_status)
+        ORDER BY b.created_at DESC`
+    );
+    return rows.map(toBookingReadRow);
+  }
+
+  /** Provider-scoped rate wins, then category-scoped, then the platform GLOBAL default (always seeded). The precedence itself lives in `@smart-home/domain`; this only fetches the rules that are in force. */
   private async resolveCommissionRateBp(providerId: string | null, categoryId: number): Promise<number> {
-    const rows = await this.prisma.$queryRaw<{ rateBp: number; scope: string }[]>(
-      Prisma.sql`SELECT rate_bp as "rateBp", scope FROM commission_rules
+    const rows = await this.prisma.$queryRaw<{ rateBp: number; scope: CommissionScope; categoryId: number | null; providerId: string | null; effectiveFrom: Date }[]>(
+      Prisma.sql`SELECT rate_bp as "rateBp", scope::text as scope, category_id as "categoryId", provider_id as "providerId", effective_from as "effectiveFrom"
+        FROM commission_rules
         WHERE effective_from <= now() AND (effective_to IS NULL OR effective_to > now())
-          AND ((scope = 'PROVIDER' AND provider_id = ${providerId}::uuid AND ${providerId}::uuid IS NOT NULL) OR (scope = 'CATEGORY' AND category_id = ${categoryId}) OR scope = 'GLOBAL')
-        ORDER BY CASE scope WHEN 'PROVIDER' THEN 0 WHEN 'CATEGORY' THEN 1 ELSE 2 END
-        LIMIT 1`
+          AND ((scope = 'PROVIDER' AND provider_id = ${providerId}::uuid) OR (scope = 'CATEGORY' AND category_id = ${categoryId}) OR scope = 'GLOBAL')
+        ORDER BY effective_from DESC, created_at DESC`
     );
-    const rate = rows[0];
-    if (rate === undefined) throw new Error('No commission rule resolved — expected at least a GLOBAL default to be seeded');
-    return rate.rateBp;
+    const rate = selectCommissionRateBp(rows, { providerId, categoryId });
+    if (rate === null) throw new Error('No commission rule resolved — expected at least a GLOBAL default to be seeded');
+    return rate;
   }
 }
