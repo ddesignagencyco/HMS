@@ -3,6 +3,15 @@ import { PageBanner, Container, Section } from "@/components/ui";
 import { getDictionary } from "@/lib/dictionaries";
 import { isLocale } from "@/lib/utils";
 import { TrackBooking } from "@/features/discovery/track-booking";
+import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
+
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  const dict = getDictionary(isLocale(locale) ? locale : "en");
+  /* A utility page reached by typing a booking code: useful, but nothing to rank for. */
+  return pageMetadata(locale, "/track", dict.trackPage.titleLead, dict.trackPage.description, { noindex: true });
+}
 
 export default async function TrackPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;

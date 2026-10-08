@@ -118,6 +118,24 @@ export function useAdminProviders(filters: { status?: UserStatus; q?: string; li
   });
 }
 
+/**
+ * `GET /finance/escrow` — the money the platform is currently holding.
+ *
+ * ADMIN is in this route's allowed roles, so the admin landing can show a real
+ * escrow figure instead of the sentence it used to carry saying none existed.
+ * The figure is the ledger's own `totalHeldPaisa`; it is never re-summed from
+ * `items` in the client, because the server caps `items` at 500 rows.
+ */
+export function useEscrow(locale: Locale) {
+  return useQuery({
+    queryKey: adminKeys.escrow(),
+    queryFn: ({ signal }) => adminApi.escrow({ signal, locale }),
+    staleTime: FRESHNESS.search.staleTime,
+    gcTime: FRESHNESS.search.gcTime,
+    retry: publicRetry
+  });
+}
+
 /* ---- writes ------------------------------------------------------------ */
 
 /**

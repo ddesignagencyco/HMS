@@ -44,6 +44,10 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
   const [done, setDone] = useState(false);
   const [disabling, setDisabling] = useState(false);
   const [copied, setCopied] = useState(false);
+  /* Which half of the enrolment is on screen. A secret exists from the moment
+     setup is called, so this is what separates "here is the QR" from "now type the
+     code" — and it is the only reason the two cannot both be showing at once. */
+  const [step, setStep] = useState<1 | 2>(1);
   const manualKey = useRef<HTMLDialogElement>(null);
 
   const form = useForm<z.infer<typeof codeSchema>>({
@@ -76,6 +80,16 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
     } finally {
       setStarting(false);
     }
+  };
+
+  /* Step one is finished the moment the secret exists — nothing is typed into an
+     authenticator until it has been scanned — so this only advances the indicator
+     and focuses the first box for whoever is ready. Going back re-shows the same QR;
+     it is not regenerated, because the secret is shown once and regenerating it
+     would invalidate the one already in the person's app. */
+  const toCodeStep = () => {
+    if (secret === null) return;
+    setStep(2);
   };
 
   /* Copies the setup key for manual entry. The key block stays selectable,
@@ -164,7 +178,13 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
     );
   }
 
-  /* ---- enrolment ---- */
+  /* ---- enrolment ----
+     Two steps, one at a time, the same shape the booking flow uses: scan, then
+     type. Showing both at once was what made this card hard to read — a QR code
+     and six boxes side by side inside a 439px column left the boxes 30px wide
+     beside a QR twice their size, and asked for two different actions at once.
+     One action per step also means neither half is squeezed, and the card keeps
+     its height whichever step it is on. */
   return (
     <AuthShell
       locale={locale}
@@ -173,6 +193,7 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
       titleAccent={dict.auth.totpAccent}
       description={dict.auth.totpSetupText}
       imageSrc={AUTH_TOTP_IMAGE}
+      step={secret === null ? undefined : { current: step, total: 2 }}
       footer={
         <Link href={signInPath(locale, returnTo)} className="font-semibold text-primary-strong hover:text-primary">
           {dict.auth.backToSignIn}
@@ -187,76 +208,77 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
             {dict.auth.totpSetupTitle}
           </Button>
         </div>
-      ) : (
-        /* Stacked, this card measured 927px inside the 607px frame every other
-           auth card fits, and the confirm button fell off the bottom of the
-           page. So from lg the two steps sit side by side - QR on the left,
-           everything to type on the right - which is also the order they are
-           done in. Below lg it is one column, because a QR beside six code
-           boxes is more than a phone screen is wide.
-
-           The QR track is a fixed 212px rather than a fraction so the code
-           never gets wider and squeezes the QR below what an authenticator app
-           reads comfortably; the code boxes take what is left. 212 is also what
-           keeps the whole card inside the 607px frame the other auth cards fill
-           exactly. The card description already says what `totpStepOneText`
-           said, and in a 200px column that sentence alone was four lines and
-           96px of the budget. The numbered headers carry the steps. */
-        <form onSubmit={onSubmit} className="grid gap-4" noValidate>
-          <div className="grid gap-4 lg:grid-cols-[212px_minmax(0,1fr)] lg:items-start lg:gap-4">
-            <div className="grid gap-3">
-              <p className="flex items-center gap-2 text-sm font-semibold text-navy">
-                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
-                  1
-                </span>
-                {dict.auth.totpStepOne}
-              </p>
+      ) : step === 1 ? (
+        <div className="grid gap-4">
+          <div className="grid gap-3">
+            <p className="flex items-center gap-2 text-sm font-semibold text-navy">
+              <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
+                1
+              </span>
+              {dict.auth.totpStepOne}
+            </p>
+            <div className="grid justify-items-center gap-3">
               <TotpQrCode uri={secret.otpauthUri} label={dict.auth.totpQrAlt} />
-            </div>
-
-            <div className="grid gap-3">
-              <p className="flex items-center gap-2 text-sm font-semibold text-navy">
-                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
-                  2
-                </span>
-                {dict.auth.totpStepTwo}
-              </p>
-              <Controller
-                control={form.control}
-                name="code"
-                render={({ field }) => (
-                  <OtpField
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    label={dict.auth.totpCode}
-                    error={form.formState.errors.code?.message}
-                  />
-                )}
-              />
-              {/* A disclosure that expanded in place made the card taller than
-                  the fixed auth frame, which clipped the footer off the page,
-                  and squeezed a 32-character key into a column too narrow to
-                  read. This button opens a dialog instead - see below - so the
-                  card is the same height whichever way it is answered. */}
-              <button
-                type="button"
-                onClick={() => manualKey.current?.showModal()}
-                className="justify-self-start text-[13px] font-semibold text-primary-strong underline-offset-4 hover:underline"
-              >
-                {dict.auth.totpManualTitle}
-              </button>
-              <SubmitButton pending={form.formState.isSubmitting} pendingLabel={dict.auth.verifyBusy} className="mt-1">
-                {dict.auth.totpConfirm}
-              </SubmitButton>
+              <p className="max-w-[26rem] text-center text-[13px] leading-6 text-secondary">{dict.auth.totpStepOneText}</p>
             </div>
           </div>
-
+          <div className="grid gap-3">
+            {/* A disclosure that expanded in place made the card taller than the
+                fixed auth frame, which clipped the footer off the page, and
+                squeezed a 32-character key into a column too narrow to read. This
+                button opens a dialog instead - see below - so the card is the same
+                height whichever way it is answered. */}
+            <button
+              type="button"
+              onClick={() => manualKey.current?.showModal()}
+              className="justify-self-center text-[13px] font-semibold text-primary-strong underline-offset-4 hover:underline"
+            >
+              {dict.auth.totpManualTitle}
+            </button>
+            <Button type="button" onClick={toCodeStep} className="w-full">
+              {dict.auth.totpContinue}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+          <div className="grid gap-3">
+            <p className="flex items-center gap-2 text-sm font-semibold text-navy">
+              <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
+                2
+              </span>
+              {dict.auth.totpStepTwo}
+            </p>
+            <p className="text-[13px] leading-6 text-secondary">{dict.auth.totpStepTwoText}</p>
+            <Controller
+              control={form.control}
+              name="code"
+              render={({ field }) => (
+                <OtpField
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  label={dict.auth.totpCode}
+                  error={form.formState.errors.code?.message}
+                />
+              )}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <SubmitButton pending={form.formState.isSubmitting} pendingLabel={dict.auth.verifyBusy} className="flex-1">
+              {dict.auth.totpConfirm}
+            </SubmitButton>
+            {/* Back to the same QR, never a new one: the secret is shown once, and
+                regenerating it would break the entry already in the app. */}
+            <Button type="button" variant="secondary" onClick={() => setStep(1)} disabled={form.formState.isSubmitting}>
+              {dict.auth.totpBackToQr}
+            </Button>
+          </div>
           {done ? <Notice tone="success">{dict.auth.totpEnabledText}</Notice> : null}
         </form>
       )}
 
-      {/* Outside the two-column row above, so nothing here can resize the card: a
+      {/* Outside the step content above, so nothing here can resize the card: a
           closed <dialog> is display:none and an open one is promoted to the top
           layer, out of the document flow. */}
       <dialog

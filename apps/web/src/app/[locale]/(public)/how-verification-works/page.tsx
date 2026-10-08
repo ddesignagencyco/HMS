@@ -5,6 +5,8 @@ import { getDictionary } from "@/lib/dictionaries";
 import { isLocale, localizedPath } from "@/lib/utils";
 import Link from "next/link";
 import { ArrowRight, CalendarCheck, CheckCircle2, ClipboardList, MapPin, PhoneCall, ReceiptText, ShieldCheck, Sparkles } from "lucide-react";
+import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
 
 const steps = [
   { icon: ClipboardList, step: "01", title: "You book and pay", body: "Choose the service, your area and a slot. Online payment is captured into escrow, never straight to the tradesman." },
@@ -18,6 +20,12 @@ const rules = [
   { icon: ReceiptText, title: "The final bill can never exceed the quote", body: "Extra work needs a revised quote you approve first. The platform refunds any excess at release." },
   { icon: CalendarCheck, title: "An unreachable you never blocks a pro", body: "Three failed attempts across two bands hand the job back to an agent, and the link is sent exactly once." },
 ];
+
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  const dict = getDictionary(isLocale(locale) ? locale : "en");
+  return pageMetadata(locale, "/how-verification-works", dict.verifyPage.titleLead, dict.verifyPage.description);
+}
 
 export default async function HowVerificationWorksPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;

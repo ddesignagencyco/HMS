@@ -5,6 +5,14 @@ import { HeroSearch } from "@/features/home/hero-search";
 import { CategorySection, PopularServicesSection } from "@/features/home/home-catalogue";
 import { CoverageSection, FeaturedProfessionalsSection, PlatformMetricsSection } from "@/features/home/home-platform";
 import { ClosingCtaSection, FaqSection, HomeHero, ProcessSection, TrustSection } from "@/features/home/home-sections";
+import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
+
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  const dict = getDictionary(isLocale(locale) ? locale : "en");
+  return pageMetadata(locale, "/", `${dict.home.titleLead} ${dict.home.titleAccent}`, dict.home.description);
+}
 
 export default async function HomePage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;

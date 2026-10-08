@@ -100,3 +100,17 @@ export const signInPath = (locale: Locale, returnTo?: string | null): string => 
   const base = localizedPath(locale, "/auth/sign-in");
   return target === null ? base : `${base}?returnTo=${encodeURIComponent(target)}`;
 };
+
+/**
+ * The two-factor URL, carrying the same destination `signInPath` does.
+ *
+ * There is one two-factor route and this is how you reach it. Sign-in used to render
+ * its own copy of the enrolment card at `/auth/sign-in` and link here, so a staff
+ * account that had to enrol saw the same screen twice: once to leave, once to
+ * arrive. Sign-in now hands over to this route instead of redrawing it.
+ */
+export const totpPath = (locale: Locale, returnTo?: string | null): string => {
+  const target = safeReturnTo(returnTo, locale);
+  const base = localizedPath(locale, "/auth/totp");
+  return target === null ? base : `${base}?returnTo=${encodeURIComponent(target)}`;
+};

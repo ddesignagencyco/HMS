@@ -108,6 +108,28 @@ export type AuditFilters = {
 /** `staffConflictCreateSchema` — `reason` is 5–500 characters, and the two ids must differ. */
 export type StaffConflictInput = { staffUserId: string; otherUserId: string; reason: string };
 
+/**
+ * `GET /finance/escrow` — money the platform is holding on a customer's behalf.
+ *
+ * `totalHeldPaisa` is the whole figure, computed server-side from the ledger.
+ * `items` carries the per-booking detail with `heldPaisa > 0`, newest first, and
+ * is capped at 500 rows by the API — so it is a drill-down and must never be
+ * summed here to produce the total.
+ */
+export type EscrowRead = {
+  totalHeldPaisa: number;
+  items: {
+    bookingId: string;
+    code: string;
+    status: string;
+    paymentMode: string;
+    providerId: string | null;
+    heldPaisa: number;
+    /** Null until the provider has closed the job. */
+    finalPaisa: number | null;
+  }[];
+};
+
 const call = <T>(path: string, init: ApiRequest = {}, options?: AdminApiOptions): Promise<T> =>
   apiRequest<T>(path, {
     ...init,
@@ -219,8 +241,22 @@ export const adminApi = {
   approveProviderService: (providerId: string, serviceId: number, options?: AdminApiOptions) =>
     call<unknown>(`/admin/provider-services/${encodeURIComponent(providerId)}/${serviceId}/approve`, { method: 'POST' }, options),
 
-  rejectProviderService: (providerId: string, serviceId: number, options?: AdminApiOptions) =>
-    call<unknown>(`/admin/provider-services/${encodeURIComponent(providerId)}/${serviceId}/reject`, { method: 'POST' }, options)
+rejectProviderService: (providerId: string, serviceId: number, options?: AdminApiOptions) =>
+    call<unknown>(`/admin/provider-services/${encodeURIComponent(providerId)}/${encodeURIComponent(String(serviceId))}/reject`, { method: 'POST' }, options),
+
+  /**
+   * `GET /finance/escrow` — customer money currently held, and the total.
+   *
+   * This is a **finance** route, not an admin one, but its policy is
+   * `{ roles: ['FINANCE', 'ADMIN'], totpRequired: true }` — so an administrator
+   * can read it. That is what makes the escrow total available on the admin
+   * landing: it was previously written up as having no backend, which was wrong.
+   *
+   * `items` is capped at 500 by the server and is only the *held* accounts, so the
+   * total is the figure to show and the rows are a drill-down, not a complete
+   * list of every booking that has ever moved money.
+   */
+  escrow: (options?: AdminApiOptions) => call<EscrowRead>(`/finance/escrow`, {}, options)
 };
 
 /** One person's name, from the two fields the API splits it into. */

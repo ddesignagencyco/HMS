@@ -102,13 +102,19 @@ export const adminKeys = {
   staffConflicts: ['admin', 'staff-conflicts'] as const,
   audit: (action?: string, entityType?: string, entityId?: string, from?: string, to?: string) =>
     ['admin', 'audit', action ?? 'all', entityType ?? 'all', entityId ?? '', from ?? '', to ?? ''] as const,
-  providers: (status?: string, q?: string) => ['admin', 'providers', status ?? 'all', q ?? ''] as const
+  providers: (status?: string, q?: string) => ['admin', 'providers', status ?? 'all', q ?? ''] as const,
+  /* A finance route, read by an admin. Keyed under `admin` because that is the
+     surface it is displayed on and so that an admin-wide invalidation refreshes
+     it alongside the rest of the admin numbers. */
+  escrow: () => ['admin', 'escrow'] as const
 } as const;
 
 export const bookingKeys = {
   all: ['account', 'bookings'] as const,
   list: (status?: BookingListStatus) => ['account', 'bookings', 'list', status ?? 'all'] as const,
-  detail: (bookingId: string) => ['account', 'bookings', 'detail', bookingId] as const
+  detail: (bookingId: string) => ['account', 'bookings', 'detail', bookingId] as const,
+  checklist: (bookingId: string) => ['account', 'bookings', bookingId, 'checklist'] as const,
+  serviceAddress: (bookingId: string) => ['account', 'bookings', bookingId, 'service-address'] as const
 } as const;
 
 /**

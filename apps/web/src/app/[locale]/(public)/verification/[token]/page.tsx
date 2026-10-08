@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { VerificationFlow } from "@/features/verification/verification-flow";
 import { verificationApi, type VerificationLink } from "@/features/verification/api";
+import { pageMetadata } from "@/lib/seo";
 import { ApiError } from "@/lib/api/problem";
 import { getDictionary } from "@/lib/dictionaries";
 import { isLocale } from "@/lib/utils";
@@ -16,6 +18,23 @@ import { isLocale } from "@/lib/utils";
    query parameter and render that, then set a local "thank you" flag on submit
    without calling anything: a customer confirming a job was told it had been
    recorded when no record existed. */
+
+/**
+ * Never indexed, and no canonical URL published for it.
+ *
+ * The token in the path is the credential: the API route behind this page is
+ * `@Public()` precisely so the link works from an SMS with no session. Indexing
+ * one would put a working one-tap verification link into a search result, where
+ * it would be fetched, cached and forwarded by anybody who found it — and a
+ * cached canonical would point every token at the same URL.
+ */
+export async function generateMetadata({ params }: { params: Promise<{ locale: string; token: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  const dict = getDictionary(isLocale(locale) ? locale : "en");
+  const meta = pageMetadata(locale, "/verification", dict.verifyPage.titleLead, dict.verifyPage.description, { noindex: true });
+  /* A token is not a page address, so there is nothing to declare canonical. */
+  return { ...meta, alternates: { canonical: undefined } };
+}
 
 export default async function VerificationPage({
   params,

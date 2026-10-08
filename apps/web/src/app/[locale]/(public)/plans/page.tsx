@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Container, PageBanner, Section, SectionHeader, buttonStyles } from "@/components/ui";
 import { getDictionary } from "@/lib/dictionaries";
 import { cn, formatMoney, isLocale, localizedPath } from "@/lib/utils";
+import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
 
 /* Tier data is structural, not copy: the label and every bullet come from the
    dictionary so both locales read naturally instead of interpolating an
@@ -15,6 +17,12 @@ const tiers = [
 ] as const;
 
 const stepOrder = ["choose", "schedule", "release"] as const;
+
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  const dict = getDictionary(isLocale(locale) ? locale : "en");
+  return pageMetadata(locale, "/plans", `${dict.plansPage.titleLead} ${dict.plansPage.titleAccent}`, dict.plansPage.description);
+}
 
 export default async function PlansPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;

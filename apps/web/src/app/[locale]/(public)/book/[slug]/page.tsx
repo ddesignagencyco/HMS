@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { BookService } from "@/features/booking/book-service";
 import { RequireSession } from "@/components/require-session";
 import { getDictionary } from "@/lib/dictionaries";
+import { pageMetadata } from "@/lib/seo";
 import { isLocale } from "@/lib/utils";
 
 /* Booking needs a customer session for both `POST /bookings/quote` and
@@ -22,6 +24,22 @@ export const dynamic = "force-dynamic";
 type Search = Record<string, string | string[] | undefined>;
 
 const one = (value: string | string[] | undefined): string | null => (Array.isArray(value) ? (value[0] ?? null) : (value ?? null));
+
+/**
+ * The service itself is read client-side from `GET /catalogue/services/:slug`, so
+ * the server cannot put its name in the title. Without this the page is indexed
+ * under the bare brand tagline, which is the same name as the home page.
+ *
+ * The per-service title that belongs here is the catalogue page's job —
+ * `/services/[slug]` already publishes it from the API — and a canonical pointing
+ * there would be honest about the duplicate. That is left to the catalogue page;
+ * what matters here is that this one is not competing with it silently.
+ */
+export async function generateMetadata({ params }: { params: Promise<{ locale: string; slug: string }> }): Promise<Metadata> {
+  const { locale, slug } = await params;
+  const dict = getDictionary(isLocale(locale) ? locale : "en");
+  return pageMetadata(locale, `/book/${slug}`, dict.booking.step1, dict.catalogue.intro, { noindex: true });
+}
 
 export default async function BookingPage({
   params,

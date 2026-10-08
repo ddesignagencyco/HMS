@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ArrowRight, Camera, CheckCircle2, CircleDollarSign, Clock3, LogIn, LogOut, MapPin, PhoneCall, Receipt, ShieldQuestion, TrendingUp } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, PhoneCall, Receipt, TrendingUp } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button, Card, Input, Label, PageHeader, Textarea } from '@/components/ui';
 import { useAllServices } from '@/features/catalogue/queries';
@@ -9,12 +9,15 @@ import {
   useAddEvidence,
   useBooking,
   useCashReceived,
+  useChecklist,
   useCompleteBooking,
   useCreateRevision,
   useDeclineBooking,
   useDepartBooking,
   useEvidenceList,
+  useMarkChecklistDone,
   useOnBehalfContact,
+  useServiceAddress,
   useStartBooking
 } from '@/features/booking/queries';
 import type { Booking, BookingStatus, Evidence, EvidenceKind } from '@/features/booking/api';
@@ -43,20 +46,25 @@ import { cn, formatDateTime, formatMoney, type Locale } from '@/lib/utils';
  * CLOSED off to the side. Anything illegal is a 409 ILLEGAL_TRANSITION, and the
  * server's own sentence is shown rather than a paraphrase.
  *
- * Three things this screen deliberately does **not** do, each because the API
- * cannot support it (both written up in `docs/backend_requirement.md` §3.10–3.11):
+ * The address and the checklist both used to be on the list of things this screen
+ * would not do, because no provider-reachable route returned them. Two routes have
+ * since been added, and both are provider-reachable:
  *
- * 1. **It shows no address.** `GET /bookings/:id` returns `addressId` and nothing
- *    else; `GET /customer/addresses` is CUSTOMER-only. A professional cannot learn
- *    where the job is through any provider-reachable route. Inventing one would
- *    mean sending someone to a fabricated house, so the screen says plainly that
- *    the address is not available here and points at the chat.
- * 2. **It renders no checklist.** `POST /bookings/:id/complete` refuses with 409
- *    until every step is done, but nothing reads the steps and `itemId` is
- *    undiscoverable, so there is no honest way to drive them.
- * 3. **It has no start code.** The 6-digit code was texted to the customer when
- *    the job was accepted. It is never returned by any endpoint — correctly. The
- *    provider types what the customer reads out.
+ *   • `GET /bookings/:id/service-address` — the address, opened once the job has
+ *     left REQUESTED. Before acceptance the server withholds it, so the screen asks
+ *     only when it is allowed to and does not fetch it while the job is still an
+ *     open offer.
+ *   • `GET /bookings/:id/checklist` — the steps with the `itemId` that
+ *     `POST /bookings/:id/checklist/:itemId/done` needs, plus each step's own
+ *     `evidenceId` for the ones that require a photo.
+ *
+ * One thing this screen still deliberately does **not** do, because no endpoint
+ * should support it:
+ *
+ * **It has no start code.** The 6-digit code was texted to the customer when the
+ * job was accepted. It is never returned by any endpoint — correctly. The provider
+ * types what the customer reads out, and this screen never compares it against a
+ * constant in the bundle.
  */
 
 /** What is still open, in the order the professional meets it. */
@@ -96,14 +104,12 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
    *
    * `POST /bookings/:id/complete` needs a BEFORE and an AFTER photo on file, and
    * the server stamps the time — so `receivedAt` is the authority, not the device
-   * clock. It also needs every checklist step done, which the provider cannot see
-   * (§3.11); that gate is named explicitly rather than being implied away, so the
-   * 409 that follows is not a surprise.
+   * clock. It also needs every checklist step done, which `ChecklistCard` now shows
+   * and ticks; the photos half of the gate is what gates the button itself.
    */
   const photos = useMemo(() => evidence.data?.items ?? [], [evidence.data]);
   const hasBefore = photos.some((photo) => photo.kind === 'BEFORE');
   const hasAfter = photos.some((photo) => photo.kind === 'AFTER');
-  const photosReady = hasBefore && hasAfter;
 
   const steps: Step[] = row === undefined ? [] : buildSteps(row, dict, { hasBefore, hasAfter });
 
@@ -321,43 +327,27 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
           <PhotosCard locale={locale} dict={dict} bookingId={current.id} status={current.status} photos={photos} loading={evidence.isPending} pending={pending} onAttach={attachPhoto} />
 
           {/*
-            The checklist cannot be shown. `complete` refuses with 409 until every
-            step is done, and nothing publishes the steps or their `itemId`
-            (backend_requirement.md §3.11). Saying so — and saying what the gate
-            actually is — is better than a list of untickable boxes, and much better
-            than inventing `itemId`s that would 422.
+            The checklist, read from `GET /bookings/:id/checklist`.
+
+            This panel used to say the steps could not be shown at all, on the
+            grounds that nothing published them or their `itemId` — while this same
+            screen already had `POST /bookings/:id/checklist/:itemId` wired, so it
+            could tick a step whose id it had no way to learn. The reader exists now:
+            every step carries its own `itemId`, and `outstanding` is the same count
+            `complete` refuses on, so the list and the 409 cannot disagree.
+
+            It is shown once the job is under way. Before that the steps are not
+            actionable, and an un-actionable list of four ticks on a job that has
+            not started is just noise.
           */}
-          {current.status === 'IN_PROGRESS' ? (
-            <Card className="border-amber-200 bg-amber-50 p-6">
-              <h2 className="flex items-center gap-2 font-semibold text-amber-900">
-                <ShieldQuestion className="size-4" aria-hidden="true" />
-                {dict.job.checklistUnavailableTitle}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-amber-900">{dict.job.checklistUnavailableText}</p>
-              <ul className="mt-3 grid gap-1.5 text-sm leading-6 text-amber-900">
-                <li className="flex items-center gap-2">
-                  {hasBefore ? <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" /> : <Clock3 className="size-4 shrink-0" aria-hidden="true" />}
-                  {dict.job.beforePhotoStatus}
-                </li>
-                <li className="flex items-center gap-2">
-                  {hasAfter ? <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" /> : <Clock3 className="size-4 shrink-0" aria-hidden="true" />}
-                  {dict.job.afterPhotoStatus}
-                </li>
-              </ul>
-            </Card>
+          {current.status === 'IN_PROGRESS' || current.status === 'WORK_COMPLETED' || current.status === 'AWAITING_VERIFICATION' ? (
+            <ChecklistCard locale={locale} dict={dict} bookingId={current.id} canTick={current.status === 'IN_PROGRESS'} />
           ) : null}
         </div>
 
         <div className="grid content-start gap-5">
-          {/* The one thing this screen cannot do, said plainly rather than faked. */}
-          <Card className="border-dashed p-6">
-            <h2 className="flex items-center gap-2 font-semibold text-navy">
-              <MapPin className="size-4 text-muted" aria-hidden="true" />
-              {dict.job.addressTitle}
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-secondary">{dict.job.addressUnavailableText}</p>
-            <p className="mt-3 text-xs leading-5 text-muted">{dict.job.addressReference.replace('{id}', current.addressId)}</p>
-          </Card>
+          {/* Where the job is, from `GET /bookings/:id/service-address`. */}
+          <AddressCard locale={locale} dict={dict} booking={current} />
 
           {contact.data?.contact != null ? (
             <Card className="p-6">
@@ -449,6 +439,254 @@ const STATUS_TONE: Partial<Record<BookingStatus, string>> = {
 
 function StatusPill({ status, dict }: { status: BookingStatus; dict: Dictionary }) {
   return <span className={cn('rounded-full px-3 py-1 text-xs font-semibold', STATUS_TONE[status] ?? 'bg-slate-100 text-slate-700')}>{dict.job.statuses[status]}</span>;
+}
+
+/* ---- Address ---------------------------------------------------------------
+   `GET /bookings/:id/service-address`.
+
+   The booking row carries only an `addressId`, and that is deliberate: every
+   provider-facing endpoint returns the row, so an address on it would travel with
+   the offer list before anyone had committed to the job. This dedicated route is
+   the way out, and it opens only once the job has left REQUESTED — so the screen
+   asks for it exactly then, and a provider still deciding is told why it is not
+   shown rather than shown a blank. */
+
+function AddressCard({ locale, dict, booking }: { locale: Locale; dict: Dictionary; booking: Booking }) {
+  const available = booking.status !== 'REQUESTED';
+  const address = useServiceAddress(booking.id, available, locale);
+
+  if (!available) {
+    return (
+      <Card className="border-dashed p-6">
+        <h2 className="flex items-center gap-2 font-semibold text-navy">
+          <MapPin className="size-4 text-muted" aria-hidden="true" />
+          {dict.job.addressTitle}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-secondary">{dict.job.addressPendingAcceptText}</p>
+      </Card>
+    );
+  }
+
+  if (address.isPending) {
+    return (
+      <Card className="p-6" aria-busy="true">
+        <span className="skeleton block h-5 w-32 rounded-[9px]" />
+        <span className="skeleton mt-3 block h-4 w-full max-w-xs rounded-[9px]" />
+      </Card>
+    );
+  }
+
+  if (address.isError || address.data === null) {
+    /* A 404 here is the API withholding the address, not a failure to report. */
+    return (
+      <Card className="border-dashed p-6">
+        <h2 className="flex items-center gap-2 font-semibold text-navy">
+          <MapPin className="size-4 text-muted" aria-hidden="true" />
+          {dict.job.addressTitle}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-secondary">{dict.job.addressUnavailableText}</p>
+        <p className="mt-3 text-xs leading-5 text-muted">{dict.job.addressReference.replace('{id}', booking.addressId)}</p>
+      </Card>
+    );
+  }
+
+  const place = address.data;
+  const lines = [place.line1, place.line2].filter((line): line is string => line !== null && line !== '');
+
+  return (
+    <Card className="p-6">
+      <h2 className="flex items-center gap-2 font-semibold text-navy">
+        <MapPin className="size-4 text-muted" aria-hidden="true" />
+        {dict.job.addressTitle}
+      </h2>
+      {place.label !== null ? <p className="mt-3 font-medium text-navy">{place.label}</p> : null}
+      {lines.length > 0 ? (
+        <address className="mt-1 text-sm not-italic leading-6 text-secondary">
+          {lines.map((line) => (
+            <span key={line} className="block">{line}</span>
+          ))}
+        </address>
+      ) : null}
+      {place.areaName !== null ? <p className="mt-1 text-sm leading-6 text-secondary">{place.areaName}</p> : null}
+      {/* The point the arrival check-in is measured against. Shown as coordinates
+          because that is exactly what the API sends and what a professional is
+          comparing against their own arrival — there is no map on this screen to
+          render it into, and a link to one would need a third party. */}
+      {place.lat !== null && place.lng !== null ? (
+        <p className="mt-3 font-mono text-xs text-muted tabular-nums">
+          {place.lat.toFixed(5)}, {place.lng.toFixed(5)}
+        </p>
+      ) : null}
+    </Card>
+  );
+}
+
+/* ---- Checklist -------------------------------------------------------------
+   `GET /bookings/:id/checklist` plus `POST /bookings/:id/checklist/:itemId`.
+
+   A step that `requiresPhoto` needs the `evidenceId` of a CHECKLIST photo already
+   uploaded for that step, or the server answers 422. That photo has to be chosen
+   here rather than derived, because the evidence list is keyed by kind and two
+   photo steps would otherwise be indistinguishable from each other. */
+
+function ChecklistCard({ locale, dict, bookingId, canTick }: { locale: Locale; dict: Dictionary; bookingId: string; canTick: boolean }) {
+  const checklist = useChecklist(bookingId, locale);
+  const mark = useMarkChecklistDone(locale);
+  const addEvidence = useAddEvidence(locale);
+  const evidence = useEvidenceList(bookingId, locale);
+  const [photoFor, setPhotoFor] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  /* Only photos taken against a specific step can satisfy a photo step, so this
+     filters on `checklistItemId` rather than on kind alone. */
+  const checklistPhotos = (evidence.data?.items ?? []).filter((photo) => photo.kind === 'CHECKLIST');
+
+  /* Prepare, store, then tick — in that order, because the tick is only accepted
+     with the `evidenceId` the upload just produced. Reversed, the first attempt
+     422s and leaves an orphan photo behind. */
+  const uploadFor = async (itemId: number, file: File): Promise<void> => {
+    setError(null);
+    setBusy(true);
+    const clientUuid = crypto.randomUUID();
+    try {
+      const prepared = await prepareEvidenceImage(file);
+      /* `Prepared` discriminates on the value, not `in` — see `attachPhoto`. */
+      if (prepared.rejected !== undefined) {
+        setError(prepared.rejected);
+        return;
+      }
+      const added = await addEvidence.mutateAsync({
+        id: bookingId,
+        payload: { kind: 'CHECKLIST', clientUuid, checklistItemId: itemId, contentType: prepared.contentType, contentBase64: prepared.base64 }
+      });
+      await mark.mutateAsync({ id: bookingId, itemId, evidenceId: added.id });
+      setPhotoFor(null);
+    } catch (caught) {
+      /* The server's reason for a 422 here is "this step needs a photo", which the
+         button already says; anything else is shown as the failure it is. */
+      setError(caught instanceof Error && caught.message !== '' ? caught.message : dict.job.checklistPhotoFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (checklist.isPending) {
+    return (
+      <Card className="p-6" aria-busy="true">
+        <span className="skeleton block h-5 w-48 rounded-[9px]" />
+        <span className="skeleton mt-4 block h-6 w-full rounded-[9px]" />
+        <span className="skeleton mt-2 block h-6 w-4/5 rounded-[9px]" />
+      </Card>
+    );
+  }
+
+  /* Ordered by `position` rather than by whatever order the response arrived in —
+     a checklist is a sequence, and the sequence is a field on each item. */
+  const items = [...(checklist.data?.items ?? [])].sort((a, b) => a.position - b.position);
+
+  if (items.length === 0) {
+    return (
+      <Card className="p-6">
+        <h2 className="flex items-center gap-2 font-semibold text-navy">
+          <ClipboardList className="size-4 text-muted" aria-hidden="true" />
+          {dict.job.checklistTitle}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-secondary">{dict.job.checklistEmpty}</p>
+      </Card>
+    );
+  }
+
+  const outstanding = checklist.data?.outstanding ?? 0;
+
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 font-semibold text-navy">
+          <ClipboardList className="size-4 text-muted" aria-hidden="true" />
+          {dict.job.checklistTitle}
+        </h2>
+        {/* The server's own count, which is what `complete` will check. */}
+        {outstanding > 0 ? (
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+            {dict.job.checklistRemaining.replace('{count}', String(outstanding))}
+          </span>
+        ) : (
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+            {dict.job.checklistAllDone}
+          </span>
+        )}
+      </div>
+
+      <ol className="mt-4 grid gap-2">
+        {items.map((item) => {
+          const label = locale === 'ur' ? item.labelUr : item.labelEn;
+          /* A photo already uploaded against this step. Its id is what the tick
+             needs, and finding it here is what stops the provider being asked for
+             a second, identical photograph. */
+          const onFile = checklistPhotos.find((photo) => photo.checklistItemId === item.itemId);
+          return (
+            <li key={item.itemId} className="rounded-[10px] border border-line p-3">
+              <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  disabled={!canTick || item.done || mark.isPending}
+                  onClick={() => void mark.mutateAsync({ id: bookingId, itemId: item.itemId, evidenceId: onFile?.id }).catch(() => setError(dict.job.checklistStepFailed))}
+                  aria-pressed={item.done}
+                  className={cn(
+                    'mt-0.5 grid size-6 shrink-0 place-items-center rounded-[7px] border transition',
+                    item.done
+                      ? 'border-emerald-600 bg-emerald-600 text-white'
+                      : canTick
+                        ? 'border-line hover:border-primary'
+                        : 'border-line opacity-60'
+                  )}
+                >
+                  {item.done ? <CheckCircle2 className="size-4" aria-hidden="true" /> : null}
+                  <span className="sr-only">{item.done ? dict.job.checklistDone : dict.job.checklistTick}</span>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className={cn('text-sm leading-6', item.done ? 'text-secondary line-through' : 'font-medium text-navy')}>
+                    <span className="me-1.5 font-mono text-xs text-muted tabular-nums">{item.position}.</span>
+                    {label}
+                  </p>
+                  {item.requiresPhoto && !item.done ? (
+                    <p className="mt-1 text-xs text-muted">{dict.job.checklistNeedsPhoto}</p>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* A photo step: the evidence has to exist before the step can be
+                  ticked, so the button and the evidence are the same control. With
+                  a photo already on file the tick button above is enough, so no
+                  second picker is offered. */}
+              {item.requiresPhoto && !item.done && canTick ? (
+                <div className="mt-2 ps-9">
+                  {onFile ? (
+                    <p className="text-xs text-muted">{dict.job.checklistPhotoOnFile}</p>
+                  ) : photoFor === item.itemId ? (
+                    <PhotoPicker
+                      id={`checklist-photo-${item.itemId}`}
+                      label={dict.job.checklistPhotoLabel}
+                      disabled={busy || mark.isPending}
+                      onPick={(file) => void uploadFor(item.itemId, file)}
+                    />
+                  ) : (
+                    <Button type="button" variant="secondary" size="sm" onClick={() => setPhotoFor(item.itemId)}>
+                      <Camera className="size-4" aria-hidden="true" />
+                      {dict.job.checklistPhotoLabel}
+                    </Button>
+                  )}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+
+      {error ? <p role="alert" className="mt-4 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
+    </Card>
+  );
 }
 
 /* ---- Photos --------------------------------------------------------------

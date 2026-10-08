@@ -22,6 +22,18 @@ const record = (name, ok, detail = "") => {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? " — " + detail : ""}`);
 };
 
+/* The desktop site header puts the account links and Sign out behind the avatar
+   menu, so every assertion about them has to open it first. Returning whether it
+   opened keeps a failure from being reported as an absent control: a menu that
+   will not open and a menu that opens empty are different bugs. */
+const openAccountMenu = async (page) => {
+  const trigger = await page.$('header button[aria-label="Account menu"]');
+  if (!trigger) return false;
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+  await page.waitForSelector('header [role="menu"] [role="menuitem"]', { timeout: 10000 }).catch(() => {});
+  return (await trigger.getAttribute("aria-expanded")) === "true";
+};
+
 (async () => {
   const browser = await chromium.launch({ channel: "chrome" }).catch(() => chromium.launch());
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -81,16 +93,40 @@ const record = (name, ok, detail = "") => {
   await page.goto(`${WEB}/en`, { waitUntil: "networkidle", timeout: 90000 });
   await page.waitForTimeout(2000);
   record(
-    "site header shows My account once signed in",
-    (await page.$$('header a:has-text("My account")')).length > 0,
+    "site header offers the account menu once signed in",
+    (await page.$$('header button[aria-label="Account menu"]')).length > 0
+      && (await page.getAttribute('header button[aria-label="Account menu"]', "aria-expanded")) === "false",
   );
   record(
     "Bookings appears in the site navigation once signed in",
     (await page.$$('header nav a:has-text("Bookings")')).length > 0,
   );
+
+  /* On desktop the account controls live behind the avatar menu rather than sitting
+     in the bar, so they have to be opened before they can be seen. The menu items
+     are the assertion: an account link that points somewhere, and a sign-out. */
+  await openAccountMenu(page);
+  const menuItems = await page.$$eval('header [role="menu"] [role="menuitem"]', (els) =>
+    els.map((e) => e.textContent.trim())
+  );
+  record(
+    "the account menu offers the account destinations",
+    menuItems.includes("Profile") && menuItems.includes("Addresses") && menuItems.includes("Security"),
+    JSON.stringify(menuItems),
+  );
   record(
     "site header offers Sign out once signed in",
-    (await page.$$('header button:has-text("Sign out")')).length > 0,
+    menuItems.includes("Sign out"),
+    JSON.stringify(menuItems),
+  );
+  /* And the account destinations are real links, not labels. */
+  const accountHrefs = await page.$$eval('header [role="menu"] a[role="menuitem"]', (els) =>
+    els.map((e) => e.getAttribute("href"))
+  );
+  record(
+    "every account menu destination is a real route",
+    accountHrefs.length === 3 && accountHrefs.every((href) => typeof href === "string" && href.startsWith("/en/")),
+    JSON.stringify(accountHrefs),
   );
 
   /* The session was established from the refresh cookie, not from a 401 storm. */
@@ -176,10 +212,18 @@ const record = (name, ok, detail = "") => {
   /* ---- 7. sign out ---- */
   await page.goto(`${WEB}/en`, { waitUntil: "networkidle", timeout: 90000 });
   await page.waitForTimeout(1500);
-  const signOut = await page.$('header button:has-text("Sign out")');
+  /* Same reason as above: on desktop the sign-out control is inside the account
+     menu, so the menu is opened first. If it cannot be opened there is nothing to
+     click, and every later check would then be asserting on a session that is
+     still live — so this is recorded rather than silently skipped. */
+  const opened = await openAccountMenu(page);
+  record("the account menu can be opened to sign out", opened);
+  const signOut = await page.$('header [role="menu"] button:has-text("Sign out")');
   if (signOut) {
     await signOut.click();
     await page.waitForTimeout(3000);
+  } else {
+    record("sign out control was reachable", false, "no Sign out inside the account menu");
   }
   record("after sign out the header offers Sign in again", (await page.$$('a:has-text("Sign in")')).length > 0, page.url());
   record("after sign out there is no Sign out control", (await page.$$('button:has-text("Sign out")')).length === 0);

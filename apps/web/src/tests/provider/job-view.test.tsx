@@ -84,6 +84,21 @@ let row = booking();
 let evidence = [photo()];
 let services = [{ id: 1, nameEn: 'Leak repair', nameUr: '.leak', slug: 'leak-repair', active: true }];
 
+/* `GET /bookings/:id/service-address` — real shape, including the point the
+   arrival check-in is measured against. Nulls are included deliberately: a row
+   with no centroid is a real answer and must not print "null". */
+let serviceAddress: { label: string | null; line1: string | null; line2: string | null; areaId: number | null; areaName: string | null; lat: number | null; lng: number | null; revealed: boolean } = { label: 'Home', line1: 'House 12, Gulberg', line2: null, areaId: 1, areaName: 'Gulberg', lat: 31.5204, lng: 74.3587, revealed: true };
+
+/* `GET /bookings/:id/checklist` — itemId is the whole point of the route, so it
+   is asserted rather than stubbed away. */
+let checklist = {
+  items: [
+    { itemId: 1, position: 1, labelEn: 'Isolate the water supply', labelUr: '.', requiresPhoto: false, done: true, evidenceId: null, doneAt: '2026-10-05T10:00:00.000Z' },
+    { itemId: 2, position: 2, labelEn: 'Photograph the leak before repair', labelUr: '.', requiresPhoto: true, done: false, evidenceId: null, doneAt: null }
+  ],
+  outstanding: 1
+};
+
 const callsTo = (fragment: string, method: string) =>
   (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(([url, init]) => String(url).includes(fragment) && (init as RequestInit | undefined)?.method === method);
 
@@ -91,11 +106,21 @@ beforeEach(() => {
   row = booking();
   evidence = [photo()];
   services = [{ id: 1, nameEn: 'Leak repair', nameUr: '.leak', slug: 'leak-repair', active: true }];
+  serviceAddress = { label: 'Home', line1: 'House 12, Gulberg', line2: null, areaId: 1, areaName: 'Gulberg', lat: 31.5204, lng: 74.3587, revealed: true };
+  checklist = {
+    items: [
+      { itemId: 1, position: 1, labelEn: 'Isolate the water supply', labelUr: '.', requiresPhoto: false, done: true, evidenceId: null, doneAt: '2026-10-05T10:00:00.000Z' },
+      { itemId: 2, position: 2, labelEn: 'Photograph the leak before repair', labelUr: '.', requiresPhoto: true, done: false, evidenceId: null, doneAt: null }
+    ],
+    outstanding: 1
+  };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : String(input);
       const method = (init?.method ?? 'GET').toUpperCase();
+      if (method === 'GET' && url.includes('/service-address')) return json(serviceAddress);
+      if (method === 'GET' && url.includes('/checklist')) return json(checklist);
       if (method === 'GET' && url.includes('/evidence')) return json({ items: evidence });
       if (url.includes('/on-behalf-contact')) return json({ contact: null });
       /* Order matters: `listAllServices` fans out to
@@ -130,23 +155,102 @@ describe('what the job screen refuses to invent', () => {
     expect(((await screen.findByLabelText(dict.job.otpLabel)) as HTMLInputElement).value).toBe('');
   });
 
-  it('says the address is not available rather than printing one', async () => {
+  /* The address is genuinely withheld while the job is REQUESTED — that part of
+     the old reasoning held. What changed is that there is now a route that opens
+     it afterwards, so the screen asks only once it is allowed to. */
+  it('says why there is no address while the job is still being offered', async () => {
+    row = booking({ status: 'REQUESTED' });
     renderScreen();
-    expect(await screen.findByText(dict.job.addressUnavailableText)).toBeDefined();
-    /* The reference is shown because it is a real field on the row. */
-    expect(screen.getByText(dict.job.addressReference.replace('{id}', row.addressId))).toBeDefined();
-    /* No street, no area, nothing invented. */
-    expect(document.body.textContent).not.toContain('Gulberg');
-    expect(document.body.textContent).not.toMatch(/\d+\s+(street|Street|road|Road)/);
+    expect(await screen.findByText(dict.job.addressPendingAcceptText)).toBeDefined();
+    /* And it does not go looking for one. */
+    expect(callsTo('/service-address', 'GET')).toHaveLength(0);
   });
 
-  it('offers no checklist steps, because itemId is undiscoverable', async () => {
+  it('shows the real address once the job has left REQUESTED', async () => {
+    row = booking({ status: 'IN_PROGRESS' });
+    renderScreen();
+    expect(await screen.findByText('House 12, Gulberg')).toBeDefined();
+    expect(screen.getByText('Home')).toBeDefined();
+    expect(screen.getByText('Gulberg')).toBeDefined();
+    /* The point the arrival check-in is measured against, in the API's own form. */
+    expect(document.body.textContent).toContain('31.52040');
+    /* Not a sentence claiming the API cannot do it any more. */
+    expect(screen.queryByText(dict.job.addressUnavailableText)).toBeNull();
+  });
+
+  it('survives an address with no centroid without printing null', async () => {
+    row = booking({ status: 'IN_PROGRESS' });
+    serviceAddress = { ...serviceAddress, lat: null, lng: null };
+    renderScreen();
+    expect(await screen.findByText('House 12, Gulberg')).toBeDefined();
+    expect(document.body.textContent).not.toMatch(/null/);
+  });
+
+  it('shows the real checklist and lets a step be ticked', async () => {
     row = booking({ status: 'IN_PROGRESS' });
     evidence = [photo({ kind: 'BEFORE' }), photo({ id: 'e2', kind: 'AFTER' })];
     renderScreen();
-    expect(await screen.findByText(dict.job.checklistUnavailableTitle)).toBeDefined();
-    /* Nothing on this screen can post a checklist item. */
-    expect(screen.queryByText(dict.job.checklistTitle)).toBeNull();
+    /* The steps come from the API, with their real labels and positions. */
+    expect(await screen.findByText(/Isolate the water supply/)).toBeDefined();
+    expect(screen.getByText(/Photograph the leak before repair/)).toBeDefined();
+    /* The server's own count, which is what `complete` will check. */
+    expect(screen.getByText(dict.job.checklistRemaining.replace('{count}', '1'))).toBeDefined();
+    /* Not the old "not published" panel. */
+    expect(screen.queryByText(dict.job.checklistEmpty)).toBeNull();
+
+    /* A photo step cannot be ticked by clicking it alone — it asks for the photo. */
+    expect(screen.getByRole('button', { name: dict.job.checklistPhotoLabel })).toBeDefined();
+    expect(screen.getByText(dict.job.checklistNeedsPhoto)).toBeDefined();
+  });
+
+  it('ticks a photo step with the photo already on file, and does not ask for another', async () => {
+    row = booking({ status: 'IN_PROGRESS' });
+    /* A CHECKLIST photo already uploaded against item 2, and the item is still not
+       ticked — which is the state the server is left in if an upload succeeded and
+       the tick that should have followed it failed. */
+    evidence = [
+      photo({ kind: 'BEFORE' }),
+      photo({ id: 'e2', kind: 'AFTER' }),
+      photo({ id: 'e9', kind: 'CHECKLIST', checklistItemId: 2 })
+    ];
+    renderScreen();
+    await screen.findByText(/Photograph the leak before repair/);
+    expect(screen.getByText(dict.job.checklistPhotoOnFile)).toBeDefined();
+    /* The picker is not offered: the photo exists, so asking again would produce a
+       duplicate the provider then has to think about. */
+    expect(screen.queryByRole('button', { name: dict.job.checklistPhotoLabel })).toBeNull();
+
+    /* And the tick carries that photo's id, because the server 422s without it. */
+    const ticks = screen.getAllByRole('button', { name: dict.job.checklistTick });
+    fireEvent.click(ticks[ticks.length - 1]);
+    await waitFor(() => {
+      const posted = callsTo('/checklist/2', 'POST');
+      expect(posted).toHaveLength(1);
+      expect(JSON.parse(String((posted[0][1] as RequestInit).body)).evidenceId).toBe('e9');
+    });
+  });
+
+  it('says so when the service has no published steps', async () => {
+    row = booking({ status: 'IN_PROGRESS' });
+    checklist = { items: [], outstanding: 0 };
+    renderScreen();
+    expect(await screen.findByText(dict.job.checklistEmpty)).toBeDefined();
+  });
+
+  it('shows the checklist read-only once the job is past the working stage', async () => {
+    row = booking({ status: 'AWAITING_VERIFICATION' });
+    checklist = { ...checklist, items: checklist.items.map((i) => ({ ...i, done: true })), outstanding: 0 };
+    renderScreen();
+    expect(await screen.findByText(dict.job.checklistAllDone)).toBeDefined();
+    /* Nothing left to photograph, because nothing is left to do. */
+    expect(screen.queryByRole('button', { name: dict.job.checklistPhotoLabel })).toBeNull();
+  });
+
+  it('does not offer the checklist before the job is under way', async () => {
+    row = booking({ status: 'EN_ROUTE' });
+    renderScreen();
+    await screen.findByLabelText(dict.job.otpLabel);
+    expect(screen.queryByText(/Isolate the water supply/)).toBeNull();
   });
 });
 

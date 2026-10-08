@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { writeAccessToken } from "@/lib/api/access-token";
-import { onSessionLost, refreshSession, type SessionResult } from "@/lib/api/client";
+import { forgetSessionTotpState, onSessionLost, refreshSession, sessionNeedsTotp, type SessionResult } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/problem";
 import type { Locale } from "@/lib/utils";
 import { authApi, type ActorRole, type AuthUser, type LoginInput, type OtpPurpose, type TotpSetupResult } from "./api";
@@ -51,7 +51,7 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 
 export function SessionProvider({ locale, children }: { locale: Locale; children: React.ReactNode }) {
   const queryClient = useQueryClient();
-  const [totpPending, setTotpPending] = useState(false);
+  const [totpPendingState, setTotpPending] = useState(false);
 
   const meQuery = useQuery({
     queryKey: sessionKeys.me,
@@ -68,7 +68,7 @@ export function SessionProvider({ locale, children }: { locale: Locale; children
 
        The user written by `adoptSession` is a cache *write*, so it satisfies this
        query and neither call happens again until something invalidates it. */
-    queryFn: async (): Promise<{ user: AuthUser } | null> => {
+    queryFn: async (): Promise<{ user: AuthUser; totpRequired: boolean } | null> => {
       try {
         const state = await authApi.session({ locale });
         if (!state.authenticated || state.user === null) return null;
@@ -76,7 +76,12 @@ export function SessionProvider({ locale, children }: { locale: Locale; children
            the first authenticated request after a reload would 401 and start its
            own refresh anyway — one round trip later, and one error in the log. */
         await refreshSession(locale);
-        return { user: state.user };
+        /* `/auth/session` answers `{ authenticated, user }` and no more, so the
+           two-factor standing has to come from the refresh that follows it. Without
+           this line a staff member who reloaded part-way through enrolment came back
+           as a fully authenticated session: the token was good, the user was known,
+           and nothing recorded that the session had never been verified. */
+        return { user: state.user, totpRequired: sessionNeedsTotp() };
       } catch (error) {
         /* Offline or a transport fault is not a signed-out visitor, so it is left
            to fail visibly rather than being reported as "nobody is signed in". */
@@ -106,13 +111,17 @@ export function SessionProvider({ locale, children }: { locale: Locale; children
     /* Everything else belongs to the account that is being signed out, and a
        partial purge would show the next person somebody else's bookings. */
     queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "auth" });
+    forgetSessionTotpState();
     setTotpPending(false);
   }, [queryClient]);
 
   const adoptSession = useCallback(
     (result: SessionResult) => {
       writeAccessToken(result.accessToken, result.expiresInSeconds);
-      queryClient.setQueryData(sessionKeys.me, { user: result.user });
+      /* Written with the flag the query carries, so a cache read and a fresh
+         question cannot disagree about whether this session owes a two-factor
+         check. */
+      queryClient.setQueryData(sessionKeys.me, { user: result.user, totpRequired: result.totpRequired === true });
       setTotpPending(result.totpRequired);
     },
     [queryClient],
@@ -191,6 +200,14 @@ export function SessionProvider({ locale, children }: { locale: Locale; children
 
   const user = meQuery.data?.user ?? null;
   const status: SessionStatus = meQuery.isPending ? "loading" : user === null ? "anonymous" : "authenticated";
+
+  /* The query is the authority once it has answered a signed-in user, because it
+     carries the flag the server reported — which is the only way a reload can
+     restore it. The state value covers the frames where a session has just been
+     written and the query has not settled, and is what sign-in, confirming a code
+     and signing out all write through. Deriving rather than syncing in an effect
+     keeps the two from disagreeing for a render. */
+  const totpPending = meQuery.data === undefined || meQuery.data === null ? totpPendingState : meQuery.data.totpRequired;
 
   const value = useMemo<SessionContextValue>(
     () => ({
