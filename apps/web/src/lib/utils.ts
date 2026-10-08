@@ -34,22 +34,32 @@ export function formatMoney(paisa: number, locale: Locale) {
   return `Rs ${formatNumber(Math.round(paisa / 100), locale)}`;
 }
 
-export function formatDate(value: string, locale: Locale) {
+export function formatDate(value: string | null | undefined, locale: Locale) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
   return new Intl.DateTimeFormat(localeTag(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(new Date(value));
+  }).format(date);
 }
 
-export function formatDateTime(value: string, locale: Locale) {
+export function formatDateTime(value: string | null | undefined, locale: Locale) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
   return new Intl.DateTimeFormat(localeTag(locale), {
     day: "numeric",
     month: "short",
     hour: "numeric",
     minute: "2-digit",
     timeZone: "Asia/Karachi",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function formatDuration(minutes: number, locale: Locale) {

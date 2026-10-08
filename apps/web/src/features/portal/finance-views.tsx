@@ -521,8 +521,8 @@ export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionar
     name: d.providerName ?? d.providerId,
     amount: d.debtPaisa,
     ceiling: d.ceilingPaisa ?? 500000,
-    since: "Active",
-    isBlocked: d.isBlocked ?? d.debtPaisa > (d.ceilingPaisa ?? 500000),
+    since: d.createdAt ?? d.since,
+    isBlocked: d.offersBlocked ?? d.isBlocked ?? d.debtPaisa > (d.ceilingPaisa ?? 500000),
   }));
 
   const blocked = items.filter((d) => d.isBlocked);
@@ -562,7 +562,7 @@ export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionar
                 return (
                   <tr key={row.id} className="hover:bg-slate-50">
                     <td className="p-4 font-medium text-navy">{row.name}</td>
-                    <td className="p-4 text-secondary">{formatDate(row.since, locale)}</td>
+                    <td className="p-4 text-secondary">{row.since ? formatDate(row.since, locale) : "—"}</td>
                     <td className="p-4 text-end">
                       <p className="font-semibold text-navy tabular-nums">{formatMoney(row.amount, locale)}</p>
                       <div className="mt-1.5 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">

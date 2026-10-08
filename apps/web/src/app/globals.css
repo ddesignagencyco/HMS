@@ -61,16 +61,20 @@ body {
   outline-offset: 2px;
 }
 
-/* Ensure inputs, selects and textareas never show harsh browser outline rings */
+/* Standardize form inputs focus state and accessible focus-visible ring (NFR-US-04) */
 input:focus,
-input:focus-visible,
 select:focus,
-select:focus-visible,
 textarea:focus,
-textarea:focus-visible,
 .focus-none:focus,
 .focus-none:focus-visible {
-  outline: none !important;
+  outline: none;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
 }
 
 input[type="search"]::-webkit-search-cancel-button {

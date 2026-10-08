@@ -41,6 +41,10 @@ export type FinanceDebtRow = {
   debtPaisa: number;
   ceilingPaisa?: number;
   isBlocked?: boolean;
+  offersBlocked?: boolean;
+  offerBlockedReason?: string | null;
+  since?: string;
+  createdAt?: string;
 };
 
 export type FinanceLedgerEntry = {

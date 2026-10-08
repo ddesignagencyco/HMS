@@ -50,10 +50,10 @@ export function BookingChat({ locale, dict, booking }: { locale: Locale; dict: D
        for it. Guarded because `scrollIntoView` is absent in jsdom and in some
        older embedded webviews — an uncaught TypeError here would take the whole
        booking page down over a convenience. */
-useEffect(() => {
-  const node = bottom.current;
-  if (node !== null && typeof node.scrollIntoView === "function") node.scrollIntoView({ block: "end" });
-}, [thread.data?.items.length]);
+  useEffect(() => {
+    const node = bottom.current;
+    if (node !== null && typeof node.scrollIntoView === "function") node.scrollIntoView({ block: "end" });
+  }, [thread.data?.items?.length]);
 
   if (!enabled) {
     return (

@@ -2,10 +2,10 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
-import { MapPin, RotateCcw, SearchX, SlidersHorizontal, LocateFixed, Loader2 } from "lucide-react";
+import { BadgeCheck, LocateFixed, Loader2, MapPin, RotateCcw, Search, SearchX, SlidersHorizontal, Star, X } from "lucide-react";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, formatNumber, localizedPath, type Locale } from "@/lib/utils";
-import { Button, buttonStyles } from "@/components/ui";
+import { Button, Input, buttonStyles } from "@/components/ui";
 import { FilterDrawer, filterLabels } from "@/components/ui/filter";
 import { SelectField } from "@/components/select-field";
 import { useCategories, useCategoryServices } from "@/features/catalogue/queries";
@@ -36,6 +36,7 @@ import { EmptyState, InlineError, RefreshingNote } from "./states";
    open. */
 
 type ServiceOption = { value: string; label: string; group: string };
+type SortKey = "default" | "distance" | "rating" | "price_asc" | "price_desc" | "experience";
 
 export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const router = useRouter();
@@ -43,6 +44,12 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   const [sheetOpen, setSheetOpen] = useState(false);
   const [locating, setLocating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  /* Client-side result controls: sorting, rating threshold, badge and in-result keyword filter */
+  const [sortBy, setSortBy] = useState<SortKey>("default");
+  const [minRating, setMinRating] = useState<number>(0);
+  const [badgeOnly, setBadgeOnly] = useState<boolean>(false);
+  const [query, setQuery] = useState<string>("");
 
   const state = useMemo(() => parseSearchState(new URLSearchParams(searchParams.toString())), [searchParams]);
 
@@ -137,6 +144,68 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
     [state],
   );
   const results = useProviderSearch(filters, locale);
+
+  /* Client-side refined results based on sort and filter settings */
+  const processedProviders = useMemo(() => {
+    if (!results.data?.items) return [];
+    let items = [...results.data.items];
+
+    if (minRating > 0) {
+      items = items.filter((p) => (p.ratingScore ?? 0) >= minRating);
+    }
+
+    if (badgeOnly) {
+      items = items.filter((p) => p.badge !== null && p.badge.trim() !== "");
+    }
+
+    if (query.trim() !== "") {
+      const q = query.toLowerCase().trim();
+      items = items.filter(
+        (p) =>
+          (p.qualification?.toLowerCase().includes(q) ?? false) ||
+          (p.bio?.toLowerCase().includes(q) ?? false),
+      );
+    }
+
+    switch (sortBy) {
+      case "distance":
+        items.sort((a, b) => a.distanceM - b.distanceM);
+        break;
+      case "rating":
+        items.sort((a, b) => (b.ratingScore ?? 0) - (a.ratingScore ?? 0));
+        break;
+      case "price_asc":
+        items.sort((a, b) => a.pricePaisa - b.pricePaisa);
+        break;
+      case "price_desc":
+        items.sort((a, b) => b.pricePaisa - a.pricePaisa);
+        break;
+      case "experience":
+        items.sort((a, b) => (b.experienceYears ?? 0) - (a.experienceYears ?? 0));
+        break;
+      default:
+        break;
+    }
+
+    return items;
+  }, [results.data, minRating, badgeOnly, query, sortBy]);
+
+  const hasResultFilters = minRating > 0 || badgeOnly || query.trim() !== "" || sortBy !== "default";
+  const resetResultFilters = () => {
+    setMinRating(0);
+    setBadgeOnly(false);
+    setQuery("");
+    setSortBy("default");
+  };
+
+  const sortOptions = [
+    { value: "default", label: locale === "ur" ? "تجویز کردہ (سسٹم ترتیب)" : "Recommended (Best Match)" },
+    { value: "distance", label: locale === "ur" ? "فاصلہ: قریب ترین پہلے" : "Distance: Nearest First" },
+    { value: "rating", label: locale === "ur" ? "ریٹنگ: سب سے زیادہ" : "Rating: Highest Rated" },
+    { value: "price_asc", label: locale === "ur" ? "قیمت: کم سے زیادہ" : "Price: Low to High" },
+    { value: "price_desc", label: locale === "ur" ? "قیمت: زیادہ سے کم" : "Price: High to Low" },
+    { value: "experience", label: locale === "ur" ? "تجربہ: زیادہ سال" : "Experience: Most Experienced" },
+  ];
 
   const city = cities.data?.items.find((item) => item.id === state.cityId) ?? null;
   const pointLabel =
@@ -370,11 +439,128 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
             />
           ) : (
             <>
-              <div className={cn("grid gap-4 sm:grid-cols-2")}>
-                {results.data.items.map((provider) => (
-                  <ProviderCard key={provider.providerId} locale={locale} dict={dict} provider={provider} serviceName={serviceName} />
-                ))}
+              {/* In-results Sort & Filter Toolbar */}
+              <div className="mb-5 grid gap-3 rounded-[12px] border border-line bg-surface-2/60 p-3 sm:p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                    <Input
+                      type="text"
+                      placeholder={locale === "ur" ? "مہارت یا تفصیل میں تلاش کریں..." : "Filter by skill or keyword…"}
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      className="h-9 ps-9 pe-8 text-xs"
+                    />
+                    {query.trim() !== "" ? (
+                      <button
+                        type="button"
+                        onClick={() => setQuery("")}
+                        className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-navy"
+                        aria-label={locale === "ur" ? "صاف کریں" : "Clear search"}
+                      >
+                        <X className="size-3.5" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="w-full sm:w-64 shrink-0">
+                    <SelectField
+                      id="results-sort"
+                      value={sortBy}
+                      onChange={(val) => setSortBy(val as SortKey)}
+                      options={sortOptions}
+                      placeholder={locale === "ur" ? "ترتیب منتخب کریں" : "Sort results"}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line/60 pt-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted me-1">
+                      {locale === "ur" ? "ریٹنگ:" : "Rating:"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setMinRating(0)}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                        minRating === 0 ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
+                      )}
+                    >
+                      {locale === "ur" ? "تمام" : "All"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMinRating(4.0)}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                        minRating === 4.0 ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
+                      )}
+                    >
+                      <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden="true" />
+                      4.0+
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMinRating(4.5)}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                        minRating === 4.5 ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
+                      )}
+                    >
+                      <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden="true" />
+                      4.5+
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setBadgeOnly(!badgeOnly)}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ms-1.5",
+                        badgeOnly ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
+                      )}
+                    >
+                      <BadgeCheck className="size-3.5 text-blue-500" aria-hidden="true" />
+                      {locale === "ur" ? "صرف تصدیق شدہ بیج" : "Verified Badge Only"}
+                    </button>
+                  </div>
+
+                  {hasResultFilters ? (
+                    <Button type="button" variant="ghost" size="sm" onClick={resetResultFilters} className="h-7 text-xs text-muted hover:text-navy">
+                      <RotateCcw className="size-3 me-1" aria-hidden="true" />
+                      {locale === "ur" ? "فلٹرز صاف کریں" : "Reset filters"}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
+
+              {hasResultFilters ? (
+                <p className="mb-4 text-xs font-medium text-secondary">
+                  {locale === "ur"
+                    ? `${formatNumber(results.data.items.length, locale)} میں سے ${formatNumber(processedProviders.length, locale)} پیشہ ور دکھائی جا رہے ہیں`
+                    : `Showing ${formatNumber(processedProviders.length, locale)} of ${formatNumber(results.data.items.length, locale)} professionals matching criteria`}
+                </p>
+              ) : null}
+
+              {processedProviders.length === 0 ? (
+                <EmptyState
+                  title={locale === "ur" ? "کوئی پیشہ ور فلٹر پر پورا نہیں اترا" : "No professionals match your filter criteria"}
+                  body={locale === "ur" ? "براہ کرم فلٹرز صاف کریں یا تلاش کا لفظ تبدیل کریں۔" : "Try clearing your filters or using different keywords to see all available professionals."}
+                  icon={<SearchX className="size-8" aria-hidden="true" />}
+                  action={
+                    <Button type="button" variant="secondary" onClick={resetResultFilters}>
+                      <RotateCcw className="size-3.5 me-1.5" aria-hidden="true" />
+                      {locale === "ur" ? "فلٹرز ختم کریں" : "Reset result filters"}
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className={cn("grid gap-4 sm:grid-cols-2")}>
+                  {processedProviders.map((provider) => (
+                    <ProviderCard key={provider.providerId} locale={locale} dict={dict} provider={provider} serviceName={serviceName} />
+                  ))}
+                </div>
+              )}
               <p className="mt-6 text-xs text-muted">{dict.search.resultCountNote}</p>
             </>
           )}
