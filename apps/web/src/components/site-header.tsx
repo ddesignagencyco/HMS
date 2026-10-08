@@ -11,6 +11,7 @@ import { buttonStyles } from "@/components/ui";
 import { useSession } from "@/features/auth/session";
 import { homePathForRoles } from "@/features/auth/routing";
 import { BrandMark } from "@/components/brand-mark";
+import { NotificationBell } from "@/components/notification-bell";
 
 export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const pathname = usePathname();
@@ -237,38 +238,41 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
           {!sessionSettled ? (
             <span className="skeleton size-11 rounded-full" aria-hidden="true" />
           ) : signedIn ? (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setAccountOpen((was) => !was)}
-                aria-expanded={accountOpen}
-                aria-haspopup="menu"
-                aria-label={dict.nav.accountMenu}
-                className="grid size-11 place-items-center rounded-full border border-line text-navy transition-colors hover:bg-slate-50"
-              >
-                <UserRound className="size-5" />
-              </button>
+            <div className="flex items-center gap-2">
+              <NotificationBell locale={locale} />
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAccountOpen((was) => !was)}
+                  aria-expanded={accountOpen}
+                  aria-haspopup="menu"
+                  aria-label={dict.nav.accountMenu}
+                  className="grid size-11 place-items-center rounded-full border border-line text-navy transition-colors hover:bg-slate-50"
+                >
+                  <UserRound className="size-5" />
+                </button>
 
-              {accountOpen ? (
-                <div role="menu" className="absolute end-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-[12px] border border-line bg-white p-1.5 shadow-lifted">
-                  <Link role="menuitem" href={accountHref} onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-[9px] px-3 py-2.5 text-sm font-medium text-navy hover:bg-slate-50">
-                    <UserRound className="size-4 text-muted" aria-hidden="true" />
-                    {dict.nav.profile}
-                  </Link>
-                  <Link role="menuitem" href={localizedPath(locale, "/account/addresses")} onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-[9px] px-3 py-2.5 text-sm font-medium text-navy hover:bg-slate-50">
-                    <MapPinIcon className="size-4 text-muted" aria-hidden="true" />
-                    {dict.nav.addresses}
-                  </Link>
-                  <Link role="menuitem" href={localizedPath(locale, "/account/security")} onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-[9px] px-3 py-2.5 text-sm font-medium text-navy hover:bg-slate-50">
-                    <ShieldCheck className="size-4 text-muted" aria-hidden="true" />
-                    {dict.nav.security}
-                  </Link>
-                  <button role="menuitem" type="button" onClick={() => { setAccountOpen(false); void leave(); }} className="flex w-full items-center gap-2.5 rounded-[9px] px-3 py-2.5 text-sm font-medium text-navy hover:bg-slate-50">
-                    <LogOut className="size-4 text-muted" aria-hidden="true" />
-                    {dict.nav.signOut}
-                  </button>
-                </div>
-              ) : null}
+                {accountOpen ? (
+                  <div role="menu" className="absolute end-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-[12px] border border-line bg-white p-1.5 shadow-lifted">
+                    <Link role="menuitem" href={accountHref} onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-[9px] px-3 py-2.5 text-sm font-medium text-navy hover:bg-slate-50">
+                      <UserRound className="size-4 text-muted" aria-hidden="true" />
+                      {dict.nav.profile}
+                    </Link>
+                    <Link role="menuitem" href={localizedPath(locale, "/account/addresses")} onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-[9px] px-3 py-2.5 text-sm font-medium text-navy hover:bg-slate-50">
+                      <MapPinIcon className="size-4 text-muted" aria-hidden="true" />
+                      {dict.nav.addresses}
+                    </Link>
+                    <Link role="menuitem" href={localizedPath(locale, "/account/security")} onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-[9px] px-3 py-2.5 text-sm font-medium text-navy hover:bg-slate-50">
+                      <ShieldCheck className="size-4 text-muted" aria-hidden="true" />
+                      {dict.nav.security}
+                    </Link>
+                    <button role="menuitem" type="button" onClick={() => { setAccountOpen(false); void leave(); }} className="flex w-full items-center gap-2.5 rounded-[9px] px-3 py-2.5 text-sm font-medium text-navy hover:bg-slate-50">
+                      <LogOut className="size-4 text-muted" aria-hidden="true" />
+                      {dict.nav.signOut}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : (
             <Link href={localizedPath(locale, "/auth/sign-in")} className={buttonStyles({ variant: "secondary" })}>
@@ -281,14 +285,17 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
           </Link>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label={dict.nav.menu}
-          className="grid size-11 place-items-center rounded-[9px] border border-line text-navy xl:hidden"
-        >
-          <Menu className="size-5" aria-hidden="true" />
-        </button>
+        <div className="flex items-center gap-2 xl:hidden">
+          {signedIn && <NotificationBell locale={locale} />}
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label={dict.nav.menu}
+            className="grid size-11 place-items-center rounded-[9px] border border-line text-navy"
+          >
+            <Menu className="size-5" aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       {open ? (

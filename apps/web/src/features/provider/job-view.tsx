@@ -23,6 +23,7 @@ import {
 import type { Booking, BookingStatus, Evidence, EvidenceKind } from '@/features/booking/api';
 import { prepareEvidenceImage } from '@/features/uploads/image';
 import { EvidenceImage } from '@/components/evidence-image';
+import { BookingChat } from '@/features/booking/booking-chat';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDateTime, formatMoney, type Locale } from '@/lib/utils';
 
@@ -384,6 +385,9 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
             onCash={() => void attempt(() => cashReceived.mutateAsync(current.id))}
             onRevision={() => void submitRevision()}
           />
+
+          {/* Live customer communication for this job */}
+          <BookingChat locale={locale} dict={dict} booking={current} />
         </div>
       </div>
     </div>
@@ -972,7 +976,7 @@ function ActionsCard({
 
       {booking.status === 'AWAITING_VERIFICATION' || booking.status === 'VERIFIED' || booking.status === 'PAYMENT_RELEASED' ? (
         <a
-          href={`${process.env['NEXT_PUBLIC_API_ORIGIN'] ?? ''}/bookings/${encodeURIComponent(booking.id)}/invoice.pdf`}
+          href={`/api/v1/bookings/${encodeURIComponent(booking.id)}/invoice.pdf`}
           className="mt-4 flex items-center gap-2 text-sm font-medium text-primary-strong underline"
         >
           <Receipt className="size-4" aria-hidden="true" />

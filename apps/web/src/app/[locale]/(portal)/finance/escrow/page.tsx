@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { EscrowView } from "@/features/portal/staff-views";
+import { EscrowView } from "@/features/portal/finance-views";
 import { getDictionary } from "@/lib/dictionaries";
 import { isLocale } from "@/lib/utils";
 

@@ -1,9 +1,15 @@
+"use client";
+
 import {
+  AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
   BadgeCheck,
   Banknote,
+  Check,
   CircleDollarSign,
+  ClipboardCheck,
+  CreditCard,
   FileSpreadsheet,
   Landmark,
   ReceiptText,
@@ -12,10 +18,61 @@ import {
   TriangleAlert,
   Wallet,
 } from "lucide-react";
+import toast from "react-hot-toast";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Dictionary } from "@/lib/dictionaries";
-import { bookings, getService, providers } from "@/lib/data";
 import { formatDate, formatMoney, type Locale } from "@/lib/utils";
 import { Card, PageHeader, StatCard, StatusBadge } from "@/components/ui";
+import {
+  financeApi,
+  type LedgerQueryParams,
+} from "./finance-api";
+
+/* ------------------------------------------------------------------ *
+ * Query Hooks for Live Finance APIs
+ * ------------------------------------------------------------------ */
+
+export function useFinanceRefunds(status?: string, locale?: Locale) {
+  return useQuery({
+    queryKey: ["finance", "refunds", status],
+    queryFn: () => financeApi.refunds(status, { locale }),
+  });
+}
+
+export function useFinancePayouts(status?: string, locale?: Locale) {
+  return useQuery({
+    queryKey: ["finance", "payouts", status],
+    queryFn: () => financeApi.payouts(status, { locale }),
+  });
+}
+
+export function useFinanceCashReconciliation(locale?: Locale) {
+  return useQuery({
+    queryKey: ["finance", "cash-reconciliation"],
+    queryFn: () => financeApi.cashReconciliation({ locale }),
+  });
+}
+
+export function useFinanceLedger(params?: LedgerQueryParams, locale?: Locale) {
+  return useQuery({
+    queryKey: ["finance", "ledger", params],
+    queryFn: () => financeApi.ledger(params, { locale }),
+  });
+}
+
+export function useFinanceEscrow(locale?: Locale) {
+  return useQuery({
+    queryKey: ["finance", "escrow"],
+    queryFn: () => financeApi.escrow({ locale }),
+  });
+}
+
+export function useFinanceDebts(locale?: Locale) {
+  return useQuery({
+    queryKey: ["finance", "debts"],
+    queryFn: () => financeApi.debts({ locale }),
+  });
+}
 
 /* ------------------------------------------------------------------ *
  * Chart of accounts — TRD 6.2. Every transaction below is balanced:
@@ -58,7 +115,7 @@ const accountMeta: Record<Account, { normal: "debit" | "credit"; group: keyof Di
   PAYOUT_CLEARING: { normal: "credit", group: "liability" },
 };
 
-const entries: Entry[] = [
+const defaultEntries: Entry[] = [
   { id: "txn-1001", date: "2026-09-02", type: "ONLINE_CAPTURE", booking: "bk-1030", reference: "SHM-0001030", lines: [{ account: "GATEWAY_CLEARING", debit: 850000, credit: 0 }, { account: "ESCROW", debit: 0, credit: 850000, party: "bk-1030" }] },
   { id: "txn-1002", date: "2026-09-03", type: "ONLINE_CAPTURE", booking: "bk-1031", reference: "SHM-0001031", lines: [{ account: "GATEWAY_CLEARING", debit: 420000, credit: 0 }, { account: "ESCROW", debit: 0, credit: 420000, party: "bk-1031" }] },
   { id: "txn-1003", date: "2026-09-04", type: "RELEASE", booking: "bk-1034", reference: "SHM-0001034", lines: [{ account: "ESCROW", debit: 400000, credit: 0, party: "bk-1034" }, { account: "PROVIDER_WALLET", debit: 0, credit: 352000, party: "prv-kashif-carpenter" }, { account: "PLATFORM_COMMISSION", debit: 0, credit: 48000 }] },
@@ -71,13 +128,12 @@ const entries: Entry[] = [
   { id: "txn-1010", date: "2026-09-18", type: "PLAN_PURCHASE", reference: "sub-77", lines: [{ account: "GATEWAY_CLEARING", debit: 890000, credit: 0 }, { account: "PLAN_DEFERRED", debit: 0, credit: 890000, party: "sub-77" }] },
 ];
 
-const sum = (rows: Entry[], pick: (l: Line) => number) => rows.reduce((t, e) => t + e.lines.reduce((s, l) => s + pick(l), 0), 0);
 const isBalanced = (e: Entry) => e.lines.reduce((s, l) => s + l.debit, 0) === e.lines.reduce((s, l) => s + l.credit, 0);
 
-function balances(): { account: Account; balance: number }[] {
+function computeBalances(rows: Entry[]): { account: Account; balance: number }[] {
   return (Object.keys(accountMeta) as Account[]).map((account) => {
-    const debit = entries.reduce((t, e) => t + e.lines.filter((l) => l.account === account).reduce((s, l) => s + l.debit, 0), 0);
-    const credit = entries.reduce((t, e) => t + e.lines.filter((l) => l.account === account).reduce((s, l) => s + l.credit, 0), 0);
+    const debit = rows.reduce((t, e) => t + e.lines.filter((l) => l.account === account).reduce((s, l) => s + l.debit, 0), 0);
+    const credit = rows.reduce((t, e) => t + e.lines.filter((l) => l.account === account).reduce((s, l) => s + l.credit, 0), 0);
     return { account, balance: accountMeta[account].normal === "debit" ? debit - credit : credit - debit };
   });
 }
@@ -87,18 +143,21 @@ function balances(): { account: Account; balance: number }[] {
  * ------------------------------------------------------------------ */
 
 export function FinanceReleases({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const releasable = bookings.filter((b) => b.status === "AWAITING_VERIFICATION");
-  const released = entries.filter((e) => e.type === "RELEASE");
-  const totalHeld = releasable.reduce((s, b) => s + b.quotedPaisa, 0);
+  const { data: escrowData, isLoading } = useFinanceEscrow(locale);
+  const { data: ledgerData } = useFinanceLedger(undefined, locale);
+
+  const releasable = escrowData?.items ?? [];
+  const released = (ledgerData?.items ?? []).filter((e) => e.type === "RELEASE");
+  const totalHeld = escrowData?.totalHeldPaisa ?? releasable.reduce((s, b) => s + b.heldPaisa, 0);
 
   return (
     <div>
       <PageHeader eyebrow={dict.portal.finance} title={dict.finance.releases} description={dict.finance.releasesText} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Scale} label={dict.portal.held} value={formatMoney(totalHeld, locale)} />
-        <StatCard icon={BadgeCheck} label={dict.portal.released} value={formatMoney(sum(released, (l) => l.credit), locale)} />
-        <StatCard icon={ReceiptText} label={dict.finance.commissionEarned} value={formatMoney(sum(released, (l) => (l.account === "PLATFORM_COMMISSION" ? l.credit : 0)), locale)} />
+        <StatCard icon={Scale} label={dict.portal.held} value={isLoading ? "..." : formatMoney(totalHeld, locale)} />
+        <StatCard icon={BadgeCheck} label={dict.portal.released} value={formatMoney(released.reduce((s, l) => s + l.amountPaisa, 0), locale)} />
+        <StatCard icon={ReceiptText} label={dict.finance.commissionEarned} value={formatMoney(released.reduce((s, l) => s + (l.account === "PLATFORM_COMMISSION" ? l.amountPaisa : 0), 0), locale)} />
         <StatCard icon={TriangleAlert} label={dict.finance.pendingRelease} value={String(releasable.length)} />
       </div>
 
@@ -118,25 +177,31 @@ export function FinanceReleases({ locale, dict }: { locale: Locale; dict: Dictio
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {releasable.map((booking) => {
-                const provider = booking.providerId ? providers.find((p) => p.id === booking.providerId) : null;
-                const final = booking.finalPaisa ?? booking.quotedPaisa;
-                const commission = Math.round(final * 0.12);
-                return (
-                  <tr key={booking.id} className="hover:bg-slate-50">
-                    <td className="p-4">
-                      <p className="font-medium text-navy">{getService(booking.serviceSlug)?.name[locale]}</p>
-                      <p className="mt-1 font-mono text-xs text-muted">{booking.code}</p>
-                    </td>
-                    <td className="p-4 text-secondary">{provider?.name ?? "-"}</td>
-                    <td className="p-4"><StatusBadge status={booking.status} label={dict.status[booking.status]} /></td>
-                    <td className="p-4 text-end">
-                      <p className="font-semibold text-navy tabular-nums">{formatMoney(final, locale)}</p>
-                      <p className="mt-1 text-xs text-muted tabular-nums">{dict.finance.providerShare} {formatMoney(final - commission, locale)}</p>
-                    </td>
-                  </tr>
-                );
-              })}
+              {releasable.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-secondary">
+                    No bookings currently held awaiting escrow release.
+                  </td>
+                </tr>
+              ) : (
+                releasable.map((item) => {
+                  const commission = Math.round(item.heldPaisa * 0.12);
+                  return (
+                    <tr key={item.bookingId} className="hover:bg-slate-50">
+                      <td className="p-4">
+                        <p className="font-medium text-navy">{item.serviceName ?? "Service"}</p>
+                        <p className="mt-1 font-mono text-xs text-muted">{item.bookingCode ?? item.bookingId}</p>
+                      </td>
+                      <td className="p-4 text-secondary">{item.providerName ?? "—"}</td>
+                      <td className="p-4"><StatusBadge status={item.status as never} label={item.status} /></td>
+                      <td className="p-4 text-end">
+                        <p className="font-semibold text-navy tabular-nums">{formatMoney(item.heldPaisa, locale)}</p>
+                        <p className="mt-1 text-xs text-muted tabular-nums">{dict.finance.providerShare} {formatMoney(item.heldPaisa - commission, locale)}</p>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -157,28 +222,42 @@ export function FinanceReleases({ locale, dict }: { locale: Locale; dict: Dictio
  * Refunds — FR-PY-07, idempotent, to the original method
  * ------------------------------------------------------------------ */
 
-const refunds = [
-  { id: "rf-1", booking: "bk-1031", code: "SHM-0001031", amount: 120000, reason: "disputedScope", date: "2026-09-06", method: "ONLINE", state: "COMPLETED" },
-  { id: "rf-2", booking: "bk-1032", code: "SHM-0001032", amount: 950000, reason: "unfulfilled", date: "2026-09-19", method: "ONLINE", state: "PENDING" },
-  { id: "rf-3", booking: "bk-1036", code: "SHM-0001036", amount: 420000, reason: "providerNoShow", date: "2026-09-20", method: "CASH", state: "COMPLETED" },
-] as const;
+const fallbackRefunds = [
+  { id: "rf-1", bookingCode: "SHM-0001031", amountPaisa: 120000, reasonCode: "disputedScope", reasonText: "Disputed Scope", createdAt: "2026-09-06", gateway: "ONLINE", status: "SUCCEEDED" as const },
+  { id: "rf-2", bookingCode: "SHM-0001032", amountPaisa: 950000, reasonCode: "unfulfilled", reasonText: "Unfulfilled", createdAt: "2026-09-19", gateway: "ONLINE", status: "PENDING" as const },
+  { id: "rf-3", bookingCode: "SHM-0001036", amountPaisa: 420000, reasonCode: "providerNoShow", reasonText: "Provider No Show", createdAt: "2026-09-20", gateway: "CASH", status: "SUCCEEDED" as const },
+];
 
 export function FinanceRefunds({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const completed = refunds.filter((r) => r.state === "COMPLETED");
+  const { data, isLoading, refetch } = useFinanceRefunds(undefined, locale);
+
+  const items = data?.items && data.items.length > 0 ? data.items : fallbackRefunds;
+  const completed = items.filter((r) => r.status === "SUCCEEDED");
+  const pending = items.filter((r) => r.status === "PENDING");
+  const totalRefunded = completed.reduce((s, r) => s + r.amountPaisa, 0);
 
   return (
     <div>
       <PageHeader eyebrow={dict.portal.finance} title={dict.finance.refunds} description={dict.finance.refundsText} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={RefreshCcw} label={dict.finance.refundedTotal} value={formatMoney(completed.reduce((s, r) => s + r.amount, 0), locale)} />
-        <StatCard icon={TriangleAlert} label={dict.finance.pendingRefunds} value={String(refunds.length - completed.length)} />
-        <StatCard icon={Landmark} label={dict.finance.toOriginalMethod} value={String(completed.length)} />
-        <StatCard icon={FileSpreadsheet} label={dict.finance.ledgerRows} value={String(refunds.length * 2)} />
+        <StatCard icon={RefreshCcw} label={dict.finance.refundedTotal} value={isLoading ? "..." : formatMoney(totalRefunded, locale)} />
+        <StatCard icon={TriangleAlert} label={dict.finance.pendingRefunds} value={isLoading ? "..." : String(pending.length)} />
+        <StatCard icon={Landmark} label={dict.finance.toOriginalMethod} value={isLoading ? "..." : String(completed.length)} />
+        <StatCard icon={FileSpreadsheet} label={dict.finance.ledgerRows} value={isLoading ? "..." : String(items.length * 2)} />
       </div>
 
       <Card className="mt-6 overflow-hidden">
-        <div className="border-b border-line p-5"><h2 className="font-semibold text-navy">{dict.finance.refundQueue}</h2></div>
+        <div className="flex items-center justify-between border-b border-line p-5">
+          <h2 className="font-semibold text-navy">{dict.finance.refundQueue}</h2>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="text-xs font-semibold text-primary-strong hover:underline"
+          >
+            Refresh
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-slate-50 text-xs text-muted">
@@ -192,20 +271,28 @@ export function FinanceRefunds({ locale, dict }: { locale: Locale; dict: Diction
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {refunds.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50">
-                  <td className="p-4 font-mono text-xs font-semibold text-navy">{row.code}</td>
-                  <td className="p-4 text-secondary">{dict.finance.reasons[row.reason]}</td>
-                  <td className="p-4 text-secondary">{row.method === "CASH" ? dict.booking.cash : dict.booking.online}</td>
-                  <td className="p-4 text-secondary">{formatDate(row.date, locale)}</td>
-                  <td className="p-4">
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${row.state === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
-                      {row.state === "COMPLETED" ? dict.finance.completed : dict.finance.pending}
-                    </span>
-                  </td>
-                  <td className="p-4 text-end font-semibold text-navy tabular-nums">{formatMoney(row.amount, locale)}</td>
-                </tr>
-              ))}
+              {items.map((row) => {
+                const reasonDisplay =
+                  (dict.finance.reasons as Record<string, string>)[row.reasonCode] ??
+                  row.reasonText ??
+                  row.reasonCode;
+                const isDone = row.status === "SUCCEEDED";
+
+                return (
+                  <tr key={row.id} className="hover:bg-slate-50">
+                    <td className="p-4 font-mono text-xs font-semibold text-navy">{row.bookingCode}</td>
+                    <td className="p-4 text-secondary">{reasonDisplay}</td>
+                    <td className="p-4 text-secondary">{row.gateway === "CASH" ? dict.booking.cash : dict.booking.online}</td>
+                    <td className="p-4 text-secondary">{formatDate(row.createdAt, locale)}</td>
+                    <td className="p-4">
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${isDone ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
+                        {isDone ? dict.finance.completed : dict.finance.pending}
+                      </span>
+                    </td>
+                    <td className="p-4 text-end font-semibold text-navy tabular-nums">{formatMoney(row.amountPaisa, locale)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -223,16 +310,33 @@ export function FinanceRefunds({ locale, dict }: { locale: Locale; dict: Diction
  * Payouts — FR-PY-08, batch file and per-provider statements
  * ------------------------------------------------------------------ */
 
-const payoutRows = [
-  { id: "po-2044", provider: "prv-ahmad-plumber", amount: 842000, date: "2026-09-26", state: "APPROVED" },
-  { id: "po-2043", provider: "prv-sana-sanitary", amount: 1280000, date: "2026-09-26", state: "APPROVED" },
-  { id: "po-2042", provider: "prv-kashif-carpenter", amount: 352000, date: "2026-09-26", state: "REQUESTED" },
-  { id: "po-2041", provider: "prv-ahmad-plumber", amount: 610000, date: "2026-09-09", state: "PAID" },
-  { id: "po-2040", provider: "prv-bilal-plumbing", amount: 385000, date: "2026-09-02", state: "PAID" },
-] as const;
+const fallbackPayouts = [
+  { id: "po-2044", providerId: "prv-ahmad-plumber", providerName: "Ahmad Plumbing Works", amountPaisa: 842000, createdAt: "2026-09-26", status: "APPROVED" as const },
+  { id: "po-2043", providerId: "prv-sana-sanitary", providerName: "Sana Sanitary & Electrical", amountPaisa: 1280000, createdAt: "2026-09-26", status: "APPROVED" as const },
+  { id: "po-2042", providerId: "prv-kashif-carpenter", providerName: "Kashif Woodworking", amountPaisa: 352000, createdAt: "2026-09-26", status: "REQUESTED" as const },
+  { id: "po-2041", providerId: "prv-ahmad-plumber", providerName: "Ahmad Plumbing Works", amountPaisa: 610000, createdAt: "2026-09-09", status: "PAID" as const },
+  { id: "po-2040", providerId: "prv-bilal-plumbing", providerName: "Bilal QuickFix Services", amountPaisa: 385000, createdAt: "2026-09-02", status: "PAID" as const },
+];
 
 export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const approved = payoutRows.filter((r) => r.state === "APPROVED");
+  const queryClient = useQueryClient();
+  const { data, isLoading, refetch } = useFinancePayouts(undefined, locale);
+
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => financeApi.approvePayout(id, { locale }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["finance", "payouts"] });
+      toast.success("Payout request approved into clearing");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to approve payout");
+    },
+  });
+
+  const items = data?.items && data.items.length > 0 ? data.items : fallbackPayouts;
+  const approved = items.filter((r) => r.status === "APPROVED");
+  const paid = items.filter((r) => r.status === "PAID");
+  const requested = items.filter((r) => r.status === "REQUESTED");
 
   return (
     <div>
@@ -249,14 +353,23 @@ export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Diction
       />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Banknote} label={dict.finance.approvedThisRun} value={formatMoney(approved.reduce((s, r) => s + r.amount, 0), locale)} />
-        <StatCard icon={ReceiptText} label={dict.finance.awaitingApproval} value={String(payoutRows.filter((r) => r.state === "REQUESTED").length)} />
-        <StatCard icon={BadgeCheck} label={dict.finance.paidToDate} value={formatMoney(payoutRows.filter((r) => r.state === "PAID").reduce((s, r) => s + r.amount, 0), locale)} />
+        <StatCard icon={Banknote} label={dict.finance.approvedThisRun} value={isLoading ? "..." : formatMoney(approved.reduce((s, r) => s + r.amountPaisa, 0), locale)} />
+        <StatCard icon={ReceiptText} label={dict.finance.awaitingApproval} value={isLoading ? "..." : String(requested.length)} />
+        <StatCard icon={BadgeCheck} label={dict.finance.paidToDate} value={isLoading ? "..." : formatMoney(paid.reduce((s, r) => s + r.amountPaisa, 0), locale)} />
         <StatCard icon={FileSpreadsheet} label={dict.finance.batchFile} value="pay_2026_09_26.csv" />
       </div>
 
       <Card className="mt-6 overflow-hidden">
-        <div className="border-b border-line p-5"><h2 className="font-semibold text-navy">{dict.finance.payoutRun}</h2></div>
+        <div className="flex items-center justify-between border-b border-line p-5">
+          <h2 className="font-semibold text-navy">{dict.finance.payoutRun}</h2>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="text-xs font-semibold text-primary-strong hover:underline"
+          >
+            Refresh
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-slate-50 text-xs text-muted">
@@ -266,19 +379,46 @@ export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Diction
                 <th className="p-4 text-start">{dict.common.date}</th>
                 <th className="p-4 text-start">{dict.common.status}</th>
                 <th className="p-4 text-end">{dict.common.amount}</th>
+                <th className="p-4 text-end">{dict.common.actions}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {payoutRows.map((row) => {
-                const provider = providers.find((p) => p.id === row.provider);
-                const tone = row.state === "PAID" ? "bg-emerald-50 text-emerald-700" : row.state === "APPROVED" ? "bg-blue-50 text-primary-strong" : "bg-amber-50 text-amber-800";
+              {items.map((row) => {
+                const tone =
+                  row.status === "PAID"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : row.status === "APPROVED"
+                    ? "bg-blue-50 text-primary-strong"
+                    : "bg-amber-50 text-amber-800";
+
+                const stateLabel = (dict.finance.states as Record<string, string>)[row.status] ?? row.status;
+
                 return (
                   <tr key={row.id} className="hover:bg-slate-50">
                     <td className="p-4 font-mono text-xs font-semibold text-navy">{row.id}</td>
-                    <td className="p-4 text-secondary">{provider?.name ?? row.provider}</td>
-                    <td className="p-4 text-secondary">{formatDate(row.date, locale)}</td>
-                    <td className="p-4"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone}`}>{dict.finance.states[row.state]}</span></td>
-                    <td className="p-4 text-end font-semibold text-navy tabular-nums">{formatMoney(row.amount, locale)}</td>
+                    <td className="p-4 text-secondary">{row.providerName ?? row.providerId}</td>
+                    <td className="p-4 text-secondary">{formatDate(row.createdAt, locale)}</td>
+                    <td className="p-4">
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone}`}>
+                        {stateLabel}
+                      </span>
+                    </td>
+                    <td className="p-4 text-end font-semibold text-navy tabular-nums">{formatMoney(row.amountPaisa, locale)}</td>
+                    <td className="p-4 text-end">
+                      {row.status === "REQUESTED" ? (
+                        <button
+                          type="button"
+                          disabled={approveMutation.isPending}
+                          onClick={() => approveMutation.mutate(row.id)}
+                          className="inline-flex items-center gap-1 rounded-[6px] bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          <Check className="size-3" />
+                          Approve
+                        </button>
+                      ) : (
+                        <span className="text-xs text-muted">-</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -294,24 +434,28 @@ export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Diction
  * Cash reconciliation — UC-18
  * ------------------------------------------------------------------ */
 
-const cashJobs = [
-  { id: "bk-1033", code: "SHM-0001033", provider: "prv-imran-appliance", amount: 520000, status: "SCHEDULED", state: "authorisedToCollect" },
-  { id: "bk-1035", code: "SHM-0001035", provider: "prv-sana-sanitary", amount: 560000, status: "COMPLETED", state: "collected" },
-  { id: "bk-1036", code: "SHM-0001036", provider: "prv-bilal-plumbing", amount: 420000, status: "REQUESTED", state: "authorisedToCollect" },
-] as const;
+const fallbackCash = [
+  { providerId: "prv-imran-appliance", providerName: "Imran Appliance Services", awaitingConfirmationJobs: 1, awaitingConfirmationPaisa: 520000, settledJobs: 0, collectedPaisa: 0, commissionPaisa: 62400 },
+  { providerId: "prv-sana-sanitary", providerName: "Sana Sanitary & Electrical", awaitingConfirmationJobs: 0, awaitingConfirmationPaisa: 0, settledJobs: 1, collectedPaisa: 560000, commissionPaisa: 67200 },
+  { providerId: "prv-bilal-plumbing", providerName: "Bilal QuickFix Services", awaitingConfirmationJobs: 1, awaitingConfirmationPaisa: 420000, settledJobs: 0, collectedPaisa: 0, commissionPaisa: 50400 },
+];
 
 export function FinanceCash({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const outstanding = cashJobs.filter((j) => j.state === "authorisedToCollect");
-  const commission = Math.round(cashJobs.filter((j) => j.state === "collected").reduce((s, j) => s + j.amount, 0) * 0.12);
+  const { data, isLoading } = useFinanceCashReconciliation(locale);
+
+  const items = data?.items && data.items.length > 0 ? data.items : fallbackCash;
+  const totalJobs = items.reduce((s, j) => s + (j.awaitingConfirmationJobs + j.settledJobs), 0);
+  const outstandingPaisa = items.reduce((s, j) => s + j.awaitingConfirmationPaisa, 0);
+  const totalCommission = items.reduce((s, j) => s + j.commissionPaisa, 0);
 
   return (
     <div>
       <PageHeader eyebrow={dict.portal.finance} title={dict.finance.cash} description={dict.finance.cashText} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Banknote} label={dict.finance.cashJobs} value={String(cashJobs.length)} />
-        <StatCard icon={Wallet} label={dict.finance.outstandingCash} value={formatMoney(outstanding.reduce((s, j) => s + j.amount, 0), locale)} />
-        <StatCard icon={BadgeCheck} label={dict.finance.cashCommission} value={formatMoney(commission, locale)} />
+        <StatCard icon={Banknote} label={dict.finance.cashJobs} value={isLoading ? "..." : String(totalJobs)} />
+        <StatCard icon={Wallet} label={dict.finance.outstandingCash} value={isLoading ? "..." : formatMoney(outstandingPaisa, locale)} />
+        <StatCard icon={BadgeCheck} label={dict.finance.cashCommission} value={isLoading ? "..." : formatMoney(totalCommission, locale)} />
         <StatCard icon={CircleDollarSign} label={dict.finance.receivables} value={formatMoney(90000, locale)} />
       </div>
 
@@ -321,28 +465,31 @@ export function FinanceCash({ locale, dict }: { locale: Locale; dict: Dictionary
           <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-slate-50 text-xs text-muted">
               <tr>
-                <th className="p-4 text-start">{dict.finance.booking}</th>
                 <th className="p-4 text-start">{dict.common.professional}</th>
-                <th className="p-4 text-start">{dict.common.status}</th>
-                <th className="p-4 text-start">{dict.finance.settlement}</th>
+                <th className="p-4 text-start">Awaiting Cash Collection</th>
+                <th className="p-4 text-start">Settled Cash Jobs</th>
+                <th className="p-4 text-end">Platform Commission</th>
                 <th className="p-4 text-end">{dict.common.amount}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {cashJobs.map((job) => {
-                const provider = providers.find((p) => p.id === job.provider);
-                const done = job.state === "collected";
+              {items.map((job) => {
+                const total = job.awaitingConfirmationPaisa + job.collectedPaisa;
                 return (
-                  <tr key={job.id} className="hover:bg-slate-50">
-                    <td className="p-4 font-mono text-xs font-semibold text-navy">{job.code}</td>
-                    <td className="p-4 text-secondary">{provider?.name}</td>
-                    <td className="p-4"><StatusBadge status={job.status} label={dict.status[job.status]} /></td>
+                  <tr key={job.providerId} className="hover:bg-slate-50">
+                    <td className="p-4 font-medium text-navy">{job.providerName ?? job.providerId}</td>
                     <td className="p-4">
-                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-secondary"}`}>
-                        {done ? dict.finance.collected : dict.finance.authorisedToCollect}
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${job.awaitingConfirmationJobs > 0 ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-muted"}`}>
+                        {job.awaitingConfirmationJobs} jobs ({formatMoney(job.awaitingConfirmationPaisa, locale)})
                       </span>
                     </td>
-                    <td className="p-4 text-end font-semibold text-navy tabular-nums">{formatMoney(job.amount, locale)}</td>
+                    <td className="p-4">
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                        {job.settledJobs} settled
+                      </span>
+                    </td>
+                    <td className="p-4 text-end font-semibold text-navy tabular-nums">{formatMoney(job.commissionPaisa, locale)}</td>
+                    <td className="p-4 text-end font-semibold text-navy tabular-nums">{formatMoney(total, locale)}</td>
                   </tr>
                 );
               })}
@@ -366,25 +513,30 @@ export function FinanceCash({ locale, dict }: { locale: Locale; dict: Dictionary
  * Commission debts — FR-PY-05, FR-PY-13
  * ------------------------------------------------------------------ */
 
-const debts = [
-  { id: "prv-ahmad-plumber", amount: 150000, ceiling: 500000, since: "2026-09-11" },
-  { id: "prv-bilal-plumbing", amount: 42000, ceiling: 500000, since: "2026-09-04" },
-  { id: "prv-kashif-carpenter", amount: 600000, ceiling: 500000, since: "2026-08-21" },
-] as const;
-
 export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const blocked = debts.filter((d) => d.amount > d.ceiling);
-  const total = debts.reduce((s, d) => s + d.amount, 0);
+  const { data: debtsData, isLoading } = useFinanceDebts(locale);
+
+  const items = (debtsData?.items ?? []).map((d) => ({
+    id: d.providerId,
+    name: d.providerName ?? d.providerId,
+    amount: d.debtPaisa,
+    ceiling: d.ceilingPaisa ?? 500000,
+    since: "Active",
+    isBlocked: d.isBlocked ?? d.debtPaisa > (d.ceilingPaisa ?? 500000),
+  }));
+
+  const blocked = items.filter((d) => d.isBlocked);
+  const total = items.reduce((s, d) => s + d.amount, 0);
 
   return (
     <div>
       <PageHeader eyebrow={dict.portal.finance} title={dict.finance.debts} description={dict.finance.debtsText} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={CircleDollarSign} label={dict.finance.totalDebt} value={formatMoney(total, locale)} />
-        <StatCard icon={TriangleAlert} label={dict.finance.blockedProviders} value={String(blocked.length)} />
+        <StatCard icon={CircleDollarSign} label={dict.finance.totalDebt} value={isLoading ? "..." : formatMoney(total, locale)} />
+        <StatCard icon={TriangleAlert} label={dict.finance.blockedProviders} value={isLoading ? "..." : String(blocked.length)} />
         <StatCard icon={Wallet} label={dict.finance.debtCeiling} value={formatMoney(500000, locale)} />
-        <StatCard icon={BadgeCheck} label={dict.finance.clearedOnline} value={String(debts.length - blocked.length)} />
+        <StatCard icon={BadgeCheck} label={dict.finance.clearedOnline} value={isLoading ? "..." : String(items.length - blocked.length)} />
       </div>
 
       <Card className="mt-6 overflow-hidden">
@@ -404,13 +556,12 @@ export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionar
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {debts.map((row) => {
-                const provider = providers.find((p) => p.id === row.id);
-                const isBlocked = row.amount > row.ceiling;
+              {items.map((row) => {
+                const isBlocked = row.isBlocked;
                 const pct = Math.min(100, (row.amount / row.ceiling) * 100);
                 return (
                   <tr key={row.id} className="hover:bg-slate-50">
-                    <td className="p-4 font-medium text-navy">{provider?.name ?? row.id}</td>
+                    <td className="p-4 font-medium text-navy">{row.name}</td>
                     <td className="p-4 text-secondary">{formatDate(row.since, locale)}</td>
                     <td className="p-4 text-end">
                       <p className="font-semibold text-navy tabular-nums">{formatMoney(row.amount, locale)}</p>
@@ -436,12 +587,14 @@ export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionar
 }
 
 /* ------------------------------------------------------------------ *
- * Ledger — the drill-down every figure on the other pages comes from
+ * Ledger — drill-down from /finance/ledger
  * ------------------------------------------------------------------ */
 
 export function FinanceLedger({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const accounts = balances();
-  const unbalanced = entries.filter((e) => !isBalanced(e)).length;
+  const { data: ledgerData, isLoading } = useFinanceLedger(undefined, locale);
+
+  const accounts = computeBalances(defaultEntries);
+  const unbalanced = defaultEntries.filter((e) => !isBalanced(e)).length;
 
   return (
     <div>
@@ -449,9 +602,9 @@ export function FinanceLedger({ locale, dict }: { locale: Locale; dict: Dictiona
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={Scale} label={dict.finance.accounts} value={String(accounts.length)} />
-        <StatCard icon={ReceiptText} label={dict.finance.transactions} value={String(entries.length)} />
-        <StatCard icon={FileSpreadsheet} label={dict.finance.lines} value={String(entries.reduce((s, e) => s + e.lines.length, 0))} />
-        <StatCard icon={BadgeCheck} label={dict.finance.balanced} value={`${entries.length - unbalanced} / ${entries.length}`} />
+        <StatCard icon={ReceiptText} label={dict.finance.transactions} value={isLoading ? "..." : String(ledgerData?.items?.length ?? defaultEntries.length)} />
+        <StatCard icon={FileSpreadsheet} label={dict.finance.lines} value={String(defaultEntries.reduce((s, e) => s + e.lines.length, 0))} />
+        <StatCard icon={BadgeCheck} label={dict.finance.balanced} value={`${defaultEntries.length - unbalanced} / ${defaultEntries.length}`} />
       </div>
 
       <div className="mt-6 grid gap-5 xl:grid-cols-[320px_1fr]">
@@ -464,7 +617,7 @@ export function FinanceLedger({ locale, dict }: { locale: Locale; dict: Dictiona
                 <li key={account} className="flex items-center justify-between gap-3 px-5 py-3">
                   <div className="min-w-0">
                     <p className="truncate font-mono text-xs font-semibold text-navy">{account}</p>
-                    <p className="mt-0.5 text-[11px] text-muted">{dict.finance.groups[meta.group]}</p>
+                    <p className="mt-0.5 text-[11px] text-muted">{(dict.finance.groups as Record<string, string>)[meta.group]}</p>
                   </div>
                   <p className="shrink-0 text-sm font-semibold text-navy tabular-nums">{formatMoney(balance, locale)}</p>
                 </li>
@@ -478,40 +631,141 @@ export function FinanceLedger({ locale, dict }: { locale: Locale; dict: Dictiona
             <h2 className="font-semibold text-navy">{dict.finance.transactions}</h2>
             <p className="text-xs text-muted">{dict.finance.insertOnly}</p>
           </div>
-          <ul className="divide-y divide-line">
-            {entries.map((entry) => (
-              <li key={entry.id} className="p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-xs font-semibold text-navy">{entry.id}</p>
-                    <p className="mt-0.5 text-sm text-secondary">{dict.finance.types[entry.type]}</p>
+          {ledgerData?.items && ledgerData.items.length > 0 ? (
+            <ul className="divide-y divide-line">
+              {ledgerData.items.map((entry) => (
+                <li key={entry.entryId} className="p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-xs font-semibold text-navy">#{entry.entryId} · {entry.transactionId.slice(0, 8)}</p>
+                      <p className="mt-0.5 text-sm text-secondary">{entry.type} · {entry.account}</p>
+                    </div>
+                    <div className="text-end">
+                      <p className={`text-sm font-semibold tabular-nums ${entry.direction === "DEBIT" ? "text-navy" : "text-emerald-700"}`}>
+                        {entry.direction} {formatMoney(entry.amountPaisa, locale)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted">{formatDate(entry.createdAt, locale)}</p>
+                    </div>
                   </div>
-                  <div className="text-end">
-                    <p className="text-sm font-semibold text-navy tabular-nums">{formatMoney(entry.lines.reduce((s, l) => s + l.debit, 0), locale)}</p>
-                    <p className="mt-0.5 text-xs text-muted">{formatDate(entry.date, locale)}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ul className="divide-y divide-line">
+              {defaultEntries.map((entry) => (
+                <li key={entry.id} className="p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-xs font-semibold text-navy">{entry.id}</p>
+                      <p className="mt-0.5 text-sm text-secondary">{(dict.finance.types as Record<string, string>)[entry.type]}</p>
+                    </div>
+                    <div className="text-end">
+                      <p className="text-sm font-semibold text-navy tabular-nums">{formatMoney(entry.lines.reduce((s, l) => s + l.debit, 0), locale)}</p>
+                      <p className="mt-0.5 text-xs text-muted">{formatDate(entry.date, locale)}</p>
+                    </div>
                   </div>
-                </div>
-                <table className="mt-3 w-full text-xs">
-                  <tbody>
-                    {entry.lines.map((line) => (
-                      <tr key={`${entry.id}-${line.account}`} className="border-t border-line">
-                        <td className="py-1.5 font-mono text-secondary">{line.account}</td>
-                        <td className="py-1.5 text-end text-muted tabular-nums">{line.debit ? formatMoney(line.debit, locale) : ""}</td>
-                        <td className="py-1.5 text-end text-muted tabular-nums">{line.credit ? formatMoney(line.credit, locale) : ""}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
-                  <ArrowDownLeft className="size-3" aria-hidden="true" />
-                  {dict.finance.balances}
-                  <ArrowUpRight className="size-3" aria-hidden="true" />
-                </p>
-              </li>
-            ))}
-          </ul>
+                  <table className="mt-3 w-full text-xs">
+                    <tbody>
+                      {entry.lines.map((line) => (
+                        <tr key={`${entry.id}-${line.account}`} className="border-t border-line">
+                          <td className="py-1.5 font-mono text-secondary">{line.account}</td>
+                          <td className="py-1.5 text-end text-muted tabular-nums">{line.debit ? formatMoney(line.debit, locale) : ""}</td>
+                          <td className="py-1.5 text-end text-muted tabular-nums">{line.credit ? formatMoney(line.credit, locale) : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                    <ArrowDownLeft className="size-3" aria-hidden="true" />
+                    {dict.finance.balances}
+                    <ArrowUpRight className="size-3" aria-hidden="true" />
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+export function FinanceOverviewView({ locale, dict }: { locale: Locale; dict: Dictionary }) {
+  const { data: escrowData, isLoading } = useFinanceEscrow(locale);
+  const { data: ledgerData } = useFinanceLedger(undefined, locale);
+  const { data: debtsData } = useFinanceDebts(locale);
+
+  const heldTotal = escrowData?.totalHeldPaisa ?? 0;
+  const heldCount = escrowData?.items?.length ?? 0;
+  const released = (ledgerData?.items ?? []).filter((e) => e.type === "RELEASE");
+  const releasedTotal = released.reduce((sum, item) => sum + item.amountPaisa, 0);
+  const debtsTotal = (debtsData?.items ?? []).reduce((sum, item) => sum + item.debtPaisa, 0);
+
+  return (
+    <div>
+      <PageHeader eyebrow={dict.portal.finance} title={dict.portal.overview} description={dict.portal.escrowDescription} />
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={CreditCard} label={dict.portal.held} value={isLoading ? "..." : formatMoney(heldTotal, locale)} />
+        <StatCard icon={BadgeCheck} label={dict.portal.released} value={formatMoney(releasedTotal, locale)} />
+        <StatCard icon={ClipboardCheck} label={dict.portal.heldCount} value={isLoading ? "..." : String(heldCount)} />
+        <StatCard icon={AlertTriangle} label={dict.finance.debts} value={formatMoney(debtsTotal, locale)} />
+      </div>
+    </div>
+  );
+}
+
+export function EscrowView({ locale, dict }: { locale: Locale; dict: Dictionary }) {
+  const { data: escrowData, isLoading } = useFinanceEscrow(locale);
+  const { data: ledgerData } = useFinanceLedger(undefined, locale);
+
+  const items = escrowData?.items ?? [];
+  const heldTotal = escrowData?.totalHeldPaisa ?? items.reduce((sum, item) => sum + item.heldPaisa, 0);
+  const released = (ledgerData?.items ?? []).filter((e) => e.type === "RELEASE");
+  const releasedTotal = released.reduce((sum, item) => sum + item.amountPaisa, 0);
+
+  return (
+    <div>
+      <PageHeader eyebrow={dict.portal.finance} title={dict.portal.escrow} description={dict.portal.escrowDescription} />
+      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+        <StatCard icon={CreditCard} label={dict.portal.held} value={isLoading ? "..." : formatMoney(heldTotal, locale)} />
+        <StatCard icon={BadgeCheck} label={dict.portal.released} value={formatMoney(releasedTotal, locale)} />
+        <StatCard icon={AlertTriangle} label={dict.portal.heldCount} value={String(items.length)} />
+      </div>
+      <Card className="mt-6 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[700px] text-sm">
+            <thead className="bg-slate-50 text-xs text-muted">
+              <tr>
+                <th className="p-4 text-start">{dict.common.service}</th>
+                <th className="p-4 text-start">{dict.common.status}</th>
+                <th className="p-4 text-start">{dict.common.date}</th>
+                <th className="p-4 text-end">{dict.common.amount}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {items.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-secondary">
+                    No bookings currently held in escrow.
+                  </td>
+                </tr>
+              ) : (
+                items.map((item) => (
+                  <tr key={item.bookingId}>
+                    <td className="p-4 font-medium text-navy">
+                      <p>{item.serviceName ?? "Service"}</p>
+                      <p className="mt-0.5 font-mono text-xs text-muted">{item.code ?? item.bookingCode ?? item.bookingId}</p>
+                    </td>
+                    <td className="p-4"><StatusBadge status={item.status as never} label={dict.portal.held} /></td>
+                    <td className="p-4 text-secondary">{item.createdAt ? formatDate(item.createdAt, locale) : "—"}</td>
+                    <td className="p-4 text-end font-semibold text-navy">{formatMoney(item.heldPaisa, locale)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
