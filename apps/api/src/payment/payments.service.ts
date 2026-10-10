@@ -13,7 +13,7 @@ import { LedgerService } from './ledger.service.js';
 
 export type WebhookIngestResult = { accepted: true; duplicate: boolean; eventId: string; matchedPayment: boolean };
 
-export type PaymentPurpose = 'BOOKING' | 'TOPUP' | 'DEBT';
+export type PaymentPurpose = 'BOOKING' | 'TOPUP' | 'DEBT' | 'PLAN';
 
 /** Called inside the capture transaction once a captured payment has moved its booking to REQUESTED — the offer cascade hooks in here. */
 export type BookingRequestedHook = (tx: Prisma.TransactionClient, bookingId: string) => Promise<void>;
@@ -43,12 +43,12 @@ export class PaymentsService {
   }
 
   /** Inserts the INITIATED payment row inside the caller's transaction, so it exists iff the booking/revision it pays for does. */
-  async createPayment(tx: Prisma.TransactionClient, input: { bookingId: string | null; payerUserId: string; amountPaisa: bigint; purpose: PaymentPurpose; keySuffix: string }): Promise<string> {
+  async createPayment(tx: Prisma.TransactionClient, input: { bookingId: string | null; payerUserId: string; amountPaisa: bigint; purpose: PaymentPurpose; keySuffix: string; subscriptionId?: string | null }): Promise<string> {
     const timeoutMin = await this.settings.getNumber('booking.pending_payment_timeout_min');
     const rows = await tx.$queryRaw<{ id: string }[]>(
-      Prisma.sql`INSERT INTO payments(purpose, booking_id, payer_user_id, gateway, amount_paisa, idempotency_key, expires_at)
-        VALUES (${input.purpose}::payment_purpose, ${input.bookingId}::uuid, ${input.payerUserId}::uuid, 'mock', ${input.amountPaisa},
-          ${`${input.purpose.toLowerCase()}:${input.bookingId ?? input.payerUserId}:${input.keySuffix}`}, now() + make_interval(mins => ${timeoutMin}::int))
+      Prisma.sql`INSERT INTO payments(purpose, booking_id, subscription_id, payer_user_id, gateway, amount_paisa, idempotency_key, expires_at)
+        VALUES (${input.purpose}::payment_purpose, ${input.bookingId}::uuid, ${input.subscriptionId ?? null}::uuid, ${input.payerUserId}::uuid, 'mock', ${input.amountPaisa},
+          ${`${input.purpose.toLowerCase()}:${input.bookingId ?? input.subscriptionId ?? input.payerUserId}:${input.keySuffix}`}, now() + make_interval(mins => ${timeoutMin}::int))
         RETURNING id`
     );
     const id = rows[0]?.id;
@@ -109,12 +109,13 @@ export class PaymentsService {
   }
 
   private async capture(tx: Prisma.TransactionClient, paymentId: string): Promise<void> {
-    const rows = await tx.$queryRaw<{ id: string; bookingId: string | null; purpose: string; amountPaisa: bigint; status: string }[]>(
-      Prisma.sql`SELECT id, booking_id as "bookingId", purpose, amount_paisa as "amountPaisa", status FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`
+    const rows = await tx.$queryRaw<{ id: string; bookingId: string | null; subscriptionId: string | null; purpose: string; amountPaisa: bigint; status: string }[]>(
+      Prisma.sql`SELECT id, booking_id as "bookingId", subscription_id as "subscriptionId", purpose, amount_paisa as "amountPaisa", status FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`
     );
     const payment = rows[0];
     if (payment === undefined) throw notFound('Payment');
     if (payment.purpose === 'DEBT') return this.captureDebt(tx, paymentId, payment.status, payment.amountPaisa);
+    if (payment.purpose === 'PLAN') return this.capturePlan(tx, paymentId, payment.status, payment.amountPaisa, payment.subscriptionId);
     // A capture that arrives for a payment already expired/failed is refused rather than resurrected: the booking may
     // have been released back to the market already. It is stored for reconciliation, not applied.
     if (payment.status !== 'INITIATED' || payment.bookingId === null) return;
@@ -169,6 +170,28 @@ export class PaymentsService {
     });
     await this.debt.refreshBlock(tx, providerId);
     await appendOutboxEvent(tx, { aggregate: 'payment', aggregateId: paymentId, type: 'payment.debt_paid', payload: { paymentId, providerId, amountPaisa: amountPaisa.toString() } });
+  }
+
+  /** FR-MP-03 / TRD §6.3: Plan purchase payment captured. D GATEWAY_CLEARING / C PLAN_DEFERRED[subscription_id]. */
+  private async capturePlan(tx: Prisma.TransactionClient, paymentId: string, status: string, amountPaisa: bigint, subscriptionId: string | null): Promise<void> {
+    if (status !== 'INITIATED' || subscriptionId === null) return;
+    await tx.$executeRaw(Prisma.sql`UPDATE payments SET status = 'CAPTURED'::payment_status, captured_at = now() WHERE id = ${paymentId}::uuid`);
+    await tx.$executeRaw(Prisma.sql`UPDATE subscriptions SET status = 'ACTIVE'::subscription_status WHERE id = ${subscriptionId}::uuid`);
+    await this.ledger.post(tx, {
+      type: 'PLAN_PURCHASE',
+      idempotencyKey: `capture:${paymentId}`,
+      memo: 'Plan subscription payment captured',
+      lines: [
+        { account: 'GATEWAY_CLEARING', direction: 'DEBIT', amountPaisa },
+        { account: 'PLAN_DEFERRED', direction: 'CREDIT', amountPaisa, subscriptionId }
+      ]
+    });
+    await appendOutboxEvent(tx, {
+      aggregate: 'subscription',
+      aggregateId: subscriptionId,
+      type: 'subscription.activated',
+      payload: { paymentId, subscriptionId, amountPaisa: amountPaisa.toString() }
+    });
   }
 
   private async fail(tx: Prisma.TransactionClient, paymentId: string, status: 'FAILED' | 'EXPIRED'): Promise<void> {

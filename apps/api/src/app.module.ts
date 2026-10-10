@@ -25,9 +25,10 @@ import { ConductModule } from './conduct/conduct.module.js';
 import { ReputationModule } from './reputation/reputation.module.js';
 import { VerificationModule } from './verification/verification.module.js';
 import { SearchModule } from './search/search.module.js';
+import { PlansModule } from './plans/plans.module.js';
 
 @Module({
-  imports: [EnvironmentModule, PrismaModule, RedisModule, QueueModule, IntegrationsModule, PlatformModule, PaymentModule, NotificationModule, IdempotencyModule, IdentityModule, CatalogueModule, PlacesModule, CustomerModule, ProviderModule, SearchModule, BookingModule, VerificationModule, ReputationModule, ConductModule, ComplaintsModule, AdminModule],
+  imports: [EnvironmentModule, PrismaModule, RedisModule, QueueModule, IntegrationsModule, PlatformModule, PaymentModule, NotificationModule, IdempotencyModule, IdentityModule, CatalogueModule, PlacesModule, CustomerModule, ProviderModule, SearchModule, BookingModule, VerificationModule, ReputationModule, ConductModule, ComplaintsModule, AdminModule, PlansModule],
   controllers: [HealthController],
   providers: [
     { provide: APP_FILTER, useClass: ProblemDetailsFilter },

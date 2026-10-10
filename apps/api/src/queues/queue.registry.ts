@@ -21,7 +21,8 @@ export const REPEATABLE_JOBS: readonly { name: string; queue: QueueName; everyMs
   { name: 'booking.rework-expiry', queue: 'projections', everyMs: 300_000 },
   { name: 'booking.expire-offers', queue: 'projections', everyMs: 30_000 },
   { name: 'payments.abandon-checkouts', queue: 'payments', everyMs: 60_000 },
-  { name: 'ledger.reconcile', queue: 'projections', everyMs: 86_400_000 }
+  { name: 'ledger.reconcile', queue: 'projections', everyMs: 86_400_000 },
+  { name: 'plans.schedule-visits', queue: 'projections', everyMs: 86_400_000 }
 ];
 
 export type QueueHandler = (data: Record<string, unknown>) => Promise<void>;

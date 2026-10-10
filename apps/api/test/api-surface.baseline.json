@@ -346,6 +346,51 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/admin/plans",
+      "operationId": "PlansAdminController_list",
+      "summary": "List all maintenance plans (admin)",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/plans",
+      "operationId": "PlansAdminController_create",
+      "summary": "Create a maintenance plan",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/plans/{id}",
+      "operationId": "PlansAdminController_deactivate",
+      "summary": "Deactivate a maintenance plan",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/plans/{id}",
+      "operationId": "PlansAdminController_get",
+      "summary": "Get plan details (admin)",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/plans/{id}",
+      "operationId": "PlansAdminController_update",
+      "summary": "Update a maintenance plan",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/admin/provider-services",
       "operationId": "ProviderServicesAdminController_list",
       "summary": "Review provider service offers",
@@ -1417,6 +1462,15 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/me/subscriptions",
+      "operationId": "SubscriptionsController_listMine",
+      "summary": "List my plan subscriptions",
+      "tags": [
+        "plans"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/notifications",
       "operationId": "NotificationController_own",
       "summary": "My notification centre",
@@ -1458,6 +1512,33 @@
       "summary": "List the areas within a city",
       "tags": [
         "places"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/plans",
+      "operationId": "PlansController_list",
+      "summary": "Browse available maintenance plans",
+      "tags": [
+        "plans"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/plans/{id}",
+      "operationId": "PlansController_get",
+      "summary": "Get details of a maintenance plan",
+      "tags": [
+        "plans"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/plans/{id}/subscribe",
+      "operationId": "PlansController_subscribe",
+      "summary": "Subscribe to a maintenance plan",
+      "tags": [
+        "plans"
       ]
     },
     {
@@ -1827,6 +1908,24 @@
       "summary": "List the times a provider can be booked on a day",
       "tags": [
         "search"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/subscriptions/{id}",
+      "operationId": "SubscriptionsController_get",
+      "summary": "Get details of a subscription",
+      "tags": [
+        "plans"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/subscriptions/{id}/cancel",
+      "operationId": "SubscriptionsController_cancel",
+      "summary": "Cancel a maintenance plan subscription",
+      "tags": [
+        "plans"
       ]
     },
     {

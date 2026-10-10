@@ -17,7 +17,7 @@ export type AccountType =
 export type LedgerTxType = 'CAPTURE' | 'RELEASE' | 'REFUND' | 'COMMISSION' | 'CASH_SETTLEMENT' | 'CANCEL_FEE' | 'PENALTY' | 'PAYOUT' | 'PAYOUT_CONFIRM' | 'DEBT_PAYMENT' | 'PLAN_PURCHASE' | 'PLAN_RELEASE' | 'ADJUSTMENT' | 'REVERSAL';
 
 /** `owner`/`booking` are the dimensions that make an account unique per (type, owner, booking); leave out what the account type does not use. */
-export type LedgerLine = { account: AccountType; direction: 'DEBIT' | 'CREDIT'; amountPaisa: bigint; ownerUserId?: string; bookingId?: string };
+export type LedgerLine = { account: AccountType; direction: 'DEBIT' | 'CREDIT'; amountPaisa: bigint; ownerUserId?: string; bookingId?: string; subscriptionId?: string };
 
 export type LedgerPosting = { type: LedgerTxType; bookingId?: string; idempotencyKey: string; memo?: string; createdBy?: string | null; reversesTransactionId?: string | null; lines: readonly LedgerLine[] };
 
@@ -55,10 +55,10 @@ export class LedgerService {
   }
 
   private async account(tx: Prisma.TransactionClient, line: LedgerLine): Promise<string> {
-    // The uniqueness is NULLS NOT DISTINCT, so the same (type, owner, booking) always lands on one row. DO NOTHING (then read) rather
+    // The uniqueness is NULLS NOT DISTINCT, so the same (type, owner, booking, subscription) always lands on one row. DO NOTHING (then read) rather
     // than DO UPDATE: an update would row-lock the shared GATEWAY_CLEARING account for the whole transaction on every posting.
     const inserted = await tx.$queryRaw<{ id: string }[]>(
-      Prisma.sql`INSERT INTO ledger_accounts(type, owner_user_id, booking_id) VALUES (${line.account}::account_type, ${line.ownerUserId ?? null}::uuid, ${line.bookingId ?? null}::uuid)
+      Prisma.sql`INSERT INTO ledger_accounts(type, owner_user_id, booking_id, subscription_id) VALUES (${line.account}::account_type, ${line.ownerUserId ?? null}::uuid, ${line.bookingId ?? null}::uuid, ${line.subscriptionId ?? null}::uuid)
         ON CONFLICT ON CONSTRAINT ledger_accounts_uniq DO NOTHING RETURNING id`
     );
     const rows =
@@ -66,7 +66,7 @@ export class LedgerService {
         ? inserted
         : await tx.$queryRaw<{ id: string }[]>(
             Prisma.sql`SELECT id FROM ledger_accounts WHERE type = ${line.account}::account_type AND owner_user_id IS NOT DISTINCT FROM ${line.ownerUserId ?? null}::uuid
-              AND booking_id IS NOT DISTINCT FROM ${line.bookingId ?? null}::uuid AND subscription_id IS NULL`
+              AND booking_id IS NOT DISTINCT FROM ${line.bookingId ?? null}::uuid AND subscription_id IS NOT DISTINCT FROM ${line.subscriptionId ?? null}::uuid`
           );
     const id = rows[0]?.id;
     if (id === undefined) throw new Error('Ledger account upsert returned no row');
