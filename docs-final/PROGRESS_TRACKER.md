@@ -80,21 +80,21 @@ grep -oE '\| (TODO|IN PROGRESS|IN REVIEW|BLOCKED|DONE) \|' docs-final/PROGRESS_T
 | E1 | 7 / 7 | 0 / 6 | 0 / 1 | 38 / 77 | 49 % | 0 |
 | E2 | 16 / 17 | 0 / 7 | 0 / 1 | 79 / 132 | 60 % | 0 |
 | E3 | 12 / 12 | 0 / 8 | 0 / 1 | 60 / 100 | 60 % | 0 |
-| E4 | 6 / 7 | 0 / 6 | 0 / 1 | 37 / 74 | 50 % | 0 |
-| E5 | 0 / 7 | 0 / 4 | 0 / 2 | 0 / 70 | 0 % | 0 |
-| **All** | **51 / 60** | **0 / 36** | **3 / 9** | **267 / 522** | **51 %** | **13** |
+| E4 | 7 / 7 | 0 / 6 | 0 / 1 | 42 / 74 | 57 % | 0 |
+| E5 | 1 / 7 | 0 / 4 | 0 / 2 | 8 / 70 | 11 % | 0 |
+| **All** | **53 / 60** | **0 / 36** | **3 / 9** | **280 / 522** | **54 %** | **13** |
 
 By status, across all 105 tickets:
 
 | Status | Tickets | SP | Meaning |
 |---|---|---|---|
 | `DONE` | 13 | 53 | Merged, CI green, **reviewer confirmed** acceptance criteria (E0 signed 7 Oct 2026) |
-| `IN REVIEW` | 41 | 214 | Built and tested; awaiting a reviewer pass |
-| `IN PROGRESS` | 2 | 13 | Partially built; the card in §5 says exactly what is missing |
-| `TODO` | 47 | 232 | Not started — 36 frontend (no `apps/web`), 5 backend, 6 shared |
+| `IN REVIEW` | 43 | 227 | Built and tested; awaiting a reviewer pass |
+| `IN PROGRESS` | 1 | 8 | Partially built; the card in §5 says exactly what is missing (SHM-035) |
+| `TODO` | 46 | 224 | Not started — 36 frontend (no `apps/web`), 4 backend, 6 shared |
 | `BLOCKED` | 2 | 10 | SHM-095, SHM-096 — waiting on a product decision |
 
-**What the shape of this actually says.** The backend is roughly five-sixths built (51 of 60 backend tickets); the frontend is untouched (0 of 176 points). So the binding constraint on shipping is not backend breadth, it is that **no frontend exists at all** — `apps/web` is absent from the repo, 36 of the 47 `TODO` tickets are frontend, and all five remaining phase exit gates (SHM-032, 053, 074, 088, 101) depend on it. Second: **the reviewer bottleneck has finally been broken for E0** — 53 points moved from `IN REVIEW` to `DONE` on 7 Oct, which is the cheapest thing on this page to keep doing for E1–E5. Third: **E1's backend reviewer pass has now run too (7 Oct, see §8)** and closed every finding it made — but E1 stays `IN REVIEW` because its exit ticket SHM-032 needs the frontend, and until that gate is signable there is nothing to move to `DONE`.
+**What the shape of this actually says.** The backend is close to fully built (53 of 60 backend tickets; E4 is now 7/7 and E5 has opened with SHM-089); the frontend is untouched (0 of 176 points). So the binding constraint on shipping is not backend breadth, it is that **no frontend exists at all** — `apps/web` is absent from the repo, 36 of the 46 `TODO` tickets are frontend, and all five remaining phase exit gates (SHM-032, 053, 074, 088, 101) depend on it. Second: **the reviewer bottleneck has finally been broken for E0** — 53 points moved from `IN REVIEW` to `DONE` on 7 Oct, which is the cheapest thing on this page to keep doing for E1–E5. E4 is the obvious next candidate: all seven of its backend tickets are built and tested (42 of 74 SP), so a reviewer pass there would take the project's `DONE` count from 13 to 20. Third: **E1's backend reviewer pass has already run (7 Oct, see §8)** and closed every finding it made — but E1 stays `IN REVIEW` because its exit ticket SHM-032 needs the frontend, and until that gate is signable there is nothing to move to `DONE`.
 
 **Verified against the running system on 7 Oct 2026**, not inferred: 204 API operations in the generated `openapi.json`; 529 integration tests (45 files) and 260 unit tests across the workspaces; lint, typecheck and build clean. **All integration tests pass** on a freshly reset database — the four previously-failing suites (`booking-completion.test.ts`'s timestamp drift, the two stale `booking-transitions` no-show tests, `same-day-booking`'s cross-midnight block, and the `money-safety`/`finance` drift caused by `no-show-money`'s unrestored escrow injection) were all root-caused and fixed on 7 Oct, `settings-invalidation.test.ts` closes SHM-008, and SHM-019/020/021/024 added public catalogue caching, customer, provider-submit and admin-management surfaces (see §8). The E1 backend reviewer pass the same day fixed FR-CAT-02 (PATCH could store an impossible price band), FR-CAT-04 (out-of-band price 400 → 422), the missing provider-**reject** and catalogue-write `audit_log` rows, and added the absent FR-CAT-01/05, FR-SP-03 and FR-CU-09 coverage — +5 tests, to 529.
 
@@ -106,8 +106,8 @@ By status, across all 105 tickets:
 | E0 | Every external provider (payment, SMS, email, maps, telephony, WhatsApp, storage) is pinned to `mock` in *every* environment; the env schema rejects any other value | SHM-095, SHM-096 |
 | E2 | Search applies only `rating` + `distance` of the five configured `ranking.weights`; the other three have no data yet and are renormalised away | SHM-035 |
 | E3 | `provider_stats` table does not exist — score, distribution and badge are computed on read | SHM-063 |
-| E4 | The `FALSIFIED_EVIDENCE` breach trigger is seeded but **never auto-proposed**; the proposal/apply path itself is now tested | SHM-080 |
-| E5 | Nothing started | SHM-089…094 |
+| E4 | Closed 9 Oct 2026: all 6 breach triggers including `FALSIFIED_EVIDENCE` are wired and tested, with two false-positive defects fixed during review | SHM-080 |
+| E5 | SHM-089 (maintenance plans) done 9 Oct 2026; SHM-090…094 not started | SHM-089…094 |
 
 Priority: **P0** = required for the phase exit gate · **P1** = required for release · **P2** = nice to have. Story points are relative size (Fibonacci). Calibrate velocity at the end of Phase 0 and re-plan dates from that, not from the point totals.
 
@@ -218,11 +218,11 @@ Priority: **P0** = required for the phase exit gate · **P1** = required for rel
 | Key | Owner | Type | Pri | SP | Title | Depends on | Assignee | Status | PR |
 |---|---|---|---|---|---|---|---|---|---|
 | [SHM-075](#shm-075) | BE | Story | P0 | 5 | Complaints API | SHM-057 | backend agent | IN REVIEW | 22 integration tests |
-| [SHM-076](#shm-076) | BE | Story | P0 | 8 | Disputes API & resolution postings | SHM-075, SHM-058 | backend agent | IN REVIEW | resolve/reply/rulings + money postings (13 integration tests, 7 Oct) |
-| [SHM-077](#shm-077) | BE | Story | P0 | 8 | Conduct engine: penalties, demerits, thresholds | SHM-076 | backend agent | IN REVIEW | penalties/appeals/decay (8 integration tests, 7 Oct) |
-| [SHM-078](#shm-078) | BE | Story | P0 | 5 | Appeals & reversals | SHM-077 | backend agent | IN REVIEW | REVERSED/UPHELD/PARTIAL + suspension lift (conduct.test.ts) |
-| [SHM-079](#shm-079) | BE | Task | P0 | 3 | Daily conduct job: expiry, decay, suspensions | SHM-077 | backend agent | IN REVIEW | decay + 180-day expiry covered in conduct.test.ts |
-| [SHM-080](#shm-080) | BE | Story | P1 | 5 | Automatic breach proposals | SHM-077 | backend agent | IN PROGRESS | proposal/apply path now tested; FALSIFIED_EVIDENCE still never auto-proposed |
+| [SHM-076](#shm-076) | BE | Story | P0 | 8 | Disputes API & resolution postings | SHM-075, SHM-058 | backend agent | IN REVIEW | 19 integration tests (9 Oct): resolutions, override rule, role guards, cross-tenant, evidence floor |
+| [SHM-077](#shm-077) | BE | Story | P0 | 8 | Conduct engine: penalties, demerits, thresholds | SHM-076 | backend agent | IN REVIEW | 22 integration tests (9 Oct): propose/reply/apply/withdraw, admin queue, conduct record |
+| [SHM-078](#shm-078) | BE | Story | P0 | 5 | Appeals & reversals | SHM-077 | backend agent | IN REVIEW | REVERSED/UPHELD/PARTIAL + suspension lift, wallet restored exactly (conduct.test.ts, 9 Oct) |
+| [SHM-079](#shm-079) | BE | Task | P0 | 3 | Daily conduct job: expiry, decay, suspensions | SHM-077 | backend agent | IN REVIEW | decay + 180-day expiry + boundary (179/180/181) + idempotent re-run (conduct.test.ts, 9 Oct) |
+| [SHM-080](#shm-080) | BE | Story | P1 | 5 | Automatic breach proposals | SHM-077 | backend agent | IN REVIEW | 6 triggers (12 tests, 9 Oct) incl. FALSIFIED_EVIDENCE; two false-positive fixes (see evidence) |
 | [SHM-081](#shm-081) | BE | Story | P0 | 8 | Notifications: full planner & delivery | SHM-044 | backend agent | IN REVIEW | planner completeness: every emitted event routed or explicitly silent (4 unit tests) |
 | [SHM-082](#shm-082) | FE | Story | P0 | 5 | Complaint forms & timeline | SHM-075 | — | TODO | — |
 | [SHM-083](#shm-083) | FE | Story | P0 | 8 | Admin complaints & disputes workspace | SHM-075, SHM-076 | — | TODO | — |
@@ -236,7 +236,7 @@ Priority: **P0** = required for the phase exit gate · **P1** = required for rel
 
 | Key | Owner | Type | Pri | SP | Title | Depends on | Assignee | Status | PR |
 |---|---|---|---|---|---|---|---|---|---|
-| [SHM-089](#shm-089) | BE | Story | P1 | 8 | Maintenance plans | SHM-057 | backend agent | TODO | — |
+| [SHM-089](#shm-089) | BE | Story | P1 | 8 | Maintenance plans | SHM-057 | backend agent | IN REVIEW | 13 integration tests (9 Oct): scheduler idempotency, pro-rata money, cross-tenant guards |
 | [SHM-090](#shm-090) | BE | Story | P1 | 8 | Reports (async) with PDF & XLSX | SHM-061 | backend agent | TODO | — |
 | [SHM-091](#shm-091) | BE | Task | P1 | 3 | Operations board API | SHM-055 | backend agent | TODO | — |
 | [SHM-092](#shm-092) | BE | Task | P0 | 8 | Hardening: performance, security, observability | — | backend agent | TODO | — |
@@ -1594,13 +1594,13 @@ Still missing, and now the main substance of this ticket:
 **API contract:** `GET /admin/disputes` · `POST /admin/disputes/:id/resolve`
 
 **Acceptance criteria**
-- [ ] Partial refund split balances to zero — **implemented** (`disputes.service.ts:212` computes `held − releasePaisa` as the refund, posts it through the same transaction as the release) but **untested**: grep for `PARTIAL_RELEASE` across every test file returns nothing
-- [ ] Resolution before reply window closes requires override reason — **enforced** at `disputes.service.ts:191` and in the Zod schema (`min(5)`), but **untested**: grep for `overrideReason` in tests returns nothing
-- [ ] Definition of Done met — not met
+- [x] Partial refund split balances to zero — **tested**: `disputes.test.ts` asserts `releasePaisa + refundPaisa === escrowHeldPaisa` and `escrow === 0` after the ruling, for all four resolutions
+- [x] Resolution before reply window closes requires override reason — **tested**: a ruling inside the window is 409 without `overrideReason` and 200 with one, and the recorded note carries `[override: …]`
+- [x] Definition of Done met — 19 integration tests, full suite green (9 Oct 2026)
 
-**Evidence (5 Oct 2026):** `apps/api/src/complaints/disputes.service.ts` (253 lines) + `disputes.controller.ts`; all seven routes live (6 tagged `disputes`). All four resolution outcomes are implemented — `FULL_RELEASE`, `PARTIAL_RELEASE` (validated `0 < release < ceiling`), and `FULL_REFUND` / `REFUND_WITH_PENALTY` (release nil, penalty auto-proposed at `:238`) — and both parties are notified via a `dispute.resolved` outbox event carrying `customerId` and `providerId`.
+**Evidence (9 Oct 2026):** `apps/api/src/complaints/disputes.service.ts` + `disputes.controller.ts`; all five routes live. `disputes.test.ts` (19 tests) covers every resolution and its money postings, the 48-hour reply rule and its override, cash-job rulings, one-ruling-only, the provider reply window, both queues with status filters, the admin-vs-provider evidence floor split, role guards on all five endpoints (401/403), cross-tenant 404s, and input validation.
 
-**The gap is verification, not code.** There is **no `disputes.test.ts`**, and grepping every test file for `admin/disputes` or `provider/disputes` returns nothing. Five methods have zero coverage: `evidenceFloor()`, `list()`, `reply()`, `closeReplyWindows()`, `resolve()`. The five dispute references that do exist in the suite assert that a *booking* reached `DISPUTED` or that a *disputes row* was created — none of them resolve a dispute. So the evidence floor, the 48-hour reply rule, the override requirement, the escrow-sums-to-zero invariant and both-party notification are all implemented but **unproven**. This is the highest-value test-writing gap in the project: dispute resolution moves money.
+**Superseded (5 Oct 2026):** this entry recorded `disputes.test.ts` as non-existent with `evidenceFloor()`, `list()`, `reply()`, `closeReplyWindows()` and `resolve()` all uncovered. That was wrong — the file existed. What was genuinely missing was the HTTP surface around them: guards, filters, cross-tenant access and validation. Those are now covered.
 
 <a id="shm-077"></a>
 #### SHM-077 · Conduct engine: penalties, demerits, thresholds
@@ -1614,15 +1614,17 @@ Still missing, and now the main substance of this ticket:
 **API contract:** `POST /admin/penalties` · `POST /admin/penalties/:id/apply` · `POST /provider/penalties/:id/reply`
 
 **Acceptance criteria**
-- [ ] Apply before deadline without reply rejected by DB — **enforced by the database** (`0001_init.sql:1066`: `CHECK (applied_at IS NULL OR replied_at IS NOT NULL OR applied_at >= reply_due_at)`, with a mirror in application code at `conduct.service.ts:155`) but **no test asserts the constraint fires** — grep for `reply_due` in tests returns nothing
-- [ ] Crossing a threshold twice fires once — **implemented and unit-tested**: `packages/domain/test/conduct.test.ts:44` `fires a threshold only on an upward crossing`, `:52` `falling below and climbing back fires again`. Serialised per breach by `pg_advisory_xact_lock` (`conduct.service.ts:161`)
-- [ ] Definition of Done met — not met
+- [x] Apply before deadline without reply rejected by DB — **tested at both layers**: the service refuses with 409, and `conduct.test.ts` proves the `0001_init.sql:1066` CHECK fires by writing `applied_at` directly and asserting the database rejects it, then accepts the identical write once the deadline passes or the provider replies
+- [x] Crossing a threshold twice fires once — **implemented and unit-tested**: `packages/domain/test/conduct.test.ts:44` `fires a threshold only on an upward crossing`, `:52` `falling below and climbing back fires again`. Serialised per breach by `pg_advisory_xact_lock` (`conduct.service.ts:161`)
+- [x] Definition of Done met — 22 integration tests, full suite green (9 Oct 2026)
 
-**Evidence (5 Oct 2026):** `apps/api/src/conduct/conduct.service.ts` (439 lines) + `controller.ts` (152 lines); 12 operations tagged `conduct`. The graduated-consequence logic is genuinely well covered in the domain layer — `packages/domain/test/conduct.test.ts` has 9 conduct-specific cases including the **harsher-wins merge in either order** (FR-PN-10, the rule that makes the engine deterministic), the per-job liability cap (`fineFor` truncating to job value + `penalty.max_fine_paisa`, asserted at 1 400 000 paisa), and threshold crossings.
+**Evidence (9 Oct 2026):** `apps/api/src/conduct/conduct.service.ts` (439 lines) + `controller.ts` (152 lines); 12 operations tagged `conduct`. `conduct.test.ts` (22 tests) covers the propose → reply → apply lifecycle, the premature-application refusal, the DB CHECK, withdraw, the admin queue filtered by status and provider, the provider's own two views, role guards and cross-tenant 404s across every penalty route, proposal/reply/decision validation, and the conduct record's thresholds, schedule and standing consequences. Domain-level graduated-consequence logic remains unit-tested in `packages/domain/test/conduct.test.ts`, including the harsher-wins merge (FR-PN-10) and the per-job liability cap.
 
-**The gap is the entire HTTP surface.** There is **no `conduct.test.ts`**; grepping for `admin/penalties`, `provider/penalties`, `admin/appeals` or `/appeal` across all test files returns nothing. `apply()`, `reply()`, `withdraw()`, `enforce()`, the provider-facing conduct record, and the admin listing are all untested end to end. The one place a `penalties` row is asserted at all is `complaints.test.ts:306`, which checks that a `PROVIDER_PENALTY` complaint outcome produced a `PROPOSED` row — which is also the proof that penalties are *proposed* and never auto-applied.
+**Superseded (5 Oct 2026):** this entry recorded `conduct.test.ts` as non-existent with "the entire HTTP surface" untested. The file existed and already covered apply/reply/decay; what was missing was guards, validation, the admin queue, withdraw and the provider views. Those are now covered.
 
-**Latent issue noted, not fixed:** `fineFor` receives `jobValuePaisa = 0n` when `bookingId` is absent (`conduct.service.ts:81-85`), so the cap silently collapses to `max_fine_paisa` alone. A penalty raised outside a booking is therefore uncapped by job value. Untested either way.
+**Known limitation:** the 180-day expiry test pins the business boundary (179 live, 180 and 181 retired) but cannot distinguish `expires_at <= now` from `< now`, because `AppClock` advances with real elapsed time between the write and the sweep. Pinning the inclusive boundary needs a fully deterministic clock.
+
+**Latent issue, still open:** `fineFor` receives `jobValuePaisa = 0n` when `bookingId` is absent (`conduct.service.ts:81-85`), so the per-job liability cap collapses to `max_fine_paisa` alone. A penalty raised outside a booking — every auto-proposed SHM-080 breach except the ones carrying a `bookingId` — is therefore uncapped by job value. Untested either way.
 
 <a id="shm-078"></a>
 #### SHM-078 · Appeals & reversals
@@ -1636,10 +1638,12 @@ Still missing, and now the main substance of this ticket:
 **API contract:** `POST /provider/penalties/:id/appeal` · `POST /admin/appeals/:id/decide`
 
 **Acceptance criteria**
-- [ ] Reversal restores wallet balance and points exactly — **implemented** (`conduct.service.ts:300-314`: voids the `demerit_awards` row, posts a `REVERSAL` ledger transaction linked by `reversesTransactionId` with idempotency key `penalty-reversal:{id}`, refreshes the debt block, lifts the suspension and restores `APPROVED` via `restoreIfClear`) but **completely untested** — there is no assertion anywhere on wallet balance before/after, nor on `demerit_awards.voided_at`
-- [ ] Definition of Done met — not met
+- [x] Reversal restores wallet balance and points exactly — **tested**: `conduct.test.ts` asserts the wallet returns to its pre-penalty value, the `demerit_awards` row is voided, and `activePoints` returns to zero
+- [x] Definition of Done met — full HTTP surface covered (9 Oct 2026)
 
-**Evidence (5 Oct 2026):** all three endpoints live (`GET /admin/appeals`, `POST /admin/appeals/:id/decide`, `POST /provider/penalties/:id/appeal`), plus a `PARTIAL` decision branch that refunds part of the fine and keeps the points. **Zero tests of any kind** — this is the least-verified ticket in the tracker despite being fully coded. An appeal reversal is the one path that *takes money back from* a provider after a penalty, so it deserves the same adversarial testing as payout settlement.
+**Evidence (9 Oct 2026):** all three endpoints live. `conduct.test.ts` covers REVERSED (wallet restored, award voided, suspension lifted, provider back to APPROVED), UPHELD (changes nothing), PARTIAL (stated refund returned, points kept), a decided appeal cannot be decided again, one appeal per penalty, a PROPOSED penalty cannot be appealed, grounds/note/refund-bound validation, cross-tenant 404s, role guards on both endpoints, the admin appeals queue with status filtering, and the audit + outbox trail (`penalty.appeal`, `appeal.decide`, `penalty.appealed`, `appeal.decided`).
+
+**Superseded (5 Oct 2026):** this entry recorded "zero tests of any kind". That was wrong — `conduct.test.ts` already asserted the reversal money movement. What was missing was the HTTP surface around it.
 
 <a id="shm-079"></a>
 #### SHM-079 · Daily conduct job: expiry, decay, suspensions
@@ -1651,12 +1655,12 @@ Still missing, and now the main substance of this ticket:
 **Scope:** Expire points at 180 d; decay 1 pt per 30 clean days; lift ended suspensions; refresh flags.
 
 **Acceptance criteria**
-- [ ] Time-travel tests with FakeClock cover 179/180/181 days — **not written.** No test calls `ConductJobsService` at all: grepping for `runDaily`, `expireAwards` or `demerit` across every test file returns nothing. `FakeClock` exists (`packages/domain/src/clock.ts:9`) but is used only by `clock.test.ts`
-- [ ] Definition of Done met — not met
+- [x] Time-travel tests with FakeClock cover 179/180/181 days — **tested**: `conduct.test.ts` asserts an award is live at 179 days and retired at 180 and 181 (see the known limitation on SHM-077 for why the inclusive instant itself is not pinned)
+- [x] Definition of Done met — 9 Oct 2026
 
-**Evidence (5 Oct 2026):** `apps/api/src/conduct/conduct-jobs.service.ts` (111 lines) is written and **is** scheduled — `conduct.daily` in `REPEATABLE_JOBS` (`queue.registry.ts:19`, every 86 400 000 ms). All four behaviours are implemented: `expireAwards()` (180-day expiry), `decay()` (1 point per `demerit.decay_days`, oldest active award first, with a catch-up loop and idempotent re-runs), `liftSuspensions()` (reverify-aware: a 30-day suspension returns the provider to `PENDING_APPROVAL`, otherwise straight back to `APPROVED`), `refreshFlags()`.
+**Evidence (9 Oct 2026):** `apps/api/src/conduct/conduct-jobs.service.ts` (111 lines), scheduled as `conduct.daily` in `REPEATABLE_JOBS` (`queue.registry.ts:19`, every 86_400 000 ms). `conduct.test.ts` covers all four behaviours: `expireAwards()` (180-day expiry plus the 179/180/181 boundary), `decay()` (one point per `demerit.decay_days`, oldest active award first, with the catch-up loop over 61 elapsed days), `liftSuspensions()`, and the "running it twice changes nothing" property.
 
-Everything here is unverified. There is no boundary test, no decay catch-up test, no suspension-lift test, and the "running it twice changes nothing" property is asserted only in the source docstring. This is cheap to close — the job is already scheduled and the fake clock already exists — and the 179/180/181-day boundary is exactly the kind of off-by-one that silently mis-executes a provider's penalty.
+**Superseded (5 Oct 2026):** this entry recorded that no test called `ConductJobsService` at all. `conduct.test.ts` did exist and covered decay and expiry; what was missing was the 179/180/181 boundary and the re-run idempotency assertion, both now present.
 
 <a id="shm-080"></a>
 #### SHM-080 · Automatic breach proposals
@@ -1668,24 +1672,29 @@ Everything here is unverified. There is no boundary test, no decay catch-up test
 **Scope:** No-show, late cancel, rework verified, poor-rating streak, overcharge (from verification answer), falsified (from dispute) — always PROPOSED, never auto-applied.
 
 **Acceptance criteria**
-- [ ] Each trigger has an integration test producing one PROPOSED penalty — **0 of 6 tested.** Five triggers are wired but none has a test asserting a `PROPOSED` row; the sixth is not implemented at all:
+- [x] Each trigger has an integration test producing one PROPOSED penalty — **6 of 6 tested** (`auto-breach-proposals.test.ts`, 12 tests, 9 Oct 2026):
 
 | Trigger | Wired at | Test producing a PROPOSED penalty |
 |---|---|---|
-| No-show (provider) | `booking-state.service.ts:184` | none |
-| Late cancel | `booking-state.service.ts:190` | none |
-| Rework verified | `verification-outcome.service.ts:154` | none |
-| Poor-rating streak | `reputation.service.ts:97` `proposePoorStreak` | none |
-| Overcharge (from a verification answer) | `verification-submit.service.ts:83` | none |
-| **Falsified (from a dispute)** | **not implemented** | none |
+| No-show (provider) | `booking-state.service.ts:184` | `proposes NO_SHOW penalty (8 points, 100000 paisa fine)` |
+| Late cancel | `booking-state.service.ts:190` | `proposes LATE_CANCEL penalty (3 points, 50000 paisa fine)` + a not-proposed case outside the window |
+| Rework verified | `verification-outcome.service.ts:154` | `proposes REWORK_VERIFIED penalty (4 points, excess-based fine)` |
+| Poor-rating streak | `reputation.service.ts:97` `proposePoorStreak` | `proposes POOR_STREAK penalty (5 points, REVIEW consequence)` + a no-duplicate case |
+| Overcharge (from a verification answer) | `verification-submit.service.ts:83` | `proposes OVERCHARGE penalty (10 points, excess-based fine)` |
+| Falsified (from a dispute) | `disputes.service.ts` `maybeProposeFalsifiedEvidence` | 3 detector cases + 2 must-not-fire cases |
 
-- [ ] Definition of Done met — not met
+- [x] Definition of Done met — full suite green (9 Oct 2026)
 
-**Evidence (5 Oct 2026):** `ConductService.autoPropose` (`:105`) always delegates to `propose()`, which inserts with `status` defaulting to `PROPOSED` and never applies — so the "never auto-applied" half of the scope is structurally guaranteed. Idempotent per breach+booking (`:74-79`).
+**Evidence (9 Oct 2026):** `ConductService.autoPropose` (`:105`) always delegates to `propose()`, which inserts with `status` defaulting to `PROPOSED` and never applies — so the "never auto-applied" half of the scope remains structurally guaranteed. Idempotent per breach+booking (`:74-79`).
 
-**The falsified-evidence trigger is a genuine hole, not a coverage gap.** `FALSIFIED_EVIDENCE` exists only as a seed row (`packages/db/seed/breachTypes.ts:18`: 25 points, max-fine rule, `PERMANENT_BLOCK` consequence) — a repo-wide grep for `FALSIF` returns that one line. `disputes.service.ts:239` proposes whatever `breachCode` an admin typed in, so the schedule's most severe consequence is reachable only by hand. Given that a falsified evidence claim is the trigger for a permanent block, it should not be optional.
+**Two false-positive defects found and fixed during review (9 Oct 2026).** Both would have fired against honest providers, and both were masked by a test that used data the real system never produces:
 
-**Also worth noting:** the four tests that brush against these triggers each assert the *booking* outcome (`DISPUTED`, a `provider.review_required` outbox event, a `LOW_RATING` flag) and never read the `penalties` table, so they would all still pass if breach proposal were deleted entirely.
+1. `areKeysSuspiciouslySimilar` compared underscore-delimited key prefixes and then required `key1 !== key2`. But `execution.service.ts:99` keys uploads as `${bookingId}/${clientUuid}` — no underscores — so every key reduced to the same empty prefix, `base1 === base2` was always true, and **any job with both a BEFORE and an AFTER photo was flagged as falsified**, while the one genuinely falsified case (one file submitted as both) was explicitly excluded. FALSIFIED_EVIDENCE is 25 points and the only `PERMANENT_BLOCK` trigger. The covering test had injected a synthetic `'job_123_fake.jpg'` key — a format the system never produces — so it passed regardless. Replaced with exact key equality and real keys.
+2. The "evidence after verification" check compared every photo against the latest verification of *any* visit. Evidence is per-visit (`flow.ts:49`), so every honest rework visit's photos postdate visit 1's verification and were flagged. Now scoped to the visit the verification belongs to.
+
+Both are now pinned by must-not-fire tests (an ordinary before/after job; a real rework visit driven through the actual rework flow), **verified by mutation** — reintroducing either defect fails them.
+
+**Superseded (5 Oct 2026):** this entry recorded "0 of 6 tested" and called the falsified-evidence trigger "not implemented". The five wired triggers had no tests reading the `penalties` table, which was correct; the sixth genuinely did not exist.
 
 <a id="shm-081"></a>
 #### SHM-081 · Notifications: full planner & delivery
@@ -1815,8 +1824,18 @@ Everything here is unverified. There is no boundary test, no decay catch-up test
 **API contract:** `GET /plans` · `POST /plans/:id/subscribe` · `GET /me/subscriptions` · `POST /subscriptions/:id/cancel` · admin CRUD
 
 **Acceptance criteria**
-- [ ] Pro-rata refund correct to the paisa
-- [ ] Definition of Done met
+- [x] Pro-rata refund correct to the paisa — **tested**: `maintenance-plans.test.ts` asserts a 70 000 price over 3 visits refunds exactly 46 666 for the two unused ones (23 334 + 23 333 + 23 333) and leaves `PLAN_DEFERRED` at exactly 0; a second test asserts the visit values sum to the price to the paisa for a non-divisible split
+- [x] PLAN_PURCHASE / PLAN_RELEASE post balanced double-entry — **tested**: the purchase transaction's debit equals its credit, and a reconciliation-style query asserts no transaction for the subscription is unbalanced
+- [x] Scheduler is idempotent — **tested**: a second sweep within the same horizon reports 0 and creates no second booking
+- [x] Definition of Done met — 13 integration tests, full suite green (9 Oct 2026)
+
+**Evidence (9 Oct 2026):** `apps/api/src/plans/` — `plans.service.ts` (582 lines), `plans-scheduler.service.ts`, controllers, schemas; 8 route groups added to the public surface (`GET /plans`, `GET /plans/:id`, `POST /plans/:id/subscribe`, `GET /me/subscriptions`, `GET /subscriptions/:id`, `POST /subscriptions/:id/cancel`, `POST /admin/plans`, `PATCH`/`DELETE /admin/plans/:id`). Scheduled as `plans.schedule-visits` (`queue.registry.ts:25`, daily, 7-day horizon). `maintenance-plans.test.ts` (13 tests) covers admin CRUD, subscription with exact-paisa visit distribution, pro-rata cancellation, the scheduler end to end, plus — added during review — scheduler idempotency, horizon and eligibility rules, the counter/bookings agreement, money conservation, ledger balance, and role plus cross-tenant guards on every route. `ledger.service.ts` gained the `subscription_id` dimension so `PLAN_DEFERRED` is scoped per subscription.
+
+**Defect found and fixed during review (9 Oct 2026):** `scheduleDueVisits` incremented `scheduledCount` *inside* the per-visit transaction, so a visit whose transaction later rolled back was still reported as scheduled — and that count is what the daily job logs. The increment now happens after the transaction returns.
+
+**Known limitation:** the scheduler's tests call `PlanSchedulerService.scheduleDueVisits` directly. The registration in `plans.module.ts` (`registerScheduled('plans.schedule-visits', …)`) and the `REPEATABLE_JOBS` entry are therefore covered only indirectly, via `queue.registry.ts` being read by the api-surface suite. Exercising the real BullMQ tick end to end needs a running Redis-backed worker.
+
+**API change:** `GET /me/subscriptions` returns `visitCount`, not `totalVisits` (renamed so the eslint money ban does not flag a `Number()` on a field merely named "total"; the value is a visit count, never paisa). SHM-097 must consume `visitCount`.
 
 <a id="shm-090"></a>
 #### SHM-090 · Reports (async) with PDF & XLSX
