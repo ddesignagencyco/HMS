@@ -1066,6 +1066,15 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/bookings/{id}/start-code",
+      "operationId": "BookingController_startCode",
+      "summary": "Show the start code on the customer’s screen",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/bookings/{id}/warranty-claim",
       "operationId": "BookingController_warrantyClaim",
       "summary": "Claim under warranty",
