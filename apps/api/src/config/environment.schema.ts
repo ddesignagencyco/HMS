@@ -79,7 +79,24 @@ export const environmentSchema = z
     // because "not production" is exactly the case that leaks. So it has to be asked
     // for by name. CI sets it explicitly; `.env.example` does too.
     DEV_INBOX_ENABLED: booleanFromEnv.default('false'),
-    OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(1_000)
+    OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(1_000),
+
+    /**
+     * Error reporting. No DSN means no Sentry client is initialised at all — the
+     * observability module is not loaded, nothing is buffered, nothing is queued.
+     *
+     * It is off by default rather than on: a DSN is a live destination, and silently
+     * shipping production errors to whatever project happens to be configured in the
+     * environment is worse than shipping none.
+     */
+    SENTRY_DSN: z.string().url().optional(),
+    SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
+    /**
+     * Below this in production the payload is still thrown, just not sent. Fatal
+     * crashes are the ones worth waking someone for; a warning nobody acts on is
+     * noise that trains people to ignore the channel.
+     */
+    SENTRY_MIN_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug']).default('error')
   })
   .superRefine((value, context) => {
     const add = (key: keyof typeof value, message: string) => context.addIssue({ code: 'custom', path: [key], message });

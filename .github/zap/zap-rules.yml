@@ -1,0 +1,32 @@
+# The alerts that gate a ZAP finding, for SHM-092.
+#
+# Split into "fails the build" and "reported only" on purpose. Everything in `fail` is either a
+# vulnerability or a header this service is now expected to set and has tests for; everything in
+# `warn` is a judgement call that needs a human and would otherwise train people to ignore the job.
+
+# Fails the build. A high or critical finding is a security regression; a missing header this
+# service has an explicit test for is a regression in that test's subject.
+fail:
+  - id: 40012 # Cross Site Scripting (Reflected)
+  - id: 40014 # Cross Site Scripting (Persistent)
+  - id: 40003 # Cross Site Scripting (DOM Based)
+  - id: 40018 # SQL Injection
+  - id: 40017 # SQL Injection (Blind)
+  - id: 90019 # Server Side Request Forgery
+  - id: 90020 # Remote XML External Entity Attack
+  - id: 10038 # Content-Security-Policy header not set
+  - id: 10035 # Strict-Transport-Security header not set (production; see the note below)
+  - id: 10063 # Permissions-Policy header not set
+  - id: 10010 # Cookie without HttpOnly
+  - id: 10011 # Cookie without Secure
+
+# Reported, does not fail.
+warn:
+  # Missing X-Powered-By / Server version disclosure. Genuinely worth removing, but it is an
+  # information-disclosure nit rather than a vulnerability, and it should not be able to block a PR
+  # that fixes something else.
+  - id: 10096
+  - id: 10023
+  # "Cookie issued without Secure flag" on a cookie set by a service running over plain HTTP in CI.
+  # Expected here, real in production, and ZAP cannot tell the difference.
+  - id: 10021

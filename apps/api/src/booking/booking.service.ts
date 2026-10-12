@@ -192,6 +192,12 @@ export class BookingService {
     } catch (error) {
       const meta = error instanceof Prisma.PrismaClientKnownRequestError ? (error.meta as { code?: unknown } | undefined) : undefined;
       if (meta?.code === EXCLUSION_VIOLATION) throw new DomainError('SLOT_TAKEN', 'That provider is no longer free at this time');
+      // 40001 serialization_failure, 40P01 deadlock_detected. Fifty simultaneous checkouts for one slot
+      // all take row locks on the same provider's calendar and Postgres may order two of them badly
+      // enough to abort one. The answer the customer needs is the same as for the exclusion violation —
+      // the slot went to someone else, so try another — but an untranslated deadlock escaped as a 500,
+      // which reads as "the platform is broken" rather than "that time is gone".
+      if (meta?.code === '40001' || meta?.code === '40P01') throw new DomainError('SLOT_TAKEN', 'That provider is no longer free at this time');
       throw error;
     }
   }
@@ -442,7 +448,10 @@ export class BookingService {
       const transition = canTransition(row.status as BookingStatus, 'start', 'PROVIDER');
       if (transition === null) throw new DomainError('ILLEGAL_TRANSITION', `Cannot start a booking in status ${row.status}`);
 
-      if (row.startOtpLockedUntil !== null && row.startOtpLockedUntil.getTime() > Date.now()) {
+      // The injected clock, not `Date.now()`: the lockout is a timed rule, and the rest of the start-code
+      // flow (issue, expiry) reads `this.clock`, so the two must agree or a lock can outlive its window
+      // or expire early depending on which clock answered.
+      if (row.startOtpLockedUntil !== null && row.startOtpLockedUntil.getTime() > this.clock.now().getTime()) {
         return { ok: false as const, code: 'OTP_LOCKED' as const, detail: 'Too many incorrect attempts. Ask the customer for the code again shortly.' };
       }
       if (row.startOtpHash === null) return { ok: false as const, code: 'OTP_INVALID' as const, detail: 'No start code has been issued for this booking yet' };
@@ -450,7 +459,7 @@ export class BookingService {
       const expectedHash = hashStartOtp(this.environment.values.OTP_PEPPER, bookingId, code);
       if (!constantTimeEquals(row.startOtpHash, expectedHash)) {
         const attempts = row.startOtpAttempts + 1;
-        const lockedUntil = attempts >= START_OTP_MAX_ATTEMPTS ? new Date(Date.now() + START_OTP_LOCK_MINUTES * 60_000) : null;
+        const lockedUntil = attempts >= START_OTP_MAX_ATTEMPTS ? new Date(this.clock.now().getTime() + START_OTP_LOCK_MINUTES * 60_000) : null;
         await tx.$executeRaw(
           Prisma.sql`UPDATE bookings SET start_otp_attempts = ${attempts}, start_otp_locked_until = ${lockedUntil === null ? null : lockedUntil.toISOString()}::timestamptz WHERE id = ${bookingId}::uuid`
         );

@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { callApi, adminSession, createTestApp, postJson, registerAndVerify, type TestUser } from './harness.js';
+import { AppClock } from '../../src/platform/app-clock.js';
 import { bearer, freezeInsideCallingHours, newProvider, prisma, unfreeze, completedJob, agentSession, dropLocks, claim, answeredCall, startVisit, doWorkAndComplete } from './flow.js';
 
 let app: NestExpressApplication;
@@ -44,13 +45,17 @@ const submitVerification = async (verificationId: string, body: Record<string, u
   return callApi(app, `/api/v1/agent/verifications/${verificationId}/submit`, bearer(agent.accessToken, postJson(body)));
 };
 
-// Helper to create a booking that stops at SCHEDULED (provider accepted but not departed)
+// Helper to create a booking that stops at SCHEDULED (provider accepted but not departed).
+// `hoursFromNow` is measured from the **application's** clock, not the wall clock: the suite runs
+// with a frozen clock, and a slot placed against `Date.now()` lands an unknown distance from the
+// "now" the code actually reads — which is how the LATE_CANCEL trigger came to be tested against
+// `Date.now()` in the first place.
 const createScheduledBooking = async (app: NestExpressApplication, provider: { id: string; accessToken: string; serviceId: number; areaId: number; user: TestUser }, hoursFromNow = 48) => {
   const customer = await registerAndVerify(app, 'CUSTOMER');
   
   const address = await callApi<{ id: string }>(app, '/customer/addresses', bearer(customer.accessToken, postJson({ label: 'Home', line1: 'House 1', areaId: provider.areaId, lat: 31.52, lng: 74.35, isDefault: true })));
   
-  const start = new Date(Date.now() + hoursFromNow * 3_600_000);
+  const start = new Date(app.get(AppClock).now().getTime() + hoursFromNow * 3_600_000);
   const created = await callApi<{ id: string; code: string; payment?: { paymentId: string } }>(
     app,
     '/bookings',
@@ -119,24 +124,25 @@ describe('SHM-080: Automatic breach proposals (each trigger produces a PROPOSED 
   });
 
 describe('LATE_CANCEL — provider cancels inside free-cancel window', () => {
-    it('proposes LATE_CANCEL penalty (3 points, 50000 paisa fine) when provider cancels late', async () => {
+    // `booking.free_cancel_hours` is 4. Slots are placed against the application's frozen clock so
+    // each case states a known distance from the "now" the trigger reads, rather than one that
+    // depends on the hour the suite happens to run.
+    const cancelHoursBeforeSlot = async (hoursBeforeSlot: number) => {
       const provider = await newProvider(app);
-      const { bookingId } = await createScheduledBooking(app, provider, 48); // Create far in future first
-      
-      // Set scheduled_start to 11:30 AM Pakistan time (1 hour after frozen clock at 10:30 AM)
-      // Free cancel window is 4 hours, so 1 hour ahead is inside the window
-      const scheduledStart = new Date();
-      scheduledStart.setUTCHours(6, 30, 0, 0); // 6:30 AM UTC = 11:30 AM Pakistan
-      if (scheduledStart.getTime() > Date.now()) {
-        scheduledStart.setUTCDate(scheduledStart.getUTCDate() - 1);
-      }
-      await prisma.$executeRaw(Prisma.sql`UPDATE bookings SET scheduled_start = ${scheduledStart.toISOString()}::timestamptz WHERE id = ${bookingId}::uuid`);
-      
-      // Provider cancels
+      const { bookingId } = await createScheduledBooking(app, provider, hoursBeforeSlot);
       await callApi(app, `/api/v1/bookings/${bookingId}/cancel`, bearer(provider.accessToken, postJson({ reason: 'Emergency' })));
-      
-      const penaltyId = await findAutoProposedPenalty(provider.id, 'LATE_CANCEL', bookingId);
+      return { provider, bookingId, penaltyId: await findAutoProposedPenalty(provider.id, 'LATE_CANCEL', bookingId) };
+    };
+    it('proposes LATE_CANCEL penalty (3 points, 50000 paisa fine) when provider cancels late', async () => {
+      const { provider, penaltyId } = await cancelHoursBeforeSlot(1);
       expect(penaltyId).not.toBeNull();
+
+      // The penalty belongs to *this* provider — `findAutoProposedPenalty` already filters on it,
+      // so restating it here is what proves the row is his and not a leftover from another case.
+      const owners = await prisma.$queryRaw<{ n: bigint }[]>(
+        Prisma.sql`SELECT count(*)::bigint as n FROM penalties WHERE id = ${penaltyId}::uuid AND provider_id = ${provider.id}::uuid`
+      );
+      expect(Number(owners[0]!.n)).toBe(1);
       
       const penalty = await prisma.$queryRaw<{ points: number; fine_paisa: bigint; status: string; evidence: PenaltyEvidence }[]>(
         Prisma.sql`SELECT bt.points, p.fine_paisa, p.status::text, p.evidence FROM penalties p JOIN breach_types bt ON bt.code = p.breach_code WHERE p.id = ${penaltyId}::uuid`
@@ -145,17 +151,19 @@ describe('LATE_CANCEL — provider cancels inside free-cancel window', () => {
       expect(penalty[0]!.fine_paisa).toBe(50_000n);
       expect(penalty[0]!.status).toBe('PROPOSED');
       expect(penalty[0]!.evidence.automatic).toBe(true);
-      expect(typeof penalty[0]!.evidence.hoursBeforeSlot).toBe('number');
+      expect(penalty[0]!.evidence.hoursBeforeSlot).toBe(1);
     });
 
     it('does NOT propose LATE_CANCEL when provider cancels outside free-cancel window', async () => {
-      const provider = await newProvider(app);
-      const { bookingId } = await createScheduledBooking(app, provider, 48); // 48 hours from now (outside free cancel window)
-      
-      // Provider cancels
-      await callApi(app, `/api/v1/bookings/${bookingId}/cancel`, bearer(provider.accessToken, postJson({ reason: 'Schedule conflict' })));
-      
-      const penaltyId = await findAutoProposedPenalty(provider.id, 'LATE_CANCEL', bookingId);
+      const { penaltyId } = await cancelHoursBeforeSlot(6);
+      expect(penaltyId).toBeNull();
+    });
+
+    it('does NOT propose LATE_CANCEL just past the window, which a wall-clock slot used to blur', async () => {
+      // 4h01m ahead. The trigger used to compare `scheduled_start` with `Date.now()` while the rest of
+      // the state machine read the injected clock, so "inside the window" was decided against a
+      // different "now" than every other rule in the booking.
+      const { penaltyId } = await cancelHoursBeforeSlot(4 + 1 / 60);
       expect(penaltyId).toBeNull();
     });
   });
@@ -613,6 +621,58 @@ describe('LATE_CANCEL — provider cancels inside free-cancel window', () => {
         Prisma.sql`SELECT id FROM disputes WHERE booking_id = ${reworkBookingId}::uuid ORDER BY created_at DESC LIMIT 1`
       );
       const disputeId = dispute[0]!.id;
+
+      const resolved = await callApi(app, `/admin/disputes/${disputeId}/resolve`, bearer(admin.accessToken, postJson({
+        resolution: 'FULL_REFUND',
+        note: 'Ruling on the evidence floor.',
+        overrideReason: 'Evidence reviewed; ruling before the reply deadline.'
+      })));
+      expect(resolved.status).toBe(200);
+
+      const penalties = await prisma.$queryRaw<{ breachCode: string }[]>(
+        Prisma.sql`SELECT breach_code as "breachCode" FROM penalties WHERE provider_id = ${provider.id}::uuid AND breach_code = 'FALSIFIED_EVIDENCE'`
+      );
+      expect(penalties).toEqual([]);
+    });
+
+    it('does NOT propose FALSIFIED_EVIDENCE when the provider checked in far from the address', async () => {
+      // FR-EX-09 / BR-09 decided a geofence shortfall is *flagged, never blocking*, because phones
+      // misreport GPS indoors — the normal case in a multi-storey building. FALSIFIED_EVIDENCE is the
+      // only PERMANENT_BLOCK trigger on the schedule, so the detector used to turn that unreliable
+      // signal into a permanent block against an honest provider. The distance is still recorded and
+      // still shown to the admin in the evidence floor (`checkinWithin`), which is where the
+      // requirement says a human looks at it.
+      const provider = await newProvider(app);
+      const { id: bookingId, verificationId } = await completedJob(app, provider, { mode: 'ONLINE' });
+
+      // 300 km away — the phone put the provider at the other end of the country.
+      await prisma.$executeRaw(Prisma.sql`UPDATE bookings SET checkin_distance_m = 300000, checkout_distance_m = 300000 WHERE id = ${bookingId}::uuid`);
+
+      const submitted = await submitVerification(verificationId, {
+        outcome: 'DISPUTED',
+        consentLineRead: true,
+        consentToRelease: false,
+        workCompleted: 'FULL',
+        extraChargeDemanded: false,
+        quality: 2,
+        punctuality: 2,
+        conduct: 3,
+        cleanliness: 3,
+        uniformWorn: true,
+        ownTools: true
+      });
+      expect(submitted.status).toBe(200);
+
+      const dispute = await prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT id FROM disputes WHERE booking_id = ${bookingId}::uuid ORDER BY created_at DESC LIMIT 1`
+      );
+      const disputeId = dispute[0]!.id;
+
+      const { DisputesService } = await import('../../src/complaints/disputes.service.js');
+      const floor = await app.get(DisputesService).evidenceFloor(disputeId, true);
+      // The flag is still there for the admin to rule on — that is the whole of FR-EX-09's requirement.
+      expect(floor.evidenceFloor.geofence.checkinDistanceM).toBe(300000);
+      expect(floor.evidenceFloor.geofence.checkinWithin).toBe(false);
 
       const resolved = await callApi(app, `/admin/disputes/${disputeId}/resolve`, bearer(admin.accessToken, postJson({
         resolution: 'FULL_REFUND',

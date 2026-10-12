@@ -177,6 +177,8 @@ export class PaymentsService {
     if (status !== 'INITIATED' || subscriptionId === null) return;
     await tx.$executeRaw(Prisma.sql`UPDATE payments SET status = 'CAPTURED'::payment_status, captured_at = now() WHERE id = ${paymentId}::uuid`);
     await tx.$executeRaw(Prisma.sql`UPDATE subscriptions SET status = 'ACTIVE'::subscription_status WHERE id = ${subscriptionId}::uuid`);
+    const owned = await tx.$queryRaw<{ customerId: string }[]>(Prisma.sql`SELECT customer_id as "customerId" FROM subscriptions WHERE id = ${subscriptionId}::uuid`);
+    const subscription = owned[0];
     await this.ledger.post(tx, {
       type: 'PLAN_PURCHASE',
       idempotencyKey: `capture:${paymentId}`,
@@ -190,7 +192,9 @@ export class PaymentsService {
       aggregate: 'subscription',
       aggregateId: subscriptionId,
       type: 'subscription.activated',
-      payload: { paymentId, subscriptionId, amountPaisa: amountPaisa.toString() }
+      // `customerId` is carried so the planner can route this to the subscriber; without it the
+      // event had no addressee and the confirmation was simply never delivered.
+      payload: { paymentId, subscriptionId, customerId: subscription?.customerId ?? null, amountPaisa: amountPaisa.toString() }
     });
   }
 

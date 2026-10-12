@@ -1,7 +1,8 @@
 // apps/api/src/payment/release.service.ts
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { commissionOnPaisa } from '@smart-home/domain';
+import { commissionOnPaisa, formatPaisa } from '@smart-home/domain';
+import { conflict } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { DebtService } from './debt.service.js';
 import { LedgerService } from './ledger.service.js';
@@ -104,7 +105,12 @@ export class ReleaseService {
         Prisma.sql`SELECT b.balance FROM ledger_accounts a LEFT JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'PLAN_DEFERRED' AND a.subscription_id = ${subscriptionId}::uuid FOR UPDATE OF a`
       );
       const balance = planDeferredRows[0]?.balance ?? 0n;
-      if (balance < facts.finalPaisa) throw new Error(`Plan deferred balance (${balance}) does not cover visit amount (${facts.finalPaisa}) for subscription ${subscriptionId}`);
+      if (balance < facts.finalPaisa)
+        // A DomainError, not a bare `Error`. A complaint refund drawn out of escrow before the job is
+        // verified leaves escrow short of the final amount, and this is where the release discovers it.
+        // As a plain Error it surfaced to the customer as an opaque 500 on a perfectly ordinary booking;
+        // as a conflict it says what actually happened and what to do about it.
+        throw conflict(`This plan's remaining balance (${formatPaisa(balance)}) no longer covers the visit amount (${formatPaisa(facts.finalPaisa)}). The visit cannot be released until the difference is resolved`);
 
       const lines = [
         { account: 'PLAN_DEFERRED' as const, direction: 'DEBIT' as const, amountPaisa: facts.finalPaisa, subscriptionId },
@@ -123,7 +129,9 @@ export class ReleaseService {
       Prisma.sql`SELECT b.balance FROM ledger_accounts a LEFT JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'ESCROW' AND a.booking_id = ${facts.bookingId}::uuid FOR UPDATE OF a`
     );
     const escrow = escrowRows[0]?.balance ?? 0n;
-    if (escrow < facts.finalPaisa) throw new Error(`Escrow (${escrow}) does not cover the final amount (${facts.finalPaisa}) for booking ${facts.bookingId}`);
+    if (escrow < facts.finalPaisa)
+      // See the note on the plan path above: a plain Error here became an opaque 500 mid-verification.
+      throw conflict(`This job's escrow (${formatPaisa(escrow)}) no longer covers its final amount (${formatPaisa(facts.finalPaisa)}). It cannot be released until the difference is refunded or ruled on`);
 
     const lines = [
       { account: 'ESCROW' as const, direction: 'DEBIT' as const, amountPaisa: facts.finalPaisa, bookingId: facts.bookingId },

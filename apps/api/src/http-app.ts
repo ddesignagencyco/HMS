@@ -1,4 +1,5 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { randomBytes } from 'node:crypto';
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import helmet from 'helmet';
 import { RequestMethod } from '@nestjs/common';
@@ -6,6 +7,7 @@ import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swag
 import type { EnvironmentService } from './config/environment.service.js';
 import { REQUEST_ID_HEADER } from './common/redaction.js';
 import { resolveRequestId } from './logger.js';
+import { MetricsService } from './platform/metrics.service.js';
 
 export const GLOBAL_PREFIX = 'api/v1';
 export const OPENAPI_PATH = 'api/docs';
@@ -20,8 +22,18 @@ export const BODY_LIMIT = '1mb';
 export const EVIDENCE_BODY_LIMIT = '8mb';
 const EVIDENCE_PATH = /^\/api\/v1\/(bookings\/[0-9a-fA-F-]{36}\/evidence|complaints(\/[0-9a-fA-F-]{36}\/evidence|\/from-receipt)?)\/?$/;
 const DEV_STORAGE_PATH = /^\/api\/v1\/dev\/storage\/[^/]+\/.+$/;
-export const RATE_LIMIT_MAX = 300;
-export const RATE_LIMIT_WINDOW_MS = 60_000;
+/**
+ * Abuse guard: requests per IP per window.
+ *
+ * Configurable, and made configurable for a reason that is worth stating plainly. At 300/min this
+ * admits **5 requests per second**, while FR-SR-07 asks search to sustain **50 rps** — the two cannot
+ * both be true of one setting, and a load test run against the default silently measures a fifth of
+ * the required load while looking like it passed. The default stays at the conservative value
+ * because raising it is a security decision; the load test raises it explicitly so the number it
+ * reports is the number the criterion is about. See PROGRESS_TRACKER "SHM-092 / FR-SR-07 conflict".
+ */
+export const RATE_LIMIT_MAX = Number(process.env['RATE_LIMIT_MAX'] ?? 300);
+export const RATE_LIMIT_WINDOW_MS = Number(process.env['RATE_LIMIT_WINDOW_MS'] ?? 60_000);
 
 type HttpApplication = NestExpressApplication;
 
@@ -76,6 +88,52 @@ export const createRateLimitMiddleware = (max: number, windowMs: number): Reques
 };
 
 /**
+ * A per-request nonce, so the Content-Security-Policy can allow *this* page's inline script and
+ * nothing else.
+ *
+ * `'strict-dynamic'` is what makes a nonce worth having: browsers that understand it ignore
+ * `script-src` host allowlists entirely and trust only what the nonced script loads, so even if a
+ * host is later added to the list by mistake it cannot introduce an execution path. Browsers that do
+ * not understand it fall back to the explicit list, which is why both are present.
+ *
+ * A fixed nonce would be worse than none: it is in the HTML of every response, so anyone who reads
+ * one response knows the nonce for every response, and the policy stops constraining anything.
+ */
+export const createCspMiddleware = (isProduction: boolean): RequestHandler => (request: Request, response: Response, next: NextFunction) => {
+  const nonce = randomBytes(16).toString('base64');
+  (request as Request & { cspNonce?: string }).cspNonce = nonce;
+  // `/api/docs` is the only HTML this service serves — the Swagger UI — and it is the only place a
+  // script can execute. Everything else is JSON, which no browser executes, so it gets a policy of
+  // `default-src 'none'`: tight, and it costs nothing because there is nothing to load.
+  const isDocs = request.path.startsWith(`/${OPENAPI_PATH}`) || request.path.startsWith(OPENAPI_PATH);
+  const policy = isDocs
+    ? [
+        "default-src 'none'",
+        `script-src 'nonce-${nonce}' 'strict-dynamic' https: 'unsafe-eval'`,
+        // Swagger's stylesheet is injected inline by the bundle, and there is no style nonce worth
+        // having here: no user-supplied markup reaches this page.
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        "img-src 'self' data: https://fastly.jsdelivr.net",
+        "font-src 'self' data: https://cdn.jsdelivr.net",
+        "connect-src 'self'",
+        "worker-src 'self' blob:",
+        "base-uri 'none'",
+        "form-action 'self'",
+        "frame-ancestors 'none'"
+      ]
+    : ["default-src 'none'", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'"];
+
+  response.setHeader('Content-Security-Policy', policy.join('; '));
+  // Transport security is only meaningful over HTTPS, and asserting it in development would pin a
+  // developer's browser to https://localhost for an hour.
+  if (isProduction) response.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  // Nothing here needs a camera, a microphone, or a geolocation, and saying so is cheaper than
+  // relying on every browser's defaults.
+  response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  next();
+};
+
+/**
  * Middleware that must be in place before routes are served. Shared by the
  * entrypoint and the integration harness so tests cannot run against a surface
  * the production process never has.
@@ -84,7 +142,10 @@ export const registerHttpPlugins = async (app: HttpApplication, environment: Env
   const server = app.getHttpAdapter().getInstance();
   server.set('trust proxy', true);
   server.use(requestIdMiddleware());
-  server.use(helmet({ contentSecurityPolicy: false }));
+  server.use(createCspMiddleware(environment.isProduction));
+  // Helmet's own CSP is off because this file sets a stricter, nonce-based one: helmet's default is a
+  // permissive policy with `unsafe-inline`, which is the thing SHM-092 exists to remove.
+  server.use(helmet({ contentSecurityPolicy: false, hsts: false, referrerPolicy: { policy: 'no-referrer' } }));
   // One JSON parser, with the limit chosen per route: photos get the wide ceiling, everything else the tight one. Both keep the raw
   // bytes on `request.rawBody`, which the payment webhook needs to verify its signature. (Two stacked parsers would fight over the stream.)
   const keepRawBody = (request: Request, _response: unknown, buffer: Buffer): void => {
@@ -102,6 +163,25 @@ export const registerHttpPlugins = async (app: HttpApplication, environment: Env
   });
   app.useBodyParser('urlencoded', { limit: BODY_LIMIT, extended: true });
   app.use(createRateLimitMiddleware(RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS));
+  // SHM-092 / NFR-OBS: request counts and latency, recorded when each response finishes. It has to
+  // be installed here, with the other middleware, and not in `configureHttpApp` — Express runs
+  // middleware in registration order, so anything added after Nest mounts its router is only reached
+  // by requests the router declines, which would have quietly recorded nothing at all.
+  const metrics = app.get(MetricsService);
+  server.use((request: Request, response: Response, next: NextFunction) => {
+    const startedAt = process.hrtime.bigint();
+    response.on('finish', () => {
+      // The matched route, not the URL: one series per booking id is unbounded cardinality.
+      const route = normalisePath(request.path);
+      const seconds = Number(process.hrtime.bigint() - startedAt) / 1e9;
+      try {
+        metrics.recordRequest(request.method, route, response.statusCode, seconds);
+      } catch {
+        // Metrics must never be able to fail a request.
+      }
+    });
+    next();
+  });
   void environment;
 };
 
@@ -152,12 +232,29 @@ export const configureHttpApp = (app: HttpApplication, environment: EnvironmentS
     exclude: [
       { path: '', method: RequestMethod.GET },
       { path: 'health/{*path}', method: RequestMethod.GET },
+      { path: 'metrics', method: RequestMethod.GET },
       { path: 'api/docs/{*path}', method: RequestMethod.GET }
     ]
   });
-  app.enableCors({ origin: environment.values.CORS_ORIGINS, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] });
+app.enableCors({ origin: environment.values.CORS_ORIGINS, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] });
   app.enableShutdownHooks();
 
   const document = SwaggerModule.createDocument(app, buildOpenApiConfig());
   SwaggerModule.setup(OPENAPI_PATH, app, document, { jsonDocumentUrl: `${OPENAPI_PATH}/openapi.json`, swaggerOptions: { persistAuthorization: true } });
 };
+
+/**
+ * Turns a concrete path into its shape — `/bookings/9f3a…/evidence` into `/bookings/{id}/evidence`
+ * — for requests that finished without a matched route (404s, unmatched verbs).
+ *
+ * Anything that looks like a UUID, a long number, an email or an ISO date is replaced. That is a
+ * blunt instrument and it is the right one: a metric label that can carry an id is a metric store
+ * that fills up, and the alternative — trusting every caller to label its own route — is exactly the
+ * kind of thing that works until someone adds a route with an id in it.
+ */
+export const normalisePath = (path: string): string =>
+  path
+    .replace(/\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?=\/|$)/g, '/{id}')
+    .replace(/\/\d{4}-\d{2}-\d{2}(?=\/|$)/g, '/{date}')
+    .replace(/\/\d+(?=\/|$)/g, '/{n}')
+    .slice(0, 120);

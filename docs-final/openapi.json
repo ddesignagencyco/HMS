@@ -1108,6 +1108,88 @@
         ]
       }
     },
+    "/api/v1/finance/reports": {
+      "post": {
+        "description": "Queues a report and returns immediately — these are too slow to build inside a request. Poll `GET /finance/reports/{id}`, or wait for the `report.ready` notification, and download when it is `DONE`. Asking again for a period that is already queued or running returns that run rather than starting a second copy of the same numbers. **Revenue is taken from the ledger, not from the quoted booking totals**, so it agrees with the finance console to the paisa — that is the whole point of a revenue report, and it is why it is never computed a second way.",
+        "operationId": "ReportsController_request",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Ask for a report",
+        "tags": [
+          "finance"
+        ]
+      },
+      "get": {
+        "description": "Your own report runs, newest first.",
+        "operationId": "ReportsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "My reports",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/reports/{id}": {
+      "get": {
+        "description": "Its status, how many rows it covers, its total, and where to download it when it is ready.",
+        "operationId": "ReportsController_one",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "One report run",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/reports/{id}/download": {
+      "get": {
+        "description": "The built file. Every download is audited: these are the platform's numbers leaving the system. 409 while the report is still building — the run's status is the thing to check, not this.",
+        "operationId": "ReportsController_download",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Download a finished report",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
     "/api/v1/notifications": {
       "get": {
         "description": "Your in-app notifications, newest first, with the count of unread ones. `unread=true` for unread only. Written in your language.",
@@ -4434,23 +4516,86 @@
     },
     "/api/v1/search/providers": {
       "get": {
-        "description": "Starts from a service (not a person): pass the service's slug and the customer's coordinates. Returns only approved providers with an approved offer for that service, whose configured radius covers the given point, ranked by a weighted blend of rating and distance (`ranking.weights`, rating 0.35 and distance 0.25 by default), then by distance. `ratingScore` is the provider's weighted score, or null when nobody has rated them yet — rank on it, do not render it as a rating.",
+        "description": "Starts from a service (not a person): pass the service's slug and either the customer's coordinates or `addressId`. Returns only approved providers with an approved offer for that service, whose configured radius covers the given point, ranked by a weighted blend of rating and distance (`ranking.weights`, rating 0.35 and distance 0.25 by default), then by distance. `ratingScore` is the provider's weighted score, or null when nobody has rated them yet — rank on it, do not render it as a rating. The optional filters are applied *before* ranking, so a narrowed search really is narrowed: `minExperienceYears`, `minCompletedJobs`, `minPricePaisa`/`maxPricePaisa`, `availableToday` (a real free slot later today, local time) and `verifiedDocsOnly` (at least one document verified).",
         "operationId": "SearchController_searchProviders",
         "parameters": [
           {
-            "name": "lng",
-            "required": true,
+            "name": "verifiedDocsOnly",
+            "required": false,
             "in": "query",
-            "description": "The customer's longitude, e.g. 74.3587 (Lahore). An area's own lng from GET /places/cities/{cityId}/areas can be used when the exact point is not known.",
+            "description": "Only providers with at least one verified document (FR-SR-07).",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "availableToday",
+            "required": false,
+            "in": "query",
+            "description": "Only providers with a free slot later today in their own local time (FR-SR-05).",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "maxPricePaisa",
+            "required": false,
+            "in": "query",
+            "description": "Highest acceptable price for this service, in paisa (FR-SR-04).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "minPricePaisa",
+            "required": false,
+            "in": "query",
+            "description": "Lowest acceptable price for this service, in paisa (FR-SR-04).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "minCompletedJobs",
+            "required": false,
+            "in": "query",
+            "description": "Only providers who have completed at least this many jobs (FR-SR-03).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "minExperienceYears",
+            "required": false,
+            "in": "query",
+            "description": "Only providers with at least this many years of experience (FR-SR-02).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "addressId",
+            "required": false,
+            "in": "query",
+            "description": "A saved address to search around, resolved server-side to its point. Alternative to lat/lng.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lng",
+            "required": false,
+            "in": "query",
+            "description": "The customer's longitude, e.g. 74.3587 (Lahore). Required with `lat` unless `addressId` is given.",
             "schema": {
               "type": "number"
             }
           },
           {
             "name": "lat",
-            "required": true,
+            "required": false,
             "in": "query",
-            "description": "The customer's latitude, e.g. 31.5204 (Lahore). An area's own lat/lng from GET /places/cities/{cityId}/areas can be used when the exact point is not known.",
+            "description": "The customer's latitude, e.g. 31.5204 (Lahore). Required with `lng` unless `addressId` is given.",
             "schema": {
               "type": "number"
             }
@@ -8238,6 +8383,48 @@
           }
         ],
         "summary": "Query the audit log",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/ops-board": {
+      "get": {
+        "description": "One screen for what is happening right now: bookings today by status, how deep each background queue is, how many verifications and complaints have blown their SLA, open disputes, escrow held, and how many providers are blocked for commission debt. Every figure is queried from the table it describes, never kept up to date incrementally — an ops board that has quietly drifted from the thing it reports is worse than none. Money is reported as a string of paisa, never a number, for the same reason as everywhere else. `alerts` is sorted worst-first so the top of the list is where to start.",
+        "operationId": "OpsBoardController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "The operations board",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/ops-board/stream": {
+      "get": {
+        "description": "The same board as `GET /admin/ops-board`, pushed as Server-Sent Events. The board is recomputed on a single shared five-second cadence no matter how many streams are open — one operator with six tabs open costs the database one recompute, not six — so an update reaches a connected client within five seconds of the underlying change. The first event arrives immediately.",
+        "operationId": "OpsBoardController_stream",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "The operations board, live",
         "tags": [
           "admin"
         ]

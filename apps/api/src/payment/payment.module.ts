@@ -12,11 +12,13 @@ import { ReconciliationService } from './reconciliation.service.js';
 import { DebtService } from './debt.service.js';
 import { ReleaseService } from './release.service.js';
 import { PaymentsService } from './payments.service.js';
+import { ReportsController } from '../finance/reports.controller.js';
+import { ReportsService } from '../finance/reports.service.js';
 
 @Global()
 @Module({
-  controllers: [DevPaymentsController, ProviderMoneyController, ProviderPayoutsController, FinanceController],
-  providers: [LedgerService, PaymentsService, ReleaseService, DebtService, ProviderMoneyService, FinanceService, PayoutsService, ReconciliationService],
-  exports: [LedgerService, PaymentsService, ReleaseService, DebtService, PayoutsService, ReconciliationService]
+  controllers: [DevPaymentsController, ProviderMoneyController, ProviderPayoutsController, FinanceController, ReportsController],
+  providers: [LedgerService, PaymentsService, ReleaseService, DebtService, ProviderMoneyService, FinanceService, PayoutsService, ReconciliationService, ReportsService],
+  exports: [LedgerService, PaymentsService, ReleaseService, DebtService, PayoutsService, ReconciliationService, ReportsService]
 })
 export class PaymentModule {}

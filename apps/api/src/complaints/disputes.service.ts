@@ -298,9 +298,17 @@ export class DisputesService implements OnModuleInit {
   /**
    * Checks the evidence floor for patterns indicating falsified evidence:
    * - Checklist items marked done but no required photo evidence
-   * - Before/after photos with identical metadata (same timestamp, location)
-   * - Evidence uploaded after verification call completion
-   * - Geofence check-in/out distances that don't match provider's claimed location
+   * - Before/after photos that are the same file
+   * - Evidence uploaded after the verification of the visit it belongs to
+   *
+   * Deliberately *not* here: a geofence shortfall. FR-EX-09 / BR-09 decided that a
+   * check-in or check-out outside the radius is **flagged, never blocking**, because
+   * phones misreport GPS indoors — which is the normal case in a multi-storey building
+   * in Lahore. FALSIFIED_EVIDENCE is 25 points and the only PERMANENT_BLOCK trigger on
+   * the whole schedule, so promoting a signal the product explicitly called unreliable
+   * into it would propose a permanent block against an honest provider whose phone
+   * mislocated them. The distances are still in the evidence floor for the admin
+   * (`checkinWithin` / `checkoutWithin`), which is where FR-EX-09 says a human sees it.
    */
   private checkForFalsifiedEvidence(evidenceFloor: Awaited<ReturnType<DisputesService['evidenceFloor']>>): EvidenceCheckResult {
     const details: Record<string, unknown> = {};
@@ -345,16 +353,9 @@ export class DisputesService implements OnModuleInit {
       }
     }
 
-    // Check 4: Geofence distances that are impossible (e.g., provider claimed to be at job but check-in shows far away)
-    const geofence = evidenceFloor.evidenceFloor.geofence;
-    if (geofence.checkinDistanceM !== null && geofence.checkinDistanceM > geofence.radiusM * 3) {
-      isFalsified = true;
-      details.impossibleCheckinDistance = { distanceM: geofence.checkinDistanceM, radiusM: geofence.radiusM };
-    }
-    if (geofence.checkoutDistanceM !== null && geofence.checkoutDistanceM > geofence.radiusM * 3) {
-      isFalsified = true;
-      details.impossibleCheckoutDistance = { distanceM: geofence.checkoutDistanceM, radiusM: geofence.radiusM };
-    }
+    // A geofence shortfall is deliberately *not* one of the checks: FR-EX-09 / BR-09 decided it is
+    // flagged for the admin and never blocking, because phones misreport GPS indoors. The distances
+    // are still in the evidence floor the admin rules from (`checkinWithin` / `checkoutWithin`).
 
     return { isFalsified, details };
   }

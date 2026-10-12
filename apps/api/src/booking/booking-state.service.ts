@@ -247,7 +247,11 @@ export class BookingStateService {
     }
     if (event === 'cancel' && actorRole === 'PROVIDER') {
       const freeHours = await this.settings.getNumber('booking.free_cancel_hours');
-      const hoursAhead = (row.scheduledStart.getTime() - Date.now()) / 3_600_000;
+      // The injected clock, not `Date.now()`. This service decides the no-show grace window
+      // against `this.clock` twenty lines up; reading the wall clock here meant the same state
+      // machine answered from two different "now"s, and the breach that carries demerit points
+      // and a fine was the one place a test with a frozen clock could not reach.
+      const hoursAhead = (row.scheduledStart.getTime() - this.clock.now().getTime()) / 3_600_000;
       if (hoursAhead < freeHours) {
         await this.conduct.autoPropose(tx, {
           providerId: row.providerId,

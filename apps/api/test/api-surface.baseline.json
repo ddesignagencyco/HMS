@@ -301,6 +301,24 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/admin/ops-board",
+      "operationId": "OpsBoardController_get",
+      "summary": "The operations board",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/ops-board/stream",
+      "operationId": "OpsBoardController_stream",
+      "summary": "The operations board, live",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/admin/penalties",
       "operationId": "ConductController_list",
       "summary": "List penalties",
@@ -1402,6 +1420,42 @@
       "path": "/api/v1/finance/refunds",
       "operationId": "FinanceController_refund",
       "summary": "Refund a disputed booking by hand",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/reports",
+      "operationId": "ReportsController_list",
+      "summary": "My reports",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/finance/reports",
+      "operationId": "ReportsController_request",
+      "summary": "Ask for a report",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/reports/{id}",
+      "operationId": "ReportsController_one",
+      "summary": "One report run",
+      "tags": [
+        "finance"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/finance/reports/{id}/download",
+      "operationId": "ReportsController_download",
+      "summary": "Download a finished report",
       "tags": [
         "finance"
       ]

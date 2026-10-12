@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { percentOfPaisa, paisaToNumber } from '@smart-home/domain';
 import { badRequest, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { AppClock } from '../platform/app-clock.js';
 import { SettingsService } from '../platform/settings.service.js';
 
 export type QuoteInput = { providerId?: string | undefined; serviceId: number; isEmergency?: boolean | undefined; couponCode?: string | undefined };
@@ -41,7 +42,8 @@ const percentOf = (basePaisa: bigint, percent: number): bigint => percentOfPaisa
 export class PricingService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(SettingsService) private readonly settings: SettingsService
+    @Inject(SettingsService) private readonly settings: SettingsService,
+    @Inject(AppClock) private readonly clock: AppClock
   ) {}
 
   async price(customerId: string, input: QuoteInput): Promise<PricedBooking> {
@@ -131,7 +133,12 @@ export class PricingService {
   }): Promise<{ freeCancelHours: number; lateCancelFeePaisa: number; hoursUntilStart: number; isLate: boolean; feeDuePaisa: number }> {
     const freeHours = await this.settings.getNumber('booking.free_cancel_hours');
     const configured = await this.settings.getNumber('booking.late_cancel_fee_paisa');
-    const hoursUntilStart = Math.round(((booking.scheduledStart.getTime() - Date.now()) / 3_600_000) * 10) / 10;
+    // The injected clock, not `Date.now()`. This method decides whether a cancellation costs money, and
+    // `BookingStateService.moneyFor` charges the fee from whatever this returns — so a wall-clock read
+    // here made the promise the customer is shown (the policy sentence, the figure on the booking page)
+    // and the amount actually charged depend on two different "now"s, and a frozen clock in a test could
+    // not reach the rule at all.
+    const hoursUntilStart = Math.round(((booking.scheduledStart.getTime() - this.clock.now().getTime()) / 3_600_000) * 10) / 10;
     // Mirrors `moneyFor`: a fee is only due once the provider has accepted and
     // the slot is inside the free window. Before acceptance, or when the booking
     // is not one the customer can be charged for, it is zero.

@@ -570,6 +570,7 @@ export class PlansService {
         type: 'subscription.cancelled',
         payload: {
           subscriptionId: id,
+          customerId: sub.customerId,
           refundedVisitsCount: refundCalculation.refundableVisitsCount,
           refundPaisa: refundCalculation.refundPaisa.toString()
         }

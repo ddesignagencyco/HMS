@@ -107,7 +107,7 @@ export class PlanSchedulerService {
           aggregate: 'plan_visit',
           aggregateId: visit.id,
           type: 'plan_visit.booked',
-          payload: { visitId: visit.id, bookingId, subscriptionId: visit.subscriptionId }
+          payload: { visitId: visit.id, bookingId, subscriptionId: visit.subscriptionId, customerId: visit.customerId }
         });
 
         // Counted only once the transaction has committed: incrementing inside it would report a visit as

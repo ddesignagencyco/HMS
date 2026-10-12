@@ -340,6 +340,10 @@ CREATE TABLE provider_services (
   PRIMARY KEY (provider_id, service_id)
 );
 CREATE INDEX provider_services_service_idx ON provider_services(service_id, status);
+-- SHM-092: without this, a location search seq-scans this table once per candidate provider
+-- (188 loops over 10k rows in the measured plan). `status` is in the index so the per-provider
+-- probe answers the approval check without visiting the heap.
+CREATE INDEX provider_services_provider_status_idx ON provider_services(provider_id, status);
 
 CREATE TABLE provider_service_areas (
   provider_id uuid REFERENCES providers(user_id),

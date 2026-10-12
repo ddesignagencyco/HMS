@@ -8,6 +8,8 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { EnvironmentService } from '../../src/config/environment.service.js';
+import { AppClock } from '../../src/platform/app-clock.js';
+import { SettingsService } from '../../src/platform/settings.service.js';
 import { PaymentsService } from '../../src/payment/payments.service.js';
 import { callApi, createTestApp, postJson, readyBookableProvider, registerAndVerify, type ApiResponse, type TestUser } from './harness.js';
 
@@ -263,7 +265,12 @@ describe('SHM-037: online checkout, capture and abandonment', () => {
     expect(results.filter(result => result.status === 201)).toHaveLength(1);
     const losers = results.filter(result => result.status !== 201);
     expect(losers).toHaveLength(49);
-    expect(losers.every(result => result.status === 409 && result.body.code === 'SLOT_TAKEN')).toBe(true);
+    // Naming the offending statuses rather than asserting a bare boolean: a loser that escapes as a
+    // 500 says the concurrency guard is missing a case, and "expected false to be true" says nothing
+    // about which. The first run of this suite failed here with a deadlock (40P01) reaching the client
+    // untranslated, which is what prompted the fix in `BookingService.checkout`.
+    const offenders = losers.filter(result => result.status !== 409 || result.body.code !== 'SLOT_TAKEN');
+    expect(offenders.map(result => ({ status: result.status, code: result.body.code })), 'every loser must be 409 SLOT_TAKEN').toEqual([]);
   });
 });
 
@@ -382,22 +389,71 @@ describe('SHM-038 / SHM-039: offers, silence, refunds and cancel fees', () => {
     expect(refund[0]?.amount).toBe(BigInt(created.body.quotedAmountPaisa));
   });
 
+  it('charges the cancellation fee from the application clock, not the wall clock', async () => {
+    // The strongest form of the rule above: the two clocks are deliberately made to disagree about
+    // whether this booking is inside the free-cancel window. The slot sits 4.5 hours ahead of the wall
+    // clock (outside the 4-hour window) but the application's clock is then advanced an hour, putting
+    // it 3.5 hours ahead — inside. A fee rule that reads `Date.now()` answers "free" here and the
+    // customer is quoted one figure and charged another.
+    const freeHours = (await app.get(SettingsService).get<number>('booking.free_cancel_hours'))!;
+    const { customer, addressId } = await customerWithAddress(setup.areaId, here);
+    const created = await callApi<Created>(app, '/bookings', bearer(customer.accessToken, postJson({ providerId: setup.providerId, serviceId: setup.serviceId, addressId, paymentMode: 'ONLINE', ...slot() })));
+    if (created.body.payment !== undefined) await signedWebhook(`evt_${randomUUID()}`, created.body.payment.paymentId);
+    await callApi(app, `/bookings/${created.body.id}/accept`, bearer(setup.providerAccessToken, { method: 'POST' }));
+
+    const start = new Date(Date.now() + (freeHours + 0.5) * 3_600_000);
+    const end = new Date(start.getTime() + 3_600_000);
+    await prisma.$executeRaw(Prisma.sql`UPDATE bookings SET scheduled_start = ${start.toISOString()}::timestamptz, scheduled_end = ${end.toISOString()}::timestamptz, slot = tstzrange(${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz) WHERE id = ${created.body.id}::uuid`);
+
+    // One hour forward on the application's clock only. `travelTo`/`reset` are restored below.
+    app.get(AppClock).travelTo(new Date(app.get(AppClock).now().getTime() + 3_600_000));
+    try {
+      const published = await callApi<{ cancellation: { isLate: boolean; feeDuePaisa: number } }>(app, `/bookings/${created.body.id}`, bearer(customer.accessToken));
+      expect(published.body.cancellation.isLate, 'inside the window once the clock has moved').toBe(true);
+      expect(published.body.cancellation.feeDuePaisa).toBeGreaterThan(0);
+
+      const cancelled = await callApi<{ status: string }>(app, `/bookings/${created.body.id}/cancel`, bearer(customer.accessToken, postJson({})));
+      expect(cancelled.body.status).toBe('CANCELLED_CUSTOMER');
+
+      const fee = await prisma.$queryRaw<{ n: bigint }[]>(
+        Prisma.sql`SELECT coalesce(sum(e.amount_paisa) FILTER (WHERE e.direction = 'CREDIT'), 0)::bigint as n
+          FROM ledger_transactions t JOIN ledger_entries e ON e.transaction_id = t.id JOIN ledger_accounts a ON a.id = e.account_id
+          WHERE t.booking_id = ${created.body.id}::uuid AND t.type = 'CANCEL_FEE' AND a.type = 'PLATFORM_COMMISSION'`
+      );
+      expect(fee[0]?.n, 'the fee charged must equal the fee published').toBe(BigInt(published.body.cancellation.feeDuePaisa));
+    } finally {
+      app.get(AppClock).reset();
+    }
+  });
+
   it('table-driven cancel fee: free outside the window, the setting inside it — online from escrow, cash to receivable', async () => {
     const lateFee = 50_000n;
+    // Both cases straddle the 4-hour free-cancel boundary rather than sitting far from it: only a case
+    // near the edge can tell a rule that reads the injected clock from one that reads the wall clock.
+    const freeHours = await app.get(SettingsService).get<number>('booking.free_cancel_hours');
     const cases: { name: string; mode: 'CASH' | 'ONLINE'; hoursAhead: number; expectFee: bigint }[] = [
-      { name: 'online, well ahead', mode: 'ONLINE', hoursAhead: 72, expectFee: 0n },
-      { name: 'online, inside the window', mode: 'ONLINE', hoursAhead: 1, expectFee: lateFee },
-      { name: 'cash, well ahead', mode: 'CASH', hoursAhead: 72, expectFee: 0n },
-      { name: 'cash, inside the window', mode: 'CASH', hoursAhead: 1, expectFee: lateFee }
+      { name: 'online, well ahead', mode: 'ONLINE', hoursAhead: freeHours! + 0.5, expectFee: 0n },
+      { name: 'online, inside the window', mode: 'ONLINE', hoursAhead: freeHours! - 0.5, expectFee: lateFee },
+      { name: 'cash, well ahead', mode: 'CASH', hoursAhead: freeHours! + 0.5, expectFee: 0n },
+      { name: 'cash, inside the window', mode: 'CASH', hoursAhead: freeHours! - 0.5, expectFee: lateFee }
     ];
     for (const testCase of cases) {
       const { customer, addressId } = await customerWithAddress(setup.areaId, here);
       const created = await callApi<Created>(app, '/bookings', bearer(customer.accessToken, postJson({ providerId: setup.providerId, serviceId: setup.serviceId, addressId, paymentMode: testCase.mode, ...slot() })));
       if (created.body.payment !== undefined) await signedWebhook(`evt_${randomUUID()}`, created.body.payment.paymentId);
       await callApi(app, `/bookings/${created.body.id}/accept`, bearer(setup.providerAccessToken, { method: 'POST' }));
-      const start = new Date(Date.now() + testCase.hoursAhead * 3_600_000);
+      // Anchored on the application's clock, because that is the clock the fee rule reads. Placing the slot
+      // against `Date.now()` made this table-driven case pass or fail depending on the hour the suite ran.
+      const start = new Date(app.get(AppClock).now().getTime() + testCase.hoursAhead * 3_600_000);
       const end = new Date(start.getTime() + 3_600_000);
       await prisma.$executeRaw(Prisma.sql`UPDATE bookings SET scheduled_start = ${start.toISOString()}::timestamptz, scheduled_end = ${end.toISOString()}::timestamptz, slot = tstzrange(${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz) WHERE id = ${created.body.id}::uuid`);
+
+      // What the booking page promises must be what cancelling charges. These were two different
+      // "now"s — the published figure read the wall clock, the fee read the injected one — so a
+      // booking whose slot sat near the free-cancel boundary could quote one figure and charge another.
+      const published = await callApi<{ cancellation: { isLate: boolean; feeDuePaisa: number } }>(app, `/bookings/${created.body.id}`, bearer(customer.accessToken));
+      expect(published.body.cancellation.isLate, `${testCase.name}: published isLate`).toBe(testCase.expectFee > 0n);
+      expect(BigInt(published.body.cancellation.feeDuePaisa), `${testCase.name}: published fee`).toBe(testCase.expectFee);
 
       const cancelled = await callApi<{ status: string }>(app, `/bookings/${created.body.id}/cancel`, bearer(customer.accessToken, postJson({})));
       expect(cancelled.body.status, testCase.name).toBe('CANCELLED_CUSTOMER');
