@@ -1,0 +1,148 @@
+# Prometheus alerting rules for SHM-092 / NFR-OBS.
+#
+# Every rule here is written to be *actionable*, which in practice means each one is paired with a
+# runbook step. An alert nobody can act on is worse than no alert: it trains people to ignore the
+# channel, and the one time it really matters they will not look.
+#
+# Thresholds are stated as absolute numbers with the reasoning attached, not as defaults copied from
+# a Prometheus example — a `for: 5m` that was never chosen is a `for: 5m` nobody will trust.
+
+groups:
+  - name: platform-availability
+    rules:
+      # The API being down at all is the only alert here that pages a human immediately.
+      - alert: ApiDown
+        expr: up{job="smart-home-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: The API is not responding to scrapes
+          description: >-
+            Prometheus has failed to scrape the API for 2 minutes. Check whether the process is up
+            before assuming the requests themselves are failing — runbook: runbooks/api-down.md
+          runbook_url: /docs-final/runbooks/api-down.md
+
+  - name: request-health
+    rules:
+      # Only successful responses are counted. Including 5xx would let a flood of *errors* show as a
+      # rising success rate, which is exactly backwards.
+      - alert: HighErrorRate
+        expr: >-
+          sum(rate(shm_http_requests_total{status=~"5.."}[5m]))
+          / clamp_min(sum(rate(shm_http_requests_total[5m])), 0.001) > 0.02
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: Over 2% of API requests are failing with a 5xx
+          description: >-
+            The error ratio has been above 2% for 10 minutes. Check whether one dependency is
+            unavailable — the database, Redis, or an outbound vendor adapter — before assuming the
+            API itself is at fault. Runbook: runbooks/api-down.md
+
+      # FR-SR-07's search budget is 800 ms at p95. The alert fires at 700 ms — below the criterion,
+      # deliberately. A rule that fires when the SLO has already been breached reports the breach to
+      # whoever is already looking.
+      - alert: SearchLatencyBudgetBurn
+        expr: >-
+          histogram_quantile(0.95,
+            sum(rate(shm_http_request_duration_seconds_bucket{route="/api/v1/search/providers"}[5m])) by (le)
+          ) > 0.7
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Search p95 is approaching the 800 ms budget
+          description: >-
+            Search p95 has been above 700 ms for 10 minutes. FR-SR-07 budgets 800 ms at p95, so there
+            is time to act before the criterion is missed. The usual cause is a plan change on the
+            search query — re-run packages/db/search-explain.sql against a loaded dataset.
+
+      - alert: HighLatencyOverall
+        expr: >-
+          histogram_quantile(0.95, sum(rate(shm_http_request_duration_seconds_bucket[5m])) by (le)) > 1.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: p95 across all routes is above 1.5 s
+          description: >-
+            Not tied to one route, so this is more likely resource exhaustion than a slow query.
+            Check the process metrics from the default collectors (heap, event-loop lag, open FDs)
+            before looking at individual queries.
+
+  - name: background-work
+    rules:
+      # This is the alert that says the platform has stopped working. Background work is how bookings
+      # get paid, notified and released; a backlog that is merely *large* is fine, one that is
+      # *growing* is not.
+      - alert: OutboxBacklogGrowing
+        expr: shm_outbox_oldest_seconds > 300
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: The oldest undispatched outbox event is more than 5 minutes old
+          description: >-
+            Events are being written but nothing is processing them. Bookings will complete without
+            being notified or released. Check the outbox dispatcher and its queue depth:
+            shm_queue_depth{queue="outbox"}. Runbook: runbooks/queue-backlog.md
+
+      - alert: QueueBacklogLarge
+        expr: shm_queue_depth > 1000
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: A background queue has more than 1,000 waiting jobs
+          description: >-
+            Sustained for 15 minutes. Check shm_queue_active for the same queue — a large depth with
+            zero active jobs means the workers are down, not slow.
+
+      - alert: NoWorkersActive
+        expr: >-
+          sum(shm_queue_depth) > 100 and sum(shm_queue_active) == 0
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: Work is queued but nothing is being processed
+          description: >-
+            Depth is non-trivial and no job has been active for 10 minutes. The workers are not
+            running, or they are all wedged. Runbook: runbooks/queue-backlog.md
+
+      - alert: JobFailureRateHigh
+        expr: >-
+          sum(rate(shm_jobs_total{outcome="failed"}[15m])) by (name)
+          / clamp_min(sum(rate(shm_jobs_total[15m])) by (name), 0.001) > 0.1
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: Over 10% of a background job is failing
+          description: >-
+            Reported per job name. Check the worker log for that name first — a job that fails
+            deterministically (a malformed webhook, a report referencing a deleted booking) retries
+            until it exhausts its attempts and then blocks whatever is queued behind it. Runbook:
+            runbooks/queue-backlog.md
+
+  - name: money
+    rules:
+      # Escrow is not a performance metric; a sudden collapse means money is not being held where it
+      # should be, which is the one alert on this page that is a correctness problem rather than a
+      # capacity one.
+      - alert: EscrowBalanceDropped
+        expr: >-
+          shm_escrow_held_paisa < 0.5 * (avg_over_time(shm_escrow_held_paisa[7d] offset 1w))
+          and shm_escrow_held_paisa > 0
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: Escrow held has dropped well below its level a week ago
+          description: >-
+            Compared against the same time last week, which ignores the natural day-of-week shape.
+            Check the reconciliation drift counter (shm_reconciliation_drift_total) before assuming
+            this is a reporting problem. Runbook: runbooks/reconciliation-drift.md
+
+      - alert: ReconciliationDriftFound
+        expr: increase(shm_reconciliation_drift_total[1h]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: The ledger reconciliation found a discrepancy
+          description: >-
+            The ledger is the authority for money in this system. A drift finding means the ledger
+            does not balance, and nothing downstream of it can be trusted until it does.
+            Runbook: runbooks/reconciliation-drift.md

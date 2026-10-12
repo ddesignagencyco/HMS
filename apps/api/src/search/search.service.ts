@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { daySpan, earliestStart, generateSlots, instantFromWallTime, localDateOf, localMidnightOf, paisaToNumber } from '@smart-home/domain';
 import { badRequest, notFound } from '../common/domain-error.js';
@@ -6,6 +6,7 @@ import { PrismaService } from '../database/prisma.service.js';
 import { AppClock } from '../platform/app-clock.js';
 import { ReputationService, type Reputation } from '../reputation/reputation.service.js';
 import { SettingsService } from '../platform/settings.service.js';
+import { localWeekday } from '../booking/slot-time.js';
 import type { NextSlotsQuery, ProviderSearchQuery, SlotsQuery } from './search.schemas.js';
 
 export type ProviderSearchResultRow = {
@@ -19,14 +20,35 @@ export type ProviderSearchResultRow = {
   ratingScore: number | null;
   ratingCount: number;
   badge: string | null;
+  /**
+   * Which of the configured signals this provider had no data for. Published rather than hidden so
+   * a frontend can say "no rating yet" instead of rendering a zero, and so an operator can see why a
+   * heavily-weighted signal is not moving anybody up.
+   */
+  missingSignals: string[];
+  /** Each signal's normalised 0–1 value after the weights below were applied. `null` = no data, excluded from the score. */
+  signals: { rating: number; distance: number; completion: number | null; response: number | null; recency: number | null };
 };
 
-type ProviderSearchResultRowRaw = Omit<ProviderSearchResultRow, 'pricePaisa' | 'ratingScore' | 'ratingCount'> & {
+type ProviderSearchResultRowRaw = Omit<ProviderSearchResultRow, 'pricePaisa' | 'ratingScore' | 'ratingCount' | 'missingSignals' | 'signals'> & {
   pricePaisa: bigint;
   ratingScoreHundredths: number;
   ratingCount: number;
   radiusM: number;
+  completedJobs: number;
+  noShows: number;
+  medianResponseMinutes: number | null;
+  lastCompletedAt: Date | null;
 };
+
+/** The five signals `ranking.weights` may carry. An unknown key is logged, never silently ranked on. */
+export type RankingWeights = Partial<Record<'rating' | 'distance' | 'completion' | 'response' | 'recency', number>>;
+
+/**
+ * The keys this build ranks on. `search.test.ts` compares this against the live `ranking.weights`
+ * setting, so an operator adding a key to the setting cannot end up with a weight nothing reads.
+ */
+export const RANKING_SIGNAL_KEYS = ['rating', 'distance', 'completion', 'response', 'recency'] as const;
 
 export type ProviderDetailRow = {
   providerId: string;
@@ -54,6 +76,8 @@ const SLOT_STEP_MIN = 30;
 
 @Injectable()
 export class SearchService {
+  private readonly logger = new Logger(SearchService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(SettingsService) private readonly settings: SettingsService,
@@ -69,6 +93,93 @@ export class SearchService {
    */
   private async earliestBookableStart(): Promise<Date> {
     return earliestStart(this.clock.now(), await this.settings.getNumber('booking.min_notice_min'));
+  }
+
+/** The last instant of the customer's local day, for `availableToday`. */
+private async endOfLocalDay(): Promise<Date> {
+    const today = localMidnightOf(this.clock.now());
+    return new Date(today.getTime() + 86_400_000);
+  }
+
+  /**
+   * FR-SR-05 / SHM-108: which providers have a free slot for this service later today.
+   *
+   * "Free later today" means exactly that — not "working until midnight". A provider whose day runs
+   * 09:00–18:00 is available today at 11:00, so the test is whether a slot of the service's length
+   * fits between the notice deadline and the end of one of today's declared windows, once leave and
+   * existing bookings have taken their cut. Frees up the whole remainder of one window, so a provider
+   * with a busy morning and a free afternoon still counts.
+   *
+   * Its own query rather than another fragment of the ranking query: the arithmetic is long enough
+   * that burying it there would make that query unreadable. Restricting to providers who offer this
+   * service and are approved keeps the set small, which is what makes doing the interval maths in
+   * TypeScript (seconds, integers) reasonable — no float paisa, no clock arithmetic in SQL.
+   */
+  private async providersFreeToday(serviceId: number, durationMin: number): Promise<string[]> {
+    const notice = await this.earliestBookableStart();
+    const dayEnd = await this.endOfLocalDay();
+    if (notice >= dayEnd) return [];
+    const weekday = localWeekday(notice);
+    const bufferMin = await this.settings.getNumber('booking.travel_buffer_min');
+
+    const candidates = await this.prisma.$queryRaw<{ providerId: string }[]>(
+      Prisma.sql`SELECT DISTINCT p.user_id as "providerId" FROM providers p
+        JOIN provider_services ps ON ps.provider_id = p.user_id AND ps.service_id = ${serviceId} AND ps.status = 'APPROVED'
+        WHERE p.status = 'APPROVED' AND p.offer_blocked_reason IS NULL AND p.base_location IS NOT NULL`
+    );
+    if (candidates.length === 0) return [];
+
+    const ids = candidates.map(row => row.providerId);
+    const windows = await this.prisma.$queryRaw<{ providerId: string; from: Date; to: Date }[]>(
+      Prisma.sql`SELECT av.provider_id as "providerId",
+          (date_trunc('day', ${notice.toISOString()}::timestamptz AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi') + av.start_time as "from",
+          (date_trunc('day', ${notice.toISOString()}::timestamptz AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi') + av.end_time as "to"
+        FROM provider_availability av WHERE av.provider_id IN (${Prisma.join(ids.map(id => Prisma.sql`${id}::uuid`))}) AND av.weekday = ${weekday}`
+    );
+    if (windows.length === 0) return [];
+
+    const blocked = await this.prisma.$queryRaw<{ providerId: string; from: Date; to: Date }[]>(
+      Prisma.sql`SELECT t.provider_id as "providerId", lower(t.period) as "from", upper(t.period) as "to"
+          FROM provider_time_off t WHERE t.provider_id IN (${Prisma.join(ids.map(id => Prisma.sql`${id}::uuid`))}) AND t.period && tstzrange(${notice.toISOString()}::timestamptz, ${dayEnd.toISOString()}::timestamptz, '[)')
+        UNION ALL
+        SELECT x.provider_id, greatest(x.scheduled_start, ${notice.toISOString()}::timestamptz) as "from",
+          least(x.scheduled_end, ${dayEnd.toISOString()}::timestamptz) as "to"
+          FROM bookings x WHERE x.provider_id IN (${Prisma.join(ids.map(id => Prisma.sql`${id}::uuid`))})
+            AND x.slot && tstzrange(${notice.toISOString()}::timestamptz, ${dayEnd.toISOString()}::timestamptz, '[)')
+            AND x.status IN ('PENDING_PAYMENT','REQUESTED','ACCEPTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION')`
+    );
+
+    const secondsOf = (value: Date): number => Math.floor(value.getTime() / 1000);
+    const needed = (durationMin + bufferMin * 2) * 60;
+    const byProvider = new Map<string, { from: number; to: number }[]>();
+    for (const block of blocked) {
+      const list = byProvider.get(block.providerId) ?? [];
+      list.push({ from: secondsOf(block.from), to: secondsOf(block.to) });
+      byProvider.set(block.providerId, list);
+    }
+    const noticeAt = secondsOf(notice);
+    const free: string[] = [];
+    for (const window of windows) {
+      const from = Math.max(secondsOf(window.from), noticeAt);
+      const to = secondsOf(window.to);
+      if (to - from < needed) continue;
+      // Total occupied time inside the window, merged, so two overlapping bookings are not counted twice.
+      const taken = (byProvider.get(window.providerId) ?? [])
+        .map(block => ({ from: Math.max(block.from, from), to: Math.min(block.to, to) }))
+        .filter(block => block.to > block.from)
+        .sort((left, right) => left.from - right.from);
+      let occupied = 0;
+      let lastTo = from;
+      for (const block of taken) {
+        const start = Math.max(block.from, lastTo);
+        if (block.to > start) {
+          occupied += block.to - start;
+          lastTo = block.to;
+        }
+      }
+      if (to - from - occupied >= needed) free.push(window.providerId);
+    }
+    return [...new Set(free)];
   }
 
   /**
@@ -187,26 +298,48 @@ export class SearchService {
   }
 
   /**
-   * Ranked by distance only: the fuller FR-SR-06 formula (rating, completion
-   * rate, response speed, recent activity) has no real inputs yet, since
-   * ratings (M9) and bookings (M5) don't exist. Adding weighted terms for
-   * data that is always zero would just be a fake tie-breaker, so distance
-   * is the whole ranking for now.
-   */
-  async searchProviders(query: ProviderSearchQuery): Promise<ProviderSearchResultRow[]> {
-    const services = await this.prisma.$queryRaw<{ id: number }[]>(Prisma.sql`SELECT id FROM services WHERE slug = ${query.serviceSlug} AND is_active = true`);
+ * FR-SR-02..07 / SHM-108. Every filter below is a *hard* filter applied before ranking, never a
+ * tie-breaker: a customer who narrows to "under PKR 2,000" does not want the cheapest first with the
+ * rest of the list ignored.
+ *
+ * The ranking itself is still the narrower formula described on `searchProviders` — completion rate,
+ * response speed and recency have no input data yet, so their weights are left out and the rest
+ * renormalised rather than counting zeros as a signal.
+ */
+async searchProviders(query: ProviderSearchQuery): Promise<ProviderSearchResultRow[]> {
+    const services = await this.prisma.$queryRaw<{ id: number; durationMin: number }[]>(Prisma.sql`SELECT id, expected_duration_min as "durationMin" FROM services WHERE slug = ${query.serviceSlug} AND is_active = true`);
     const service = services[0];
     if (service === undefined) throw notFound('Service');
 
-    const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${query.lng}, ${query.lat}), 4326)::geography`;
+    // `addressId` resolves here rather than in the web app: the customer has already given us this
+    // address, and a search centred on the wrong point is worse than no search at all.
+    let lat = query.lat;
+    let lng = query.lng;
+    if (query.addressId !== undefined) {
+      const addresses = await this.prisma.$queryRaw<{ lat: number; lng: number }[]>(
+        Prisma.sql`SELECT ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng FROM addresses WHERE id = ${query.addressId}::uuid`
+      );
+      const address = addresses[0];
+      if (address === undefined) throw notFound('Address');
+      lat = address.lat;
+      lng = address.lng;
+    }
+
+    const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${lng!}, ${lat!}), 4326)::geography`;
     const prior = await this.settings.getNumber('rating.bayesian_prior');
     const priorWeight = await this.settings.getNumber('rating.bayesian_weight');
     const recentWeight = await this.settings.getNumber('rating.recent_weight');
+
+    // FR-SR-05: "today" is the customer's local day, and "free later today" is answered by the helper
+    // above, which shares the same availability, leave and booking inputs `listNextSlots` uses.
+    const freeToday = query.availableToday === true ? await this.providersFreeToday(service.id, service.durationMin) : null;
+
     const raw = await this.prisma.$queryRaw<ProviderSearchResultRowRaw[]>(
       Prisma.sql`SELECT p.user_id as "providerId", p.bio, p.experience_years as "experienceYears", p.qualification, ps.price_paisa as "pricePaisa",
           ST_Distance(p.base_location, ${point}) as "distanceM", p.radius_m as "radiusM", p.tier_badge as badge,
           rs.n as "ratingCount",
-          round((${Math.round(prior * 100) * priorWeight} + rs.num) / (${priorWeight} + rs.den))::int as "ratingScoreHundredths"
+          round((${Math.round(prior * 100) * priorWeight} + rs.num) / (${priorWeight} + rs.den))::int as "ratingScoreHundredths",
+          cs.completed as "completedJobs", cs.no_shows as "noShows", cs.median_response as "medianResponseMinutes", cs.last_completed as "lastCompletedAt"
         FROM providers p
         JOIN provider_services ps ON ps.provider_id = p.user_id AND ps.service_id = ${service.id} AND ps.status = 'APPROVED'
         -- The same weighted score the reputation endpoint publishes (CL-17): the last 20 ratings count ${recentWeight}x, then a pull toward the prior.
@@ -216,25 +349,85 @@ export class SearchService {
             coalesce(sum(CASE WHEN x.rn <= 20 THEN ${recentWeight} ELSE 1 END), 0)::float8 as den
           FROM (SELECT round(score * 100)::int as hundredths, row_number() OVER (ORDER BY created_at DESC, id DESC) as rn FROM ratings WHERE provider_id = p.user_id) x
         ) rs ON true
-        WHERE p.status = 'APPROVED' AND p.offer_blocked_reason IS NULL AND p.base_location IS NOT NULL AND ST_DWithin(p.base_location, ${point}, p.radius_m)`
+        -- The three signals that had no inputs before M5/M8 shipped (SHM-109). Each is null rather than
+        -- zero when there is no history, because "has never done a job" is not the same claim as
+        -- "finishes the jobs they take".
+        LEFT JOIN LATERAL (
+          SELECT count(*) FILTER (WHERE x.status = 'CLOSED')::int as completed,
+            count(*) FILTER (WHERE x.no_show_party = 'PROVIDER')::int as no_shows,
+            max(x.completed_at) as last_completed,
+            percentile_disc(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM (x.responded_at - x.created_at)) / 60)::int as median_response
+          FROM (
+            SELECT bk.status, bk.no_show_party, bk.completed_at,
+              (SELECT min(o.responded_at) FROM booking_offers o WHERE o.booking_id = bk.id AND o.status <> 'EXPIRED') as responded_at,
+              bk.created_at
+            FROM bookings bk WHERE bk.provider_id = p.user_id
+          ) x
+        ) cs ON true
+        WHERE p.status = 'APPROVED' AND p.offer_blocked_reason IS NULL AND p.base_location IS NOT NULL AND ST_DWithin(p.base_location, ${point}, p.radius_m)
+          ${query.minExperienceYears === undefined ? Prisma.empty : Prisma.sql`AND coalesce(p.experience_years, 0) >= ${query.minExperienceYears}`}
+          ${query.minCompletedJobs === undefined ? Prisma.empty : Prisma.sql`AND (SELECT count(*) FROM bookings done WHERE done.provider_id = p.user_id AND done.status = 'CLOSED' AND done.completed_at IS NOT NULL) >= ${query.minCompletedJobs}`}
+          ${query.minPricePaisa === undefined ? Prisma.empty : Prisma.sql`AND ps.price_paisa >= ${BigInt(query.minPricePaisa)}`}
+          ${query.maxPricePaisa === undefined ? Prisma.empty : Prisma.sql`AND ps.price_paisa <= ${BigInt(query.maxPricePaisa)}`}
+          ${query.verifiedDocsOnly === true
+            ? Prisma.sql`AND EXISTS (SELECT 1 FROM provider_documents d WHERE d.provider_id = p.user_id AND d.status = 'VERIFIED')`
+            : Prisma.empty}
+          ${freeToday === null ? Prisma.empty : Prisma.sql`AND p.user_id IN (${freeToday.length === 0 ? Prisma.sql`SELECT NULL::uuid WHERE false` : Prisma.join(freeToday.map(id => Prisma.sql`${id}::uuid`))})`}`
     );
-    // FR-SR-06: rank by the admin-configured weights over the inputs that exist today — rating and distance. (Completion rate, response speed
-    // and recency have no data yet; their weights are left out and the rest renormalised, rather than counting zeros as a signal.)
-    const weights = (await this.settings.get<{ rating?: number; distance?: number }>('ranking.weights')) ?? {};
-    const ratingWeight = weights.rating ?? 0.35;
-    const distanceWeight = weights.distance ?? 0.25;
-    const rank = (row: ProviderSearchResultRowRaw): number => {
-      const rating = row.ratingScoreHundredths / 500;
-      const closeness = Math.max(0, 1 - row.distanceM / Math.max(row.radiusM, 1));
-      return (ratingWeight * rating + distanceWeight * closeness) / (ratingWeight + distanceWeight);
+    // FR-SR-06 / SHM-109: every configured weight is applied, or the setting no longer carries it.
+    //
+    // Until now `ranking.weights` advertised five signals and the code used two — completion, response
+    // and recency had no inputs, so their weights were silently renormalised away and an operator
+    // tuning them saw nothing happen. They have inputs now (finished bookings, offer response times,
+    // last completion date), so all five are wired. A signal with no data for a given provider is
+    // **excluded from that provider's score and listed in `missingSignals`**, not counted as zero: a
+    // provider who has never done a job should not be punished for it as though they had failed one.
+    const weights = (await this.settings.get<RankingWeights>('ranking.weights')) ?? {};
+    const known = new Set(['rating', 'distance', 'completion', 'response', 'recency']);
+    const ignored = Object.keys(weights).filter(key => !known.has(key));
+    if (ignored.length > 0) this.logger.warn(`ranking.weights has keys this build does not apply: ${ignored.join(', ')} — trim them or rank nobody on them`);
+
+    const now = this.clock.now();
+    const recencyHorizonDays = 180;
+    const slowResponseMinutes = 240; // 4 hours: past this a provider is the slow end of the range.
+    const signalsFor = (row: ProviderSearchResultRowRaw): ProviderSearchResultRow['signals'] => {
+      const completion = row.completedJobs > 0 ? Math.max(0, 1 - row.noShows / row.completedJobs) : null;
+      const response = row.medianResponseMinutes === null ? null : Math.max(0, 1 - row.medianResponseMinutes / slowResponseMinutes);
+      const days = row.lastCompletedAt === null ? null : (now.getTime() - row.lastCompletedAt.getTime()) / 86_400_000;
+      const recency = days === null ? null : Math.max(0, 1 - days / recencyHorizonDays);
+      return {
+        rating: row.ratingScoreHundredths / 500,
+        distance: Math.max(0, 1 - row.distanceM / Math.max(row.radiusM, 1)),
+        completion,
+        response,
+        recency
+      };
     };
-    raw.sort((left, right) => rank(right) - rank(left) || left.distanceM - right.distanceM);
-    return raw.map(({ ratingScoreHundredths, radiusM, ...row }) => {
+    const score = (signals: ProviderSearchResultRow['signals']): number => {
+      let total = 0;
+      let weight = 0;
+      for (const [key, value] of Object.entries(signals)) {
+        const configured = weights[key as keyof RankingWeights];
+        if (configured === undefined || value === null) continue;
+        total += configured * value;
+        weight += configured;
+      }
+      return weight === 0 ? 0 : total / weight;
+    };
+    const scored = raw.map(row => ({ row, signals: signalsFor(row) }));
+    scored.sort((left, right) => score(right.signals) - score(left.signals) || left.row.distanceM - right.row.distanceM);
+    return scored.map(({ row, signals }) => {
+      const { ratingScoreHundredths, radiusM, completedJobs, noShows, medianResponseMinutes, lastCompletedAt, ...rest } = row;
       void radiusM;
+      void completedJobs;
+      void noShows;
+      void medianResponseMinutes;
+      void lastCompletedAt;
+      const missingSignals = (Object.keys(signals) as (keyof typeof signals)[]).filter(key => signals[key] === null);
       // Ranked above on the prior-pulled number; published as null when no rating
       // exists, for the same reason as `Reputation.score` — a figure derived only
       // from the prior is not something anybody has said about them.
-      return { ...row, pricePaisa: paisaToNumber(row.pricePaisa), ratingScore: row.ratingCount === 0 ? null : ratingScoreHundredths / 100, ratingCount: row.ratingCount };
+      return { ...rest, pricePaisa: paisaToNumber(row.pricePaisa), ratingScore: row.ratingCount === 0 ? null : ratingScoreHundredths / 100, ratingCount: row.ratingCount, signals, missingSignals };
     });
   }
 

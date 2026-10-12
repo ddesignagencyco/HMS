@@ -165,6 +165,12 @@ export class PayoutsService {
       const payout = rows[0];
       if (payout === undefined) throw notFound('Payout');
       if (payout.status !== 'REQUESTED') throw new DomainError('CONFLICT', `This payout is already ${payout.status.toLowerCase()}`);
+      // Serialise approvals for one provider before reading the balance. Two finance users approving two
+      // payouts at the same time each locked only their *own* payout row, so both read the same
+      // wallet balance, both passed the check, and both posted the debit — leaving the wallet short by
+      // the difference. Nothing in `ledger.post` re-checks a balance, which is what makes the lock
+      // load-bearing rather than merely tidy. Same idiom, and the same lock key, as `request()` above.
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`payout:${payout.providerId}`}))`);
       const balance = await this.debt.walletBalance(tx, payout.providerId);
       if (balance < payout.amountPaisa) throw new DomainError('CONFLICT', 'The provider’s wallet no longer covers this payout');
       const transactionId = await this.ledger.post(tx, {

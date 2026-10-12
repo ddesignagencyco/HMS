@@ -116,7 +116,25 @@ export const RULES: Readonly<Record<string, readonly Rule[]>> = {
   'provider.blocked': [{ recipient: { payload: 'providerId' }, eventKey: 'provider.blocked', channels: BOTH }],
   // -- admin work queue
   'provider.awaiting_approval': [{ recipient: 'admins', eventKey: 'admin.provider_pending', channels: IN_APP }],
-  'provider.review_required': [{ recipient: 'admins', eventKey: 'admin.provider_review_required', channels: IN_APP }]
+  'provider.review_required': [{ recipient: 'admins', eventKey: 'admin.provider_review_required', channels: IN_APP }],
+  // -- maintenance plans (M13)
+  /**
+   * A plan visit is an ordinary booking: it is offered like any other, so the provider
+   * already gets `booking.offer` by SMS. What is *not* ordinary is that the customer
+   * paid up front for a year of visits, so a visit silently appearing on their schedule
+   * without a word is the kind of thing that reads as being billed for nothing.
+   */
+  'plan_visit.booked': [{ recipient: { payload: 'customerId' }, eventKey: 'plan.visit_booked', channels: IN_APP }],
+  'subscription.created': [{ recipient: { payload: 'customerId' }, eventKey: 'plan.subscribed', channels: BOTH }],
+  'subscription.activated': [{ recipient: { payload: 'customerId' }, eventKey: 'plan.active', channels: IN_APP }],
+  'subscription.cancelled': [{ recipient: { payload: 'customerId' }, eventKey: 'plan.cancelled', channels: BOTH }],
+  /**
+   * SHM-090: a report is built in the background, so whoever asked for it has no other way of
+   * finding out it finished. Addressed to the requester rather than to all admins, because "the
+   * revenue report is ready" is useful to the finance user who is waiting on it and noise to
+   * everyone else.
+   */
+  'report.ready': [{ recipient: { payload: 'requestedBy' }, eventKey: 'report.ready', channels: IN_APP }]
 };
 
 /**
@@ -143,7 +161,11 @@ export const NO_RULE_EVENTS: Readonly<Record<string, string>> = {
 /** Every placeholder a template may use. A template that names anything else is refused when it is saved, so a typo cannot ship as a blank. */
 export const TEMPLATE_VARIABLES = [
   'bookingRef', 'serviceName', 'providerName', 'slotLabel', 'total', 'amount', 'problemLink', 'code', 'otp', 'link',
-  'complaintRef', 'category', 'to', 'resolution', 'consequence', 'until', 'points', 'decision', 'breachCode', 'releasePaisa', 'refundPaisa', 'replyDueAt', 'pointsAfter', 'penaltyId', 'amountPaisa', 'providerId', 'reason'
+  'complaintRef', 'category', 'to', 'resolution', 'consequence', 'until', 'points', 'decision', 'breachCode', 'releasePaisa', 'refundPaisa', 'replyDueAt', 'pointsAfter', 'penaltyId', 'amountPaisa', 'providerId', 'reason',
+  'visitsCount', 'refundedVisitsCount',
+  // SHM-090 reports. A template naming anything outside this list is refused when it is saved, so a
+  // typo in a report template fails loudly at save time instead of rendering a blank to an admin.
+  'reportType', 'rows', 'periodStart', 'periodEnd'
 ] as const;
 
 export const renderTemplate = (template: string, values: Record<string, string>): string => template.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => values[name] ?? '');

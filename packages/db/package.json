@@ -7,6 +7,8 @@
     "./prisma": "./prisma"
   },
   "scripts": {
+    "db:backup": "dotenv -e ../../.env -- node scripts/backup.mjs",
+    "db:restore": "dotenv -e ../../.env -- node scripts/restore.mjs",
     "db:migrate": "node scripts/dbmate.mjs",
     "db:new": "cross-env DBMATE_COMMAND=new node scripts/dbmate.mjs",
     "db:status": "cross-env DBMATE_COMMAND=status node scripts/dbmate.mjs",
@@ -16,7 +18,9 @@
     "db:generate": "prisma generate --schema prisma/schema.prisma",
     "db:studio": "dotenv -e ../../.env -- prisma studio --schema prisma/schema.prisma",
     "db:seed": "dotenv -e ../../.env -- tsx seed/seed.ts",
-    "db:reset": "npm run db:drop && npm run db:migrate && npm run db:pull && npm run db:seed",
+    "seed:load": "dotenv -e ../../.env -- tsx seed/seedLoad.ts",
+    "db:reset": "npm run db:drop && npm run db:flush-cache && npm run db:migrate && npm run db:pull && npm run db:seed",
+    "db:flush-cache": "node scripts/flush-settings-cache.mjs",
     "build": "tsc -p tsconfig.json",
     "lint": "eslint seed",
     "typecheck": "tsc -p tsconfig.json",

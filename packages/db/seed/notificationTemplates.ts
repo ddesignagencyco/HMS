@@ -72,7 +72,18 @@ export const notificationTemplates: readonly TemplateSeed[] = [
   t('admin.ledger_drift', 'IN_APP', 'Ledger drift', 'The ledger check found a discrepancy. Reconcile now.', 'لیجر چیک میں فرق ملا۔ ابھی ریکنسیلیشن کریں۔'),
   t('admin.penalty_reply', 'IN_APP', 'Penalty reply', 'A provider replied to penalty {{penaltyId}}.', 'ایک پروائیڈر نے جرمانہ {{penaltyId}} کا جواب دیا۔'),
   t('admin.dispute_reply', 'IN_APP', 'Dispute reply', 'A provider replied to the dispute on booking {{bookingRef}}.', 'ایک پروائیڈر نے بکنگ {{bookingRef}} کے تنازع کا جواب دیا۔'),
-  t('admin.provider_review_required', 'IN_APP', 'Provider review required', 'Provider {{providerId}} needs review ({{reason}}).', 'پروائیڈر {{providerId}} کا جائزہ درکار ہے ({{reason}})۔')
+  t('admin.provider_review_required', 'IN_APP', 'Provider review required', 'Provider {{providerId}} needs review ({{reason}}).', 'پروائیڈر {{providerId}} کا جائزہ درکار ہے ({{reason}})۔'),
+  // -- maintenance plans (M13). These four events were emitted from 9 Oct with no planner row at
+  // all, so subscribing, activating, a visit appearing and cancelling were all silent.
+  t('plan.subscribed', 'IN_APP', 'Plan subscribed', 'You subscribed to a maintenance plan for {{visitsCount}} visits. Payment is being taken now.', 'آپ نے {{visitsCount}} وزٹوں کے مینٹیننس پلان کی سبسکرپشن کر لی ہے۔ ادائیگی اب کی جا رہی ہے۔'),
+  t('plan.subscribed', 'SMS', null, 'Smart Home: your maintenance plan ({{visitsCount}} visits) is being activated. Open the app for details.', 'سمارٹ ہوم: آپ کا مینٹیننس پلان ({{visitsCount}} وزٹ) فعال کیا جا رہا ہے۔ تفصیل کے لیے ایپ کھولیں۔'),
+  t('plan.active', 'IN_APP', 'Plan active', 'Your maintenance plan is active. Your visits will be scheduled automatically.', 'آپ کا مینٹیننس پلان فعال ہے۔ آپ کے وزٹ خود بخود شیڈول ہوں گے۔'),
+  t('plan.visit_booked', 'IN_APP', 'Plan visit scheduled', 'A maintenance visit from your plan has been scheduled as booking {{bookingRef}} on {{slotLabel}}.', 'آپ کے پلان سے ایک مینٹیننس وزٹ {{slotLabel}} کو بکنگ {{bookingRef}} کے طور پر شیڈول کر دی گئی ہے۔'),
+  t('plan.cancelled', 'IN_APP', 'Plan cancelled', 'Your maintenance plan was cancelled. {{refundedVisitsCount}} unused visits were refunded ({{amountPaisa}} paisa).', 'آپ کا مینٹیننس پلان منسوخ کر دیا گیا۔ {{refundedVisitsCount}} غیر استعمال شدہ وزٹوں کی رقم ({{amountPaisa}} پیسے) واپس کر دی گئی۔'),
+  t('plan.cancelled', 'SMS', null, 'Smart Home: your maintenance plan was cancelled and the refund is on its way. See the app for the amount.', 'سمارٹ ہوم: آپ کا مینٹیننس پلان منسوخ کر دیا گیا ہے اور رقم واپس بھیج دی گئی ہے۔ رقم کے لیے ایپ دیکھیں۔'),
+  // -- reports (SHM-090). Reports are built in the background, so without this the person who asked
+  // for one had no way of finding out it was ready short of refreshing a list by hand.
+  t('report.ready', 'IN_APP', 'Report ready', 'Your {{reportType}} report is ready to download ({{rows}} rows, {{periodStart}} to {{periodEnd}}).', 'آپ کی {{reportType}} رپورٹ ڈاؤن لوڈ کے لیے تیار ہے ({{rows} صفیں، {{periodStart}} سے {{periodEnd}} تک)۔')
 ];
 
 export const seedNotificationTemplates = async (): Promise<void> => {

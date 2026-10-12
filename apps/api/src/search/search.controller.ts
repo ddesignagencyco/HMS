@@ -16,19 +16,26 @@ export class SearchController {
   @ApiOperation({
     summary: 'Find providers who offer a service near a point',
     description:
-      "Starts from a service (not a person): pass the service's slug and the customer's coordinates. Returns only approved providers with an approved offer for that service, whose configured radius covers the given point, ranked by a weighted blend of rating and distance (`ranking.weights`, rating 0.35 and distance 0.25 by default), then by distance. `ratingScore` is the provider's weighted score, or null when nobody has rated them yet — rank on it, do not render it as a rating."
+      "Starts from a service (not a person): pass the service's slug and either the customer's coordinates or `addressId`. Returns only approved providers with an approved offer for that service, whose configured radius covers the given point, ranked by a weighted blend of rating and distance (`ranking.weights`, rating 0.35 and distance 0.25 by default), then by distance. `ratingScore` is the provider's weighted score, or null when nobody has rated them yet — rank on it, do not render it as a rating. The optional filters are applied *before* ranking, so a narrowed search really is narrowed: `minExperienceYears`, `minCompletedJobs`, `minPricePaisa`/`maxPricePaisa`, `availableToday` (a real free slot later today, local time) and `verifiedDocsOnly` (at least one document verified)."
   })
   @ApiQueryField('serviceSlug', { required: true, description: 'Which service to find providers for, e.g. "leak-repair" (see GET /catalogue/services/{slug}).' })
   @ApiQueryField('lat', {
-    required: true,
+    required: false,
     type: 'number',
-    description: "The customer's latitude, e.g. 31.5204 (Lahore). An area's own lat/lng from GET /places/cities/{cityId}/areas can be used when the exact point is not known."
+    description: "The customer's latitude, e.g. 31.5204 (Lahore). Required with `lng` unless `addressId` is given."
   })
   @ApiQueryField('lng', {
-    required: true,
+    required: false,
     type: 'number',
-    description: "The customer's longitude, e.g. 74.3587 (Lahore). An area's own lng from GET /places/cities/{cityId}/areas can be used when the exact point is not known."
+    description: "The customer's longitude, e.g. 74.3587 (Lahore). Required with `lat` unless `addressId` is given."
   })
+  @ApiQueryField('addressId', { required: false, description: 'A saved address to search around, resolved server-side to its point. Alternative to lat/lng.' })
+  @ApiQueryField('minExperienceYears', { required: false, type: 'number', description: 'Only providers with at least this many years of experience (FR-SR-02).' })
+  @ApiQueryField('minCompletedJobs', { required: false, type: 'number', description: 'Only providers who have completed at least this many jobs (FR-SR-03).' })
+  @ApiQueryField('minPricePaisa', { required: false, type: 'number', description: 'Lowest acceptable price for this service, in paisa (FR-SR-04).' })
+  @ApiQueryField('maxPricePaisa', { required: false, type: 'number', description: 'Highest acceptable price for this service, in paisa (FR-SR-04).' })
+  @ApiQueryField('availableToday', { required: false, type: 'boolean', description: 'Only providers with a free slot later today in their own local time (FR-SR-05).' })
+  @ApiQueryField('verifiedDocsOnly', { required: false, type: 'boolean', description: 'Only providers with at least one verified document (FR-SR-07).' })
   async searchProviders(@Query() query: unknown) {
     return { items: await this.search.searchProviders(parseWith(providerSearchQuerySchema, query)) };
   }

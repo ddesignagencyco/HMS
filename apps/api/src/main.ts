@@ -6,12 +6,16 @@ import { AppModule } from './app.module.js';
 import { EnvironmentService } from './config/environment.service.js';
 import { configureHttpApp, registerHttpPlugins, GLOBAL_PREFIX, OPENAPI_PATH } from './http-app.js';
 import { JsonLogger, toNestLogLevel } from './logger.js';
+import { initialiseErrorReporting } from './observability.js';
 import { SettingsService } from './platform/settings.service.js';
 
 export { GLOBAL_PREFIX, OPENAPI_PATH };
 
 export const bootstrap = async (): Promise<HttpApplication> => {
   const environment = new EnvironmentService();
+  // Before anything else, so a failure inside Nest's own construction is still reportable. A no-op
+  // when no DSN is configured — see `initialiseErrorReporting`.
+  await initialiseErrorReporting(environment);
   const app = await NestFactory.create<HttpApplication>(AppModule, createHttpAdapter(), {
     bufferLogs: true,
     // Body parsing is done by registerHttpPlugins, which picks the size limit per

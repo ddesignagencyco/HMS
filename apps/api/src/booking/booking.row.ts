@@ -1,6 +1,6 @@
 // apps/api/src/booking/booking.row.ts
 import { Prisma } from '@prisma/client';
-import { paisaToNumber } from '@smart-home/domain';
+import { canTransition, paisaToNumber, type BookingStatus } from '@smart-home/domain';
 
 export type BookingRow = {
   id: string;
@@ -39,9 +39,25 @@ export type BookingRow = {
   verificationTier: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Whether `POST /bookings/{id}/cash-received` would be accepted right now.
+   *
+   * `paymentStatus` is `CASH_DUE` from the moment the job completes, but the
+   * handover is not authorised until verification permits it. Between those two
+   * points the booking honestly says "cash owed" and settling it is honestly
+   * refused with a 409 — a window in which a client that renders the button
+   * from `paymentStatus` alone offers an action the API will reject. This flag
+   * is the second half of that answer.
+   *
+   * It is derived from the state machine rather than written out as its own
+   * condition, so it cannot drift from the rule that enforces it: if the
+   * transition table changes, this changes with it.
+   */
+  canConfirmCashReceived: boolean;
 };
 
-export type BookingRowRaw = Omit<BookingRow, 'quotedAmountPaisa' | 'approvedTotalPaisa' | 'finalAmountPaisa' | 'discountPaisa'> & {
+/** The money columns and the derived flag are the only fields not read straight off the row. */
+export type BookingRowRaw = Omit<BookingRow, 'quotedAmountPaisa' | 'approvedTotalPaisa' | 'finalAmountPaisa' | 'discountPaisa' | 'canConfirmCashReceived'> & {
   quotedAmountPaisa: bigint;
   approvedTotalPaisa: bigint;
   finalAmountPaisa: bigint | null;
@@ -79,7 +95,7 @@ export type BookingReadRow = BookingRow & {
   areaName: string | null;
 };
 
-export type BookingReadRaw = Omit<BookingReadRow, 'quotedAmountPaisa' | 'approvedTotalPaisa' | 'finalAmountPaisa' | 'discountPaisa'> & {
+export type BookingReadRaw = Omit<BookingReadRow, 'quotedAmountPaisa' | 'approvedTotalPaisa' | 'finalAmountPaisa' | 'discountPaisa' | 'canConfirmCashReceived'> & {
   quotedAmountPaisa: bigint;
   approvedTotalPaisa: bigint;
   finalAmountPaisa: bigint | null;
@@ -113,19 +129,24 @@ export const BOOKING_COLUMNS = Prisma.sql`id, code, customer_id as "customerId",
   created_at as "createdAt", updated_at as "updatedAt"`;
 
 /** bigint paisa to number paisa; the only place the database's numeric type is narrowed. */
-const withMoney = <T extends { quotedAmountPaisa: bigint; approvedTotalPaisa: bigint; finalAmountPaisa: bigint | null; discountPaisa: bigint }>(
+const withMoney = <T extends { paymentMode: string; status: string; quotedAmountPaisa: bigint; approvedTotalPaisa: bigint; finalAmountPaisa: bigint | null; discountPaisa: bigint }>(
   raw: T
 ): Omit<T, 'quotedAmountPaisa' | 'approvedTotalPaisa' | 'finalAmountPaisa' | 'discountPaisa'> & {
   quotedAmountPaisa: number;
   approvedTotalPaisa: number;
   finalAmountPaisa: number | null;
   discountPaisa: number;
+  canConfirmCashReceived: boolean;
 } => ({
   ...raw,
   quotedAmountPaisa: paisaToNumber(raw.quotedAmountPaisa),
   approvedTotalPaisa: paisaToNumber(raw.approvedTotalPaisa),
   finalAmountPaisa: raw.finalAmountPaisa === null ? null : paisaToNumber(raw.finalAmountPaisa),
-  discountPaisa: paisaToNumber(raw.discountPaisa)
+  discountPaisa: paisaToNumber(raw.discountPaisa),
+  // Asked of the transition table itself rather than restated: `confirmCashReceived` is legal from
+  // VERIFIED and AUTO_RELEASED only, and the database trigger refuses the release without a
+  // release-permitting verification. An online job never carries this event at all.
+  canConfirmCashReceived: raw.paymentMode === 'CASH' && canTransition(raw.status as BookingStatus, 'confirmCashReceived', 'PROVIDER') !== null
 });
 
 export const toBookingRow = (raw: BookingRowRaw): BookingRow => withMoney(raw);

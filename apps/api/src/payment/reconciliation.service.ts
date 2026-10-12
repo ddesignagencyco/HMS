@@ -76,7 +76,23 @@ export class ReconciliationService implements OnModuleInit {
     );
     for (const row of escrow) drift.push({ check: 'escrow', subject: row.bookingId, expected: '0 once a booking is finished, never negative', actual: `${row.balance}` });
 
-    const report: ReconciliationReport = { ranAt: new Date().toISOString(), checks: 6, drift };
+    // 5. Payout clearing holds exactly what the bank has not answered for.
+    //
+    // Money leaves a provider's wallet into PAYOUT_CLEARING when finance approves a payout and leaves
+    // that account only when the bank confirms or rejects it. A batch that is exported and then never
+    // marked — a file that never reached the bank, a finance user who closed the laptop — leaves the
+    // balance sitting there indefinitely with nothing watching it, which is the same shape of hole as
+    // the stranded NO_SHOW escrow this job already caught once. The balance must equal the approved,
+    // un-decided payouts; anything else means money is in a limbo account.
+    const clearing = await this.prisma.$queryRaw<{ balance: bigint; expected: bigint }[]>(
+      Prisma.sql`SELECT (SELECT coalesce(sum(b.balance), 0)::bigint FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'PAYOUT_CLEARING') as balance,
+          (SELECT coalesce(sum(amount_paisa), 0)::bigint FROM payouts WHERE status IN ('APPROVED','IN_BATCH')) as expected`
+    );
+    if ((clearing[0]?.balance ?? 0n) !== (clearing[0]?.expected ?? 0n)) {
+      drift.push({ check: 'payout_clearing', subject: 'PAYOUT_CLEARING', expected: `${clearing[0]?.expected ?? 0n} held for approved payouts`, actual: `${clearing[0]?.balance ?? 0n}` });
+    }
+
+    const report: ReconciliationReport = { ranAt: new Date().toISOString(), checks: 7, drift };
     await this.prisma.$transaction(async tx => {
       await this.audit.append({ actorUserId: triggeredBy, actorRole: triggeredBy === null ? 'SYSTEM' : 'FINANCE', action: 'ledger.reconcile', entityType: 'ledger', entityId: 'all', after: { checks: report.checks, drift: drift.length } }, tx);
       if (drift.length > 0) await appendOutboxEvent(tx, { aggregate: 'ledger', aggregateId: 'all', type: 'ledger.drift_detected', payload: { drift: drift.slice(0, 50) } });

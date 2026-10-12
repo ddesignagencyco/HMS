@@ -340,6 +340,10 @@ CREATE TABLE provider_services (
   PRIMARY KEY (provider_id, service_id)
 );
 CREATE INDEX provider_services_service_idx ON provider_services(service_id, status);
+-- SHM-092: without this, a location search seq-scans this table once per candidate provider
+-- (188 loops over 10k rows in the measured plan). `status` is in the index so the per-provider
+-- probe answers the approval check without visiting the heap.
+CREATE INDEX provider_services_provider_status_idx ON provider_services(provider_id, status);
 
 CREATE TABLE provider_service_areas (
   provider_id uuid REFERENCES providers(user_id),
@@ -1243,17 +1247,33 @@ CREATE TRIGGER audit_log_insert_only BEFORE UPDATE OR DELETE ON audit_log FOR EA
 
 CREATE TABLE report_runs (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  type         text NOT NULL,              -- MONTHLY | REVENUE | PROVIDER_PERFORMANCE | VERIFICATION
+  type         text NOT NULL,              -- MONTHLY | REVENUE | PROVIDER_PERFORMANCE | ...
   period_start date NOT NULL,
   period_end   date NOT NULL,
   format       text NOT NULL CHECK (format IN ('PDF','XLSX')),
   status       report_status NOT NULL DEFAULT 'QUEUED',
   file_key     text,
   error        text,
+  total_paisa  bigint,                     -- SHM-090: headline figure, computed once at build
+                                            -- time so the XLSX and the PDF cannot disagree
+  row_count    int,                        -- SHM-090: how much data the run actually covered
   requested_by uuid NOT NULL REFERENCES users(id),
   created_at   timestamptz NOT NULL DEFAULT now(),
-  completed_at timestamptz
+  started_at   timestamptz,                -- SHM-090: NULL means never started, so "stuck for
+                                            -- how long" has an answer
+  completed_at timestamptz,
+  CONSTRAINT report_runs_period_ordered CHECK (period_end > period_start)
 );
+
+-- The worker takes QUEUED runs oldest-first; without this the queue is a scan.
+CREATE INDEX report_runs_status_created_idx ON report_runs(status, created_at);
+
+-- Asking twice re-opens the run you already have instead of producing a second copy of the same
+-- numbers with a different timestamp. Only open runs are protected: once one is DONE or FAILED the
+-- same request must be allowed through, or a failed report could never be retried.
+CREATE UNIQUE INDEX report_runs_open_unique
+  ON report_runs(requested_by, type, period_start, period_end)
+  WHERE status IN ('QUEUED', 'RUNNING');
 
 -- ---------------------------------------------------------------------
 -- BOOKING STATUS GUARD (only BookingStateService may change status)

@@ -239,6 +239,47 @@ describe('SHM-059: auto-release after 72 hours', () => {
     await app.get(VerificationSweepsService).autoRelease();
     expect(await bookingStatus(job.id)).toBe('DISPUTED');
   });
+
+  it('does NOT auto-release a job the customer has complained about', async () => {
+    // The sweep is for an *unreachable* customer. One who has filed a complaint has spoken, and
+    // `ComplaintsService.openDispute` exists precisely so that a complaint about a job awaiting
+    // verification freezes the money instead of letting it drain through escrow. Nothing required
+    // that escalation inside the 72-hour window, so the sweep released the money anyway and left
+    // the admin ruling on a post-release job — where a refund comes out of the provider's wallet
+    // rather than escrow. The sweep now leaves these alone for the complaint's own SLA to chase.
+    const job = await completedJob(app, provider, { mode: 'ONLINE' });
+    const raised = await callApi(app, '/complaints', bearer(job.customer.accessToken, postJson({
+      bookingId: job.id,
+      category: 'QUALITY',
+      description: 'The work was not done properly and nobody has come back to look at it.'
+    })));
+    expect(raised.status).toBe(201);
+
+    app.get(AppClock).travelTo(new Date((await completedAt(job.id)).getTime() + 100 * 3_600_000));
+    expect(await app.get(VerificationSweepsService).autoRelease()).toBe(0);
+    expect(await bookingStatus(job.id)).toBe('AWAITING_VERIFICATION');
+
+    const releases = await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM ledger_transactions WHERE booking_id = ${job.id}::uuid AND type = 'RELEASE'`);
+    expect(releases[0]?.n).toBe(0n);
+    // Not silently held either: the verification is still open for an agent or the customer's link.
+    expect((await verificationRow(job.verificationId)).status).not.toBe('SUBMITTED');
+  });
+
+  it('auto-releases normally once the complaint has been decided', async () => {
+    // The guard is about an *unresolved* complaint, not a permanent block on auto-release.
+    const job = await completedJob(app, provider, { mode: 'ONLINE' });
+    const raised = await callApi<{ id: string }>(app, '/complaints', bearer(job.customer.accessToken, postJson({
+      bookingId: job.id,
+      category: 'QUALITY',
+      description: 'Reported a problem with the finish; the provider says it is fine.'
+    })));
+    expect(raised.status).toBe(201);
+    await prisma.$executeRaw(Prisma.sql`UPDATE complaints SET status = 'RESOLVED'::complaint_status, resolution = 'NO_ACTION'::complaint_resolution, resolved_at = now() WHERE id = ${raised.body.id}::uuid`);
+
+    app.get(AppClock).travelTo(new Date((await completedAt(job.id)).getTime() + 100 * 3_600_000));
+    await app.get(VerificationSweepsService).autoRelease();
+    expect(await bookingStatus(job.id)).toBe('PAYMENT_RELEASED');
+  });
 });
 
 describe('SHM-054 / SHM-059: Tier B', () => {

@@ -4,11 +4,18 @@ const EMAIL = /[A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9-]+(?:\s*\.\s*[A-Za-z0-9-]+)+/g
 
 /**
  * A run of digits that could be a phone number: at least 9 digits, allowing the usual separators
- * between them (spaces, dashes, dots, brackets) and a leading +. Nine is the shortest Pakistani
- * number written without its leading 0 (e.g. 3001234567 is 10, +923001234567 is 12); prices and
- * house numbers, which are shorter, are left alone.
+ * between them (spaces, dashes, dots, brackets, commas, slashes, underscores) and a leading +. Nine
+ * is the shortest Pakistani number written without its leading 0 (e.g. 3001234567 is 10, +923001234567
+ * is 12); prices and house numbers, which are shorter, are left alone.
+ *
+ * The separator set is deliberately broad because this is a privacy control, not a parser: every way
+ * of writing the digits is a way of writing them on a message. The original class covered only
+ * whitespace, dots, dashes and brackets, so `0300/1234567`, `0300_1234567` and `0300,1234567` — three
+ * entirely ordinary ways to type a Pakistani mobile number — were stored unmasked and handed straight
+ * to the other party, which is exactly what FR-BK-07 forbids. Word separators cannot help here because
+ * the match is digits-and-punctuation only, so "5,000 and 300" is still left alone.
  */
-const PHONE = /(?:\+\s*)?\(?\d(?:[\s().-]*\d){8,}/g;
+const PHONE = /(?:\+\s*)?\(?\d(?:[\s().,/_-]*\d){8,}/g;
 
 /** Digits spelled out in words ("zero three zero zero ...") are the obvious way around a digit filter. */
 const NUMBER_WORDS = /\b(?:(?:zero|oh|one|two|three|four|five|six|seven|eight|nine)[\s,.-]+){7,}(?:zero|oh|one|two|three|four|five|six|seven|eight|nine)\b/gi;

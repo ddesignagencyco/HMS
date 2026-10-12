@@ -36,6 +36,12 @@ export interface TelephonyPort {
 
 export interface ObjectStoragePort {
   put(input: { key: string; bucket: string; content: Uint8Array; contentType: string }): Promise<void>;
+  /**
+   * Reads a stored object back. Added for SHM-090: a report is built once and served many times, so
+   * something has to be able to read it. Until then every caller built its file in memory and served
+   * that, which works right up until the file is large or the process restarts.
+   */
+  get(input: { key: string; bucket: string }): Promise<{ content: Buffer; contentType: string } | null>;
   presignPut(input: { key: string; bucket: string; contentType: string; maxBytes: number }): Promise<{ url: string; method: 'PUT'; expiresAt: string }>;
   presignGet(input: { key: string; bucket: string; ttlSeconds: number }): Promise<{ url: string; expiresAt: string }>;
   head(input: { key: string; bucket: string }): Promise<{ size: number; contentType: string } | null>;

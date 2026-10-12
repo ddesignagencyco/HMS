@@ -61,6 +61,13 @@ infer from a path.
 | `DELETE /api/v1/me/favourites/{providerId}` | AUTHENTICATED | Remove a provider from your favourites |
 | `POST /api/v1/me/favourites/{providerId}` | AUTHENTICATED | Add a provider to your favourites |
 | `PATCH /api/v1/me/password` | AUTHENTICATED | Change your password |
+| `GET /api/v1/me` | AUTHENTICATED | Get your own profile |
+| `PATCH /api/v1/me` | AUTHENTICATED | Update your own profile |
+| `POST /api/v1/me/deactivate` | AUTHENTICATED | Deactivate your account |
+| `GET /api/v1/me/favourites` | AUTHENTICATED | List your favourite providers |
+| `DELETE /api/v1/me/favourites/{providerId}` | AUTHENTICATED | Remove a provider from your favourites |
+| `POST /api/v1/me/favourites/{providerId}` | AUTHENTICATED | Add a provider to your favourites |
+| `PATCH /api/v1/me/password` | AUTHENTICATED | Change your password |
 
 ## Booking lifecycle
 
@@ -115,6 +122,7 @@ infer from a path.
 | `PATCH /api/v1/provider/profile` | PROVIDER | Update my provider profile |
 | `GET /api/v1/provider/service-areas` | PROVIDER | List the areas I serve |
 | `PUT /api/v1/provider/service-areas` | PROVIDER | Replace the areas I serve |
+| `POST /api/v1/provider/submit` | PROVIDER | Submit my profile for approval |
 | `POST /api/v1/provider/submit` | PROVIDER | Submit my profile for approval |
 | `GET /api/v1/provider/time-off` | PROVIDER | List my recorded leave periods |
 | `POST /api/v1/provider/time-off` | PROVIDER | Record a leave period |
@@ -218,6 +226,55 @@ infer from a path.
 | `GET /api/v1/finance/recordings/{attemptId}` | FINANCE | Play a call recording |
 | `GET /api/v1/finance/refunds` | FINANCE | List refunds |
 | `POST /api/v1/finance/refunds` | FINANCE | Refund a disputed booking by hand |
+| `GET /api/v1/finance/reports` | FINANCE | My reports |
+| `POST /api/v1/finance/reports` | FINANCE | Ask for a report |
+| `GET /api/v1/finance/reports/{id}` | FINANCE | One report run |
+| `GET /api/v1/finance/reports/{id}/download` | FINANCE | Download a finished report |
+
+## Maintenance plans
+
+| Operation | Role | Summary |
+|---|---|---|
+| `GET /api/v1/admin/plans` | ADMIN | List all maintenance plans (admin) |
+| `POST /api/v1/admin/plans` | ADMIN | Create a maintenance plan |
+| `DELETE /api/v1/admin/plans/{id}` | ADMIN | Deactivate a maintenance plan |
+| `GET /api/v1/admin/plans/{id}` | ADMIN | Get plan details (admin) |
+| `PATCH /api/v1/admin/plans/{id}` | ADMIN | Update a maintenance plan |
+| `GET /api/v1/me/subscriptions` | AUTHENTICATED | List my plan subscriptions |
+| `GET /api/v1/plans` | AUTHENTICATED | Browse available maintenance plans |
+| `GET /api/v1/plans/{id}` | AUTHENTICATED | Get details of a maintenance plan |
+| `POST /api/v1/plans/{id}/subscribe` | AUTHENTICATED | Subscribe to a maintenance plan |
+| `GET /api/v1/subscriptions/{id}` | AUTHENTICATED | Get details of a subscription |
+| `POST /api/v1/subscriptions/{id}/cancel` | AUTHENTICATED | Cancel a maintenance plan subscription |
+
+## Admin: accounts, roles & audit
+
+| Operation | Role | Summary |
+|---|---|---|
+| `GET /api/v1/admin/audit` | ADMIN | Query the audit log |
+| `GET /api/v1/admin/customers` | ADMIN | List customer accounts |
+| `POST /api/v1/admin/customers/{customerId}/deactivate` | ADMIN | Deactivate a customer |
+| `GET /api/v1/admin/roles` | ADMIN | List roles and their permissions |
+| `GET /api/v1/admin/settings` | ADMIN | List all platform settings |
+| `GET /api/v1/admin/settings/{key}` | ADMIN | Read one setting's current value |
+| `PUT /api/v1/admin/settings/{key}` | ADMIN | Change a setting's value |
+| `GET /api/v1/admin/staff-conflicts` | ADMIN | List declared staff conflicts |
+| `POST /api/v1/admin/staff-conflicts` | ADMIN | Declare a staff conflict |
+| `DELETE /api/v1/admin/staff-conflicts/{id}` | ADMIN | Withdraw a declared conflict |
+| `GET /api/v1/admin/users` | ADMIN | List user accounts |
+| `POST /api/v1/admin/users/{userId}/block` | ADMIN | Block a user |
+| `POST /api/v1/admin/users/{userId}/deactivate` | ADMIN | Deactivate a user |
+| `DELETE /api/v1/admin/users/{userId}/roles/{roleCode}` | ADMIN | Revoke a role |
+| `POST /api/v1/admin/users/{userId}/roles/{roleCode}` | ADMIN | Grant a role |
+| `POST /api/v1/admin/users/{userId}/send-reset` | ADMIN | Send a password reset |
+| `POST /api/v1/admin/users/{userId}/unblock` | ADMIN | Unblock a user |
+
+## Operations board (live)
+
+| Operation | Role | Summary |
+|---|---|---|
+| `GET /api/v1/admin/ops-board` | ADMIN | The operations board |
+| `GET /api/v1/admin/ops-board/stream` | ADMIN | The operations board, live |
 
 ## Admin: catalogue & providers
 
@@ -240,8 +297,11 @@ infer from a path.
 | `POST /api/v1/admin/providers/{providerId}/approve` | ADMIN | Approve a provider |
 | `POST /api/v1/admin/providers/{providerId}/block` | ADMIN | Block a provider |
 | `POST /api/v1/admin/providers/{providerId}/deactivate` | ADMIN | Deactivate a provider |
+| `POST /api/v1/admin/providers/{providerId}/block` | ADMIN | Block a provider |
+| `POST /api/v1/admin/providers/{providerId}/deactivate` | ADMIN | Deactivate a provider |
 | `GET /api/v1/admin/providers/{providerId}/documents` | ADMIN | List a provider's documents for review |
 | `POST /api/v1/admin/providers/{providerId}/reject` | ADMIN | Reject a provider |
+| `POST /api/v1/admin/providers/{providerId}/unblock` | ADMIN | Unblock a provider |
 | `POST /api/v1/admin/providers/{providerId}/unblock` | ADMIN | Unblock a provider |
 
 ## Admin: complaints, disputes & conduct
@@ -269,9 +329,6 @@ infer from a path.
 | Operation | Role | Summary |
 |---|---|---|
 | `GET /api/v1/admin/notifications` | ADMIN | The notification delivery log |
-| `GET /api/v1/admin/settings` | ADMIN | List all platform settings |
-| `GET /api/v1/admin/settings/{key}` | ADMIN | Read one setting's current value |
-| `PUT /api/v1/admin/settings/{key}` | ADMIN | Change a setting's value |
 | `GET /api/v1/admin/templates` | ADMIN | List notification templates |
 | `POST /api/v1/admin/templates` | ADMIN | Create a template |
 | `GET /api/v1/admin/templates/{id}` | ADMIN | Read a template |

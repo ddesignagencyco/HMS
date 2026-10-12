@@ -67,13 +67,21 @@ export class VerificationSweepsService implements OnModuleInit {
    * FR-VC-07 / CL-09: 72 hours (`verification.auto_release_hours`) after completion with no verification, the job is released so a
    * provider is not held up forever by an unreachable customer. No rating is published — nobody actually confirmed anything — and the
    * customer keeps a complaint window. Cash is authorised to collect, as for any other release.
+   *
+   * **A job with an unresolved complaint is never auto-released.** An unreachable customer is silent, but a customer who has
+   * filed a complaint has spoken — and `ComplaintsService.openDispute` exists precisely because a complaint about a job still
+   * awaiting verification should freeze the money rather than let it drain through escrow. Nothing required that escalation to
+   * happen within the 72 hours, so the sweep used to release the money out from under a live complaint and leave the admin
+   * deciding it post-release, when a refund has to be drawn from the provider's wallet instead of escrow. The sweep now leaves
+   * those bookings alone: the complaint's own SLA is what should get an admin to it, and the complaint queue already alerts them.
    */
   async autoRelease(): Promise<number> {
     const hours = await this.settings.getNumber('verification.auto_release_hours');
     const cutoff = new Date(this.clock.now().getTime() - hours * 3_600_000);
     const due = await this.prisma.$queryRaw<{ verificationId: string; bookingId: string }[]>(
       Prisma.sql`SELECT v.id as "verificationId", b.id as "bookingId" FROM verification_calls v JOIN bookings b ON b.id = v.booking_id
-        WHERE b.status = 'AWAITING_VERIFICATION' AND v.submitted_at IS NULL AND b.completed_at <= ${cutoff.toISOString()}::timestamptz AND v.status IN ('QUEUED','LOCKED')`
+WHERE b.status = 'AWAITING_VERIFICATION' AND v.submitted_at IS NULL AND b.completed_at <= ${cutoff.toISOString()}::timestamptz AND v.status IN ('QUEUED','LOCKED')
+          AND NOT EXISTS (SELECT 1 FROM complaints c WHERE c.booking_id = b.id AND c.status NOT IN ('RESOLVED','REJECTED'))`
     );
     let released = 0;
     const refundIds: string[] = [];
@@ -86,6 +94,12 @@ export class VerificationSweepsService implements OnModuleInit {
         const booking = await VerificationOutcomeService.loadBooking(tx, call.bookingId);
         const statuses = await tx.$queryRaw<{ status: string }[]>(Prisma.sql`SELECT status::text FROM bookings WHERE id = ${call.bookingId}::uuid`);
         if (statuses[0]?.status !== 'AWAITING_VERIFICATION') return null;
+        // Re-checked under the lock: a complaint raised between the sweep's SELECT and this transaction
+        // must stop the release just as much as one that was already open.
+        const complained = await tx.$queryRaw<{ n: bigint }[]>(
+          Prisma.sql`SELECT count(*)::bigint as n FROM complaints WHERE booking_id = ${call.bookingId}::uuid AND status NOT IN ('RESOLVED','REJECTED')`
+        );
+        if ((complained[0]?.n ?? 0n) > 0n) return null;
         await tx.$executeRaw(
           Prisma.sql`UPDATE verification_calls SET status = 'SUBMITTED'::verification_status, outcome = 'AUTO_RELEASED'::verification_outcome, submitted_at = now(), locked_by = NULL, locked_at = NULL WHERE id = ${call.verificationId}::uuid`
         );
