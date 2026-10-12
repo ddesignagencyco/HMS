@@ -195,7 +195,11 @@ jobs:
         # fail on anything new -- and that baseline is not written yet. Until it is, this job
         # reports and a human reads it. See PROGRESS_TRACKER SHM-092.
         continue-on-error: true
-        uses: zaproxy/action-baseline@main
+        # Pinned to the commit SHA of v0.15.0, not to a tag or a branch. Actions resolve only
+        # tags, releases and full SHAs, so `@main` fails at "Prepare all required actions" with
+        # "unable to find version". The SHA also means the scan cannot change under us: a tag can
+        # be moved to a different commit, a SHA cannot.
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
         id: zap
         with:
           target: http://localhost:3000
