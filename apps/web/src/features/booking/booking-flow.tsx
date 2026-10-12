@@ -2,7 +2,8 @@
 
 import { CalendarDays, Camera, CheckCircle2, ChevronLeft, ChevronRight, Info, ShieldCheck, Upload, X, Zap } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, localizedPath, type Locale } from "@/lib/utils";
 import { Button, ButtonLink, Card, Checkbox, Container, Label, PageBanner, RadioGroup, RadioGroupItem, Section, Textarea, buttonStyles } from "@/components/ui";
@@ -10,12 +11,14 @@ import { SelectField } from "@/components/select-field";
 import { money } from "@/features/catalogue/pricing";
 import { formatSlotTime } from "@/features/search/location";
 import { addDays, SLOT_WINDOW_DAYS, toApiDate } from "@/features/search/types";
-import { useProviderSearch } from "@/features/search/queries";
-import { useProviderSlots } from "@/features/search/queries";
+import { useProviderSearch, useProviderSlots } from "@/features/search/queries";
+import { searchApi } from "@/features/search/api";
+import { publicKeys, FRESHNESS } from "@/lib/api/keys";
+import { useSession } from "@/features/auth/session";
 import { BookingStepper } from "@/features/booking/booking-stepper";
 import { AddressStep } from "@/features/booking/address-step";
 import { DayPicker, ProviderChoiceStep, RequestedWindowPicker, formatDay, isAutoAssign, type ProviderChoice, type ScheduleRequest } from "@/features/booking/provider-choice";
-import { useCreateBooking, useQuote } from "@/features/booking/queries";
+import { useAddresses, useCreateBooking, useQuote } from "@/features/booking/queries";
 import { useIssueOptions } from "@/features/catalogue/queries";
 import { isAwaitingProvider, isHeldPayment } from "@/features/booking/status";
 import { bookingApi, type CreatedBooking, type PaymentMode, type Quote } from "@/features/booking/api";
@@ -93,12 +96,20 @@ export function BookingFlow({
     initialProviderId === null ? EMPTY : { ...EMPTY, choice: { kind: "provider", providerId: initialProviderId } },
   );
   const [point, setPoint] = useState<{ lat: number; lng: number } | null>(null);
+  const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
   const [created, setCreated] = useState<CreatedBooking | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [slotTaken, setSlotTaken] = useState(false);
   const [localError, setLocalError] = useState("");
   const quote = useQuote(null, locale);
   const createBooking = useCreateBooking(locale);
+
+  const { status: sessionStatus } = useSession();
+  const canReadAddresses = sessionStatus === "authenticated";
+  const addresses = useAddresses(locale, canReadAddresses);
+
+  const chosenAddress = addresses.data?.items.find((item) => item.id === basket.addressId);
+  const activeAreaId = chosenAddress?.areaId ?? selectedAreaId;
 
   const update = (patch: Partial<Basket>): void => setBasket((current) => ({ ...current, ...patch }));
 
@@ -110,6 +121,51 @@ export function BookingFlow({
       : { serviceSlug: service.slug, lat: point.lat, lng: point.lng },
     locale,
   );
+
+  const rawProviderList = providers.data?.items ?? [];
+
+  /* Fetch details to check declared coverage areas (FR-SP-08, TRD §3.4).
+     If a professional has restricted their practice to specific areas (e.g. Gulberg only),
+     they must not be offered in Model Town or Wahdat Colony even if within raw radius. */
+  const providerDetails = useQueries({
+    queries: rawProviderList.map((p) => ({
+      queryKey: publicKeys.provider(p.providerId),
+      queryFn: ({ signal }: { signal: AbortSignal }) => searchApi.getProvider(p.providerId, { signal, locale }),
+      staleTime: FRESHNESS.profile.staleTime,
+      enabled: activeAreaId !== null,
+    })),
+  });
+
+  const detailsLoading = activeAreaId !== null && providerDetails.some((q) => q.isPending);
+
+  const eligibleProviders = useMemo(() => {
+    if (activeAreaId === null || detailsLoading) return rawProviderList;
+
+    return rawProviderList.filter((provider, index) => {
+      const detail = providerDetails[index]?.data;
+      if (!detail) return true;
+      if (detail.areas && Array.isArray(detail.areas) && detail.areas.length > 0) {
+        return detail.areas.some((area) => area.areaId === activeAreaId);
+      }
+      return true;
+    });
+  }, [rawProviderList, activeAreaId, detailsLoading, providerDetails]);
+
+  /* If a carried-in or previously chosen provider is not eligible for this address's area, reset choice */
+  useEffect(() => {
+    if (
+      !detailsLoading &&
+      !providers.isFetching &&
+      activeAreaId !== null &&
+      basket.choice?.kind === "provider" &&
+      basket.choice.providerId !== ""
+    ) {
+      const isEligible = eligibleProviders.some((p) => p.providerId === basket.choice?.providerId);
+      if (!isEligible) {
+        update({ choice: null, slot: null, request: null });
+      }
+    }
+  }, [detailsLoading, providers.isFetching, activeAreaId, basket.choice, eligibleProviders]);
 
   const chosenProviderId = basket.choice?.kind === "provider" && basket.choice.providerId !== "" ? basket.choice.providerId : null;
   const autoAssign = isAutoAssign(basket.choice);
@@ -326,8 +382,11 @@ export function BookingFlow({
                   locale={locale}
                   dict={dict}
                   addressId={basket.addressId}
-                  onSelect={(addressId, addressPoint) => {
+                  onSelect={(addressId, addressPoint, addressAreaId) => {
                     setPoint(addressPoint);
+                    if (addressAreaId !== undefined) {
+                      setSelectedAreaId(addressAreaId);
+                    }
                     /* Choosing the address moves the search point, so the
                        professional list, the slots and the quote are all stale.
                        Drop the ones that depend on it rather than showing a quote
@@ -352,8 +411,8 @@ export function BookingFlow({
                   locale={locale}
                   dict={dict}
                   choice={basket.choice}
-                  providers={providers.data?.items ?? []}
-                  searching={providers.isFetching}
+                  providers={eligibleProviders}
+                  searching={providers.isFetching || detailsLoading}
                   hasLocation={point !== null && basket.addressId !== null}
                   onChange={(choice) => {
                     update({ choice, slot: null, request: null });
@@ -424,7 +483,7 @@ export function BookingFlow({
                      handoff), so the review step names the choice by its
                      qualification rather than inventing a person's name. */
                   chosenProviderName={
-                    providers.data?.items.find((item) => item.providerId === chosenProviderId)?.qualification ?? null
+                    eligibleProviders.find((item) => item.providerId === chosenProviderId)?.qualification ?? null
                   }
                   quote={currentQuote}
                   loading={quote.isPending}

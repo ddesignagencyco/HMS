@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { BadgeCheck, LocateFixed, Loader2, MapPin, RotateCcw, Search, SearchX, SlidersHorizontal, Star, X } from "lucide-react";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, formatNumber, localizedPath, type Locale } from "@/lib/utils";
@@ -11,6 +12,8 @@ import { SelectField } from "@/components/select-field";
 import { useAllServices, useCategories, useCategoryServices } from "@/features/catalogue/queries";
 import { useCities, useCityAreas } from "@/features/places/queries";
 import { useProviderSearch } from "@/features/search/queries";
+import { searchApi } from "@/features/search/api";
+import { publicKeys, FRESHNESS } from "@/lib/api/keys";
 import { areaCentroid, cityCentre, ratingOf, requestDeviceLocation } from "@/features/search/location";
 import {
   buildSearchParams,
@@ -168,10 +171,34 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   );
   const results = useProviderSearch(filters, locale);
 
+  const rawResults = results.data?.items ?? [];
+
+  const providerDetails = useQueries({
+    queries: rawResults.map((p) => ({
+      queryKey: publicKeys.provider(p.providerId),
+      queryFn: ({ signal }: { signal: AbortSignal }) => searchApi.getProvider(p.providerId, { signal, locale }),
+      staleTime: FRESHNESS.profile.staleTime,
+      enabled: state.areaId !== null,
+    })),
+  });
+
+  const detailsLoading = state.areaId !== null && providerDetails.some((q) => q.isPending);
+
   /* Client-side refined results based on sort and filter settings */
   const processedProviders = useMemo(() => {
     if (!results.data?.items) return [];
     let items = [...results.data.items];
+
+    if (state.areaId !== null && !detailsLoading) {
+      items = items.filter((p, index) => {
+        const detail = providerDetails[index]?.data;
+        if (!detail) return true;
+        if (detail.areas && Array.isArray(detail.areas) && detail.areas.length > 0) {
+          return detail.areas.some((area) => area.areaId === state.areaId);
+        }
+        return true;
+      });
+    }
 
     if (minRating > 0) {
       items = items.filter((p) => (p.ratingScore ?? 0) >= minRating);

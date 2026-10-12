@@ -27,7 +27,7 @@ import { LocationMap } from '@/components/location-map';
 
 type PointSource = 'none' | 'device' | 'city' | 'saved';
 
-export function AddressStep({ locale, dict, addressId, onSelect }: { locale: Locale; dict: Dictionary; addressId: string | null; onSelect: (addressId: string, point: LatLng) => void }) {
+export function AddressStep({ locale, dict, addressId, onSelect }: { locale: Locale; dict: Dictionary; addressId: string | null; onSelect: (addressId: string, point: LatLng, areaId?: number) => void }) {
   const { status: sessionStatus } = useSession();
   /* `/book/[slug]` is a *public* route, so this step can mount before the session
      is known. Firing the authenticated read then produced a 401 for every
@@ -75,7 +75,7 @@ export function AddressStep({ locale, dict, addressId, onSelect }: { locale: Loc
           dict={dict}
           onCreated={(address) => {
             setCreating(false);
-            onSelect(address.id, { lat: address.lat, lng: address.lng });
+            onSelect(address.id, { lat: address.lat, lng: address.lng }, address.areaId);
           }}
           onCancel={items.length === 0 ? undefined : () => setCreating(false)}
           fallbackCityId={null}
@@ -96,7 +96,7 @@ export function AddressStep({ locale, dict, addressId, onSelect }: { locale: Loc
           value={addressId ?? ''}
           onValueChange={(value) => {
             const chosen = items.find((item) => item.id === value);
-            if (chosen !== undefined) onSelect(chosen.id, { lat: chosen.lat, lng: chosen.lng });
+            if (chosen !== undefined) onSelect(chosen.id, { lat: chosen.lat, lng: chosen.lng }, chosen.areaId);
           }}
           className="mt-6 grid gap-3"
         >
