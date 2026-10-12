@@ -94,6 +94,31 @@ export class ReleaseService {
    */
   async releaseOnline(tx: Prisma.TransactionClient, facts: ReleaseFacts, actorUserId: string | null): Promise<ReleaseResult> {
     const { gross, commission, provider } = this.split(facts);
+    const bookingRows = await tx.$queryRaw<{ subscriptionId: string | null }[]>(
+      Prisma.sql`SELECT subscription_id as "subscriptionId" FROM bookings WHERE id = ${facts.bookingId}::uuid`
+    );
+    const subscriptionId = bookingRows[0]?.subscriptionId ?? null;
+
+    if (subscriptionId !== null) {
+      const planDeferredRows = await tx.$queryRaw<{ balance: bigint | null }[]>(
+        Prisma.sql`SELECT b.balance FROM ledger_accounts a LEFT JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'PLAN_DEFERRED' AND a.subscription_id = ${subscriptionId}::uuid FOR UPDATE OF a`
+      );
+      const balance = planDeferredRows[0]?.balance ?? 0n;
+      if (balance < facts.finalPaisa) throw new Error(`Plan deferred balance (${balance}) does not cover visit amount (${facts.finalPaisa}) for subscription ${subscriptionId}`);
+
+      const lines = [
+        { account: 'PLAN_DEFERRED' as const, direction: 'DEBIT' as const, amountPaisa: facts.finalPaisa, subscriptionId },
+        ...(facts.discountPaisa > 0n ? [{ account: 'PROMO_EXPENSE' as const, direction: 'DEBIT' as const, amountPaisa: facts.discountPaisa }] : []),
+        { account: 'PROVIDER_WALLET' as const, direction: 'CREDIT' as const, amountPaisa: provider, ownerUserId: facts.providerId },
+        ...(commission > 0n ? [{ account: 'PLATFORM_COMMISSION' as const, direction: 'CREDIT' as const, amountPaisa: commission }] : [])
+      ];
+      await this.ledger.post(tx, { type: 'PLAN_RELEASE', bookingId: facts.bookingId, idempotencyKey: `release-plan:${facts.bookingId}`, memo: 'Plan visit released to provider', createdBy: actorUserId, lines });
+      await tx.$executeRaw(Prisma.sql`UPDATE plan_visits SET status = 'CONSUMED'::plan_visit_status WHERE booking_id = ${facts.bookingId}::uuid`);
+      await this.markReleased(tx, facts.bookingId, 'RELEASED');
+      await this.debt.refreshBlock(tx, facts.providerId);
+      return { grossPaisa: gross, commissionPaisa: commission, providerPaisa: provider, refundIds: [] };
+    }
+
     const escrowRows = await tx.$queryRaw<{ balance: bigint | null }[]>(
       Prisma.sql`SELECT b.balance FROM ledger_accounts a LEFT JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'ESCROW' AND a.booking_id = ${facts.bookingId}::uuid FOR UPDATE OF a`
     );

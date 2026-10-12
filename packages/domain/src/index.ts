@@ -9,3 +9,4 @@ export * from './verification.js';
 export * from './complaints.js';
 export * from './commission.js';
 export * from './conduct.js';
+export * from './plans.js';
