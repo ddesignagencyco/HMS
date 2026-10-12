@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { inject } from 'light-my-request';
 import { normalisePath } from '../../src/http-app.js';
+import { MetricsService } from '../../src/platform/metrics.service.js';
 import { callApi, createTestApp, staffSession } from './harness.js';
 import { bearer, prisma } from './flow.js';
 
@@ -144,6 +145,12 @@ describe('SHM-092: metrics', () => {
       'nodejs_eventloop_lag_max_seconds',
       'nodejs_eventloop_lag_mean_seconds',
       'nodejs_eventloop_lag_stddev_seconds',
+      // The event-loop lag summary exports its percentiles as their own series. They are registered
+      // whether or not they have been observed, so they have to be here even on a machine where
+      // nothing has been measured long enough to compute a quantile.
+      'nodejs_eventloop_lag_p50_seconds',
+      'nodejs_eventloop_lag_p90_seconds',
+      'nodejs_eventloop_lag_p99_seconds',
       'nodejs_active_resources',
       'nodejs_active_resources_total',
       'nodejs_active_handles',
@@ -159,10 +166,42 @@ describe('SHM-092: metrics', () => {
       'nodejs_version_info',
       'nodejs_gc_duration_seconds'
     ]);
+    // A histogram or summary does not export one line, it exports a family: `foo` on the wire is
+    // `foo_bucket`, `foo_sum` and `foo_count`. Those suffixes are mechanical, so the list below
+    // holds the family name and this strips the components rather than carrying three more entries
+    // per histogram. Stripping does not weaken the guard: a metric nobody allowlisted still has to
+    // match a name in the set once its components are removed.
+    //
+    // The suffix is only removed when what remains is in the set, so a genuinely new family
+    // (`nodejs_something_new_count`) is still rejected. The residual risk is a real metric whose
+    // own name ends in one of these three, which prom-client does not produce.
+    const components = new Set(['_bucket', '_sum', '_count']);
+    const familyOf = (name: string): string => {
+      for (const suffix of components) {
+        if (name.endsWith(suffix) && vendor.has(name.slice(0, -suffix.length))) return name.slice(0, -suffix.length);
+      }
+      return name;
+    };
     for (const line of body.split('\n')) {
       const name = /^([a-z_]+)[{ ]/.exec(line)?.[1];
       if (name === undefined || name.startsWith('shm_')) continue;
-      expect(vendor.has(name), `unexpected metric "${name}"`).toBe(true);
+      expect(vendor.has(familyOf(name)), `unexpected metric "${name}"`).toBe(true);
+    }
+
+    // The loop above only proves anything about a histogram's family when the scrape happens to
+    // contain one. `nodejs_gc_duration_seconds` emits nothing at all until V8 has actually run a
+    // garbage collection, so on a quiet machine that family is untested and the check silently
+    // covers less than it appears to. Assert the registered families instead, which are present
+    // whether or not they have been observed: the GC histogram must be among them, and nothing
+    // outside the allowlist may be registered at all.
+    //
+    // This is the check that would have caught the original defect without depending on the
+    // machine's memory pressure.
+    const registry = app.get(MetricsService).registry;
+    const families = new Set(registry.getMetricsAsArray().map(metric => metric.name));
+    expect(families.has('nodejs_gc_duration_seconds'), 'the GC histogram is no longer collected, so the scrape check above is vacuous').toBe(true);
+    for (const name of families) {
+      expect(name.startsWith('shm_') || vendor.has(name), `unexpected metric family "${name}"`).toBe(true);
     }
   });
 
