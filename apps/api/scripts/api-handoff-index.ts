@@ -66,6 +66,8 @@ const GROUPS: readonly { title: string; filter: (operation: ApiSurface['operatio
   { title: 'Notification centre', filter: operation => operation.path.startsWith('/api/v1/notifications') },
   { title: 'Places (cities & areas)', filter: operation => operation.tags.includes('places') },
   { title: 'Provider-webhook callbacks (never called by the frontend)', filter: operation => operation.path.startsWith('/api/v1/webhooks/') },
+  { title: 'Maintenance plans & subscriptions', filter: operation => operation.path.startsWith('/api/v1/plans') || operation.path.startsWith('/api/v1/subscriptions') || operation.path.startsWith('/api/v1/me/subscriptions') },
+  { title: 'Admin: users, roles & audit', filter: operation => operation.path.startsWith('/api/v1/admin/users') || operation.path.startsWith('/api/v1/admin/roles') || operation.path.startsWith('/api/v1/admin/audit') || operation.path.startsWith('/api/v1/admin/customers') || operation.path.startsWith('/api/v1/admin/plans') || operation.path.startsWith('/api/v1/admin/staff-conflicts') },
   { title: 'Development-only mocks', filter: operation => operation.tags.includes('development') },
   { title: 'Health & welcome', filter: operation => operation.tags.includes('health') || operation.path === '/' }
 ];

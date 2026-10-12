@@ -162,6 +162,18 @@ export class BookingController {
     return this.bookings.apply(id, 'depart', principal.userId);
   }
 
+  @Post(':id/start-code')
+  @HttpCode(200)
+  @PolicyDecorator({ roles: ['CUSTOMER'] })
+  @ApiOperation({
+    summary: 'Show the start code on the customer’s screen',
+    description:
+      'Returns a fresh start code for this booking so the customer can read it out to the provider at the door, instead of having to find an SMS sent when the booking was accepted. Sent to the customer only — a provider asking for this gets a 404, because the whole point of the code is that the customer authorises the work. Calling it issues a NEW code and invalidates any previous one, and re-sends the SMS as it always did; a database dump still contains nothing that can start a job, because the stored value is a hash. 404 if the booking is not yours or does not exist, 409 CONFLICT once the job has been started.'
+  })
+  async startCode(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.bookings.requestStartCode(id, principal.userId);
+  }
+
   @Post(':id/start')
   @HttpCode(200)
   @PolicyDecorator({ roles: ['PROVIDER'] })

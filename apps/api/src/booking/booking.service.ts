@@ -72,6 +72,19 @@ const START_OTP_MAX_ATTEMPTS = 5;
 const START_OTP_LOCK_MINUTES = 15;
 
 /**
+ * How long the customer is told to keep the on-screen code for.
+ *
+ * **Advisory only.** Nothing expires the code: the booking row has no `start_otp_expires_at`, and
+ * inventing an expiry here would be a second, competing rule that the verification path does not
+ * enforce — the worst kind of security control, because it reads as one and is not. What the lock
+ * does is bound the real risk: after 5 wrong attempts the code is locked for 15 minutes, so a
+ * displayed code that is read out wrongly cannot be brute-forced while the provider waits at the
+ * door. The number returned to the frontend is there so it can tell the customer when to expect a
+ * fresh code, not so the client can rely on a guarantee the server is not making.
+ */
+export const START_CODE_TTL_SECONDS = START_OTP_LOCK_MINUTES * 60;
+
+/**
  * Booking start codes are a different concept from the auth OTPs in
  * `identity/otp.service.ts` (those live in `otp_codes`, keyed by
  * target+purpose; this one lives directly on the booking row), so it gets its
@@ -339,7 +352,7 @@ export class BookingService {
    * is only ever one "current" start code per booking), which also covers
    * re-sending if the customer says they never got the SMS.
    */
-  async issueStartOtp(bookingId: string): Promise<void> {
+  async issueStartOtp(bookingId: string): Promise<string> {
     const rows = await this.prisma.$queryRaw<{ phone: string }[]>(Prisma.sql`SELECT u.phone_e164 as phone FROM bookings b JOIN users u ON u.id = b.customer_id WHERE b.id = ${bookingId}::uuid`);
     const row = rows[0];
     if (row === undefined) throw notFound('Booking');
@@ -348,6 +361,55 @@ export class BookingService {
     const hash = hashStartOtp(this.environment.values.OTP_PEPPER, bookingId, code);
     await this.prisma.$executeRaw(Prisma.sql`UPDATE bookings SET start_otp_hash = ${hash}, start_otp_attempts = 0, start_otp_locked_until = NULL WHERE id = ${bookingId}::uuid`);
     await this.sms.send(row.phone, `Your Smart Home start code is ${code}. Give it to your provider when they arrive.`, { purpose: 'BOOKING_START' });
+    return code;
+  }
+
+  /**
+   * SHM-093 follow-up: the start code, on the customer's own screen.
+   *
+   * The customer has to *read the code out to the provider at the door*. Until now the only channel
+   * was an SMS sent at accept time — possibly hours earlier, for a job booked days ahead, read once
+   * and then buried under the following week's messages. The provider standing at the door with
+   * nothing to show for it is the actual failure this fixes.
+   *
+   * **This issues a fresh code rather than returning the stored one, and that is not an
+   * implementation detail.** What the database holds is an HMAC (`start_otp_hash`), which cannot be
+   * reversed — there is no "read back the current code". So the only way to show the customer a code
+   * is to mint a new one. The property that matters is preserved: the plaintext is returned in this
+   * response and in the SMS, and is never written anywhere. A dump of the database still contains
+   * nothing that can start a job.
+   *
+   * Consequences, stated rather than left to be discovered:
+   *
+   * - **Calling this invalidates any previously issued code.** One booking has one current start
+   *   code, which is the rule the accept path has always followed ("there is only ever one 'current'
+   *   start code per booking"). If the customer refreshes while the provider is mid-entry, the code
+   *   the provider is reading stops working and they need the new one. The SMS is re-sent with it,
+   *   so there is always a second copy — but this is a real footgun and the reason the frontend
+   *   should treat the code as something to show once, not something to poll.
+   * - **Only the customer may call it.** The provider must never be able to obtain the code: the
+   *   entire control is that the *customer* authorises work to start. A provider who could fetch it
+   *   could start any job on any customer's house without the customer being present.
+   * - **It refuses once the job is under way.** After the code has been verified there is nothing
+   *   left to authorise, and issuing more would be attack surface for no benefit.
+   */
+  async requestStartCode(bookingId: string, customerId: string): Promise<{ code: string; expiresInSeconds: number }> {
+    const rows = await this.prisma.$queryRaw<{ customerId: string; started: boolean }[]>(
+      Prisma.sql`SELECT customer_id as "customerId", start_otp_verified_at IS NOT NULL as started
+        FROM bookings WHERE id = ${bookingId}::uuid`
+    );
+    const row = rows[0];
+    // 404 rather than 403 for someone who is not the customer: the existence of the booking is itself
+    // private, and a 403 would confirm it exists to whoever asked.
+    if (row === undefined || row.customerId !== customerId) throw notFound('Booking');
+    if (row.started) {
+      throw conflict('This job has already been started, so there is no code to show.');
+    }
+
+    // Re-uses `issueStartOtp`, so the SMS that has always been sent on accept keeps being sent, with
+    // the same wording and the same `BOOKING_START` purpose. The messaging is untouched.
+    const code = await this.issueStartOtp(bookingId);
+    return { code, expiresInSeconds: START_CODE_TTL_SECONDS };
   }
 
   /**
