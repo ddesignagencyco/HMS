@@ -82,6 +82,7 @@ const booking = (over: Partial<BookingDetailRow>): BookingDetailRow => ({
   items: [],
   cancellationPolicy: 'Free up to 12 hours before.',
   cancellation: freeCancellation,
+  canConfirmCashReceived: false,
   ...over
 });
 

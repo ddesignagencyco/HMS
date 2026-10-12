@@ -60,6 +60,7 @@ const booking = (over: Partial<Booking>): Booking => ({
   issueOptionId: null,
   isOnBehalf: false,
   onBehalfName: null,
+  canConfirmCashReceived: false,
   ...over
 });
 

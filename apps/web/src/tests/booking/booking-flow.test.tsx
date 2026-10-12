@@ -110,7 +110,8 @@ const created: Booking = {
   updatedAt: '2026-10-05T09:00:00.000Z',
   issueOptionId: null,
   isOnBehalf: false,
-  onBehalfName: null
+  onBehalfName: null,
+  canConfirmCashReceived: false
 };
 
 type Routes = {

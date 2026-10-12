@@ -41,7 +41,8 @@ const bookingRow: Booking = {
   updatedAt: '2026-10-01T09:00:00.000Z',
   issueOptionId: null,
   isOnBehalf: false,
-  onBehalfName: null
+  onBehalfName: null,
+  canConfirmCashReceived: false
 };
 
 /** An emergency quote: the surcharge is the setting-driven percentage. */
@@ -124,7 +125,8 @@ describe('booking row', () => {
         'startOtpVerifiedAt',
         'status',
         'updatedAt',
-        'verificationTier'
+        'verificationTier',
+        'canConfirmCashReceived'
       ].sort()
     );
   });

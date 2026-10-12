@@ -960,7 +960,7 @@ function ActionsCard({
       {(booking.status === 'WORK_COMPLETED' || booking.status === 'AWAITING_VERIFICATION' || booking.status === 'VERIFIED') && booking.paymentMode === 'CASH' ? (
         <div className="mt-4 grid gap-3">
           <p className="text-sm leading-6 text-secondary">{dict.job.cashExplainer}</p>
-          <Button type="button" onClick={onCash} disabled={pending || booking.status !== 'VERIFIED'}>
+          <Button type="button" onClick={onCash} disabled={pending || !booking.canConfirmCashReceived}>
             <CircleDollarSign className="size-4" aria-hidden="true" />
             {dict.job.cashReceived}
           </Button>

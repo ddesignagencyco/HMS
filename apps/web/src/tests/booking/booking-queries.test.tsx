@@ -65,7 +65,8 @@ const row: Booking = {
   updatedAt: '2026-10-01T09:00:00.000Z',
   issueOptionId: null,
   isOnBehalf: false,
-  onBehalfName: null
+  onBehalfName: null,
+  canConfirmCashReceived: false
 };
 
 describe('booking list', () => {

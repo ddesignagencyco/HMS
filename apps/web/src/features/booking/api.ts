@@ -133,6 +133,17 @@ export type Booking = {
   verificationTier: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Whether the provider can confirm cash received for this booking right now.
+   *
+   * This is derived server-side from the state machine: only CASH bookings in
+   * VERIFIED or AUTO_RELEASED status return true. It replaces the previous
+   * client-side logic that tried to derive this from paymentStatus/status,
+   * which could drift from the server's rules.
+   *
+   * Added in API commit f66ef03 (booking.row.ts).
+   */
+  canConfirmCashReceived: boolean;
 };
 
 /**
