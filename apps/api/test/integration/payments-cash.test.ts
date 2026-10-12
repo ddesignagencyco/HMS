@@ -72,6 +72,36 @@ describe('SHM-060: settling a cash job', () => {
     expect((await cashReceived(online)).status).toBe(409);
   });
 
+  it('tells the provider exactly when the cash button may be shown, so it is never offered early', async () => {
+    // `paymentStatus` is CASH_DUE from the moment the job completes, which is six states before the
+    // handover is authorised. A client that renders "collect payment" from paymentStatus alone offers
+    // an action the API refuses. `canConfirmCashReceived` is the other half of that answer, and it has
+    // to agree with the 409 in every state -- a flag that disagrees with the rule is worse than none.
+    const provider = await newProvider(app);
+    const job = await completedJob(app, provider, { mode: 'CASH' });
+    const read = async (id: string) => (await callApi<{ status: string; paymentStatus: string; canConfirmCashReceived: boolean }>(app, `/bookings/${id}`, bearer(provider.accessToken))).body;
+
+    // Completed: cash is owed, but verification has not authorised the handover. This is the exact
+    // window that produced "Cannot confirmCashReceived a booking in status AWAITING_VERIFICATION".
+    expect(await read(job.id)).toMatchObject({ status: 'AWAITING_VERIFICATION', paymentStatus: 'CASH_DUE', canConfirmCashReceived: false });
+    expect((await cashReceived(job)).status).toBe(409);
+
+    await agentVerify(app, agent, job);
+    expect(await read(job.id)).toMatchObject({ status: 'VERIFIED', paymentStatus: 'CASH_DUE', canConfirmCashReceived: true });
+    expect((await cashReceived(job)).status).toBe(200);
+
+    // Settled once: the flag goes false again and the API refuses a second time.
+    expect(await read(job.id)).toMatchObject({ status: 'PAYMENT_RELEASED', paymentStatus: 'CASH_SETTLED', canConfirmCashReceived: false });
+    expect((await cashReceived(job)).status).toBe(409);
+
+    // An online job never carries the event at all, however far it gets: its money is held in escrow
+    // and released by the system at verification, so a provider is never the one who settles it.
+    const online = await completedJob(app, provider, { mode: 'ONLINE' });
+    expect(await read(online.id)).toMatchObject({ status: 'AWAITING_VERIFICATION', paymentStatus: 'HELD', canConfirmCashReceived: false });
+    await agentVerify(app, agent, online);
+    expect(await read(online.id)).toMatchObject({ status: 'PAYMENT_RELEASED', canConfirmCashReceived: false });
+  });
+
   it('a coupon on a cash job is credited back to the provider, so they are paid on the price before it', async () => {
     const code = `C${randomUUID().slice(0, 8)}`.toUpperCase();
     await prisma.$executeRaw(Prisma.sql`INSERT INTO coupons(code, kind, value, valid_from, valid_to) VALUES (${code}::citext, 'FIXED', 50000, now() - interval '1 day', now() + interval '1 day')`);

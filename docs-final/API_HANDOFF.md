@@ -11,7 +11,7 @@ otherwise surprise you. The exhaustive list of all 175 operations is in
 | Interactive API docs | `http://localhost:3000/api/docs` — generated from the live app, always current |
 | OpenAPI JSON | `./openapi.json` — committed snapshot (§ regenerate with `npm run api:openapi -w @smart-home/api`); the live copy is at `http://localhost:3000/api/docs/openapi.json` |
 | Auth scheme | `Authorization: Bearer <accessToken>` |
-| Content type | `application/json` everywhere except the two PDF/CSV downloads |
+| Content type | `application/json` everywhere except the PDF/CSV/XLSX downloads — see `§1.7`, they need `fetch` and cannot be opened as a plain link |
 | Errors | RFC 7807 `application/problem+json` |
 | Screen backlog | [`TASKS_FRONTEND.md`](./TASKS_FRONTEND.md) |
 
@@ -133,7 +133,66 @@ not the status.
 `/health/live`, `/health/ready`, `/health/queues` and `/` are served at the **root** —
 `http://localhost:3000/health/ready`, not under `/api/v1`. Everything else is prefixed.
 
-### 1.7 One field name that will bite you
+### 1.7 Binary downloads need `fetch`, not a link
+
+**A URL typed into the browser cannot download from this API, and trying returns a 401.**
+
+```json
+{ "type": "https://smart-home.local/problems/unauthenticated",
+  "status": 401, "code": "UNAUTHENTICATED",
+  "detail": "A bearer access token is required" }
+```
+
+Five routes return bytes rather than JSON, and all five need the `Authorization`
+header like any other:
+
+| Operation | Returns |
+|---|---|
+| `GET /bookings/{id}/invoice.pdf` | PDF |
+| `GET /finance/payout-batches/{id}/export.csv` | CSV |
+| `GET /finance/payout-batches/{id}/statements/{providerId}` | PDF |
+| `GET /finance/reports/{id}/download` | PDF or XLSX, per the run's `format` |
+
+(plus the report itself, which is queued first — see `§4 Money screens`.)
+
+`window.open(url)`, `<a href="…">` and pasting the address into the address bar
+all send **no** `Authorization` header, so the global policy guard rejects them
+before the handler runs. That is the guard working, not a bug: the access token
+lives in memory only and is never in a cookie the browser would send on a
+navigation.
+
+Fetch it, turn it into a blob, and click a blob URL:
+
+```ts
+const downloadPdf = async (url: string, filename: string, accessToken: string): Promise<void> => {
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error(await response.text()); // RFC 7807, same as any other call
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(objectUrl); // without this the blob leaks for the life of the tab
+};
+```
+
+Two things to know about the invoice specifically:
+
+- **Ownership is enforced by a 404, not a 403.** Anyone who is not the booking's
+  customer or provider gets `404 NOT_FOUND`. An anonymous caller gets `401`,
+  because the guard runs first — so a 404 here means "signed in, but not yours",
+  and there is nothing to render differently for the user.
+- The invoice exists once the job is `WORK_COMPLETED` or later. Before that,
+  `404`.
+
+The one binary route that *is* browser-openable is
+`GET /finance/recordings/{attemptId}`: it takes the bearer header, then returns
+`{ url, expiresAt }` — a short-lived presigned link the browser can open
+directly. Evidence photos and dispute photos work the same way. The invoice is
+not stored as an object, so there is nothing to presign, and it stays a
+`fetch` + blob like the rest.
+
+### 1.8 One field name that will bite you
 
 `GET /provider/profile` returns the provider's id as **`userId`**, not `providerId`:
 
@@ -147,7 +206,7 @@ That `userId` is what every other provider route expects as `{providerId}` in th
 including `/search/providers/{providerId}/slots` and `/next-slots`. Passing
 `/search/providers/undefined/next-slots` returns `400 uuid is expected`.
 
-### 1.8 Validation
+### 1.9 Validation
 
 Request bodies are strict: an **unknown field is rejected**, not ignored
 (`.strict()` everywhere). A typo in a field name is a `422`, not a silently dropped
@@ -185,6 +244,33 @@ Every customer- and provider-facing action is one transition, and an action that
 not fit the current status returns `409 ILLEGAL_TRANSITION` naming the current status.
 **Render from the status, never from your own local flag**, and re-read the booking
 after any action — the response is the new truth.
+
+#### `canConfirmCashReceived` — the one action whose precondition is *not* the status alone
+
+`POST /bookings/{id}/cash-received` looks like it should follow `paymentStatus`, and it
+does not. `paymentStatus` becomes **`CASH_DUE` the moment the job completes**, but the
+handover is not authorised until verification permits it — the call happens, then the
+provider is told to collect. Between those two points the booking honestly says "cash
+owed" and settling it is honestly refused:
+
+```
+Cannot confirmCashReceived a booking in status AWAITING_VERIFICATION   (409)
+```
+
+Every booking row therefore carries **`canConfirmCashReceived`**, which is true only for
+`VERIFIED` and `AUTO_RELEASED` on a cash job, and is derived from the transition table
+itself so it cannot drift from the rule:
+
+```json
+{ "status": "AWAITING_VERIFICATION", "paymentStatus": "CASH_DUE", "canConfirmCashReceived": false }
+{ "status": "VERIFIED",             "paymentStatus": "CASH_DUE", "canConfirmCashReceived": true  }
+{ "status": "PAYMENT_RELEASED",     "paymentStatus": "CASH_SETTLED", "canConfirmCashReceived": false }
+```
+
+**Show the "I have been paid" button when `canConfirmCashReceived` is true, not when
+`paymentStatus` is `CASH_DUE`.** It is false again after settling — the action is once
+only. Online jobs never carry it at all; their money is released by the system at
+verification and a provider is never the one who settles them.
 
 ### 2.2 Booking a service
 
@@ -280,6 +366,28 @@ For `CASH`, the call gates the handover: after a passing verification the provid
 **authorised to collect**, and only `POST /bookings/{id}/cash-received` completes the
 release and debits commission. The customer gets an SMS receipt with a link to report a
 problem.
+
+The full order, because it is the thing most often got wrong:
+
+```
+complete ──▶ AWAITING_VERIFICATION ──▶ (call, or the customer's own answer) ──▶ VERIFIED
+                                            paymentStatus: CASH_DUE                │
+                                            canConfirmCashReceived: false           │
+                                                                                   ▼
+                                                                    provider collects, taps
+                                                                    "payment received"
+                                                                                   │
+                                                                    PAYMENT_RELEASED, CASH_SETTLED
+```
+
+Gate the button on **`canConfirmCashReceived`**, not on `paymentStatus` and not on the
+job being finished. Calling `cash-received` at `AWAITING_VERIFICATION` is a `409`, and
+it is meant to be — see `§2.1`.
+
+If the customer cannot be reached, the 72-hour sweep moves the job to `AUTO_RELEASED`,
+which is the *other* status where `canConfirmCashReceived` is true: `AUTO_RELEASED` on a
+cash job means **authorised to collect**, not "the money moved". Nothing is debited
+until the provider confirms.
 
 ### 2.6 Booking on behalf of someone else
 
@@ -397,10 +505,14 @@ photos, and only before the job starts; the provider records `BEFORE`, `AFTER` a
 per-step `CHECKLIST` photos. Evidence is insert-only — never edited or deleted.
 
 ### Money screens
-Customer: `GET /bookings` history, `GET /bookings/{id}/invoice.pdf` (itemised PDF).
+Customer: `GET /bookings` history, `GET /bookings/{id}/invoice.pdf` (itemised PDF —
+`fetch` + blob, **§1.7**; it is not a link you can open).
 Provider: `GET /provider/earnings`, `/wallet`, `/payout-accounts`, `/payouts`. Finance:
 `/finance/*`. Note `GET /provider/earnings` distinguishes **held / releasable / paid**,
 which is the distinction customers and providers most often get wrong.
+Finance reports are async: `POST /finance/reports` queues a run and answers 201 with
+`status: "QUEUED"`, `GET /finance/reports/{id}` polls it, and only once
+`status` is `DONE` does `downloadUrl` become non-null.
 
 ---
 
