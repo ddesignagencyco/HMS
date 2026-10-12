@@ -109,12 +109,29 @@ export const createCspMiddleware = (isProduction: boolean): RequestHandler => (r
   const policy = isDocs
     ? [
         "default-src 'none'",
-        `script-src 'nonce-${nonce}' 'strict-dynamic' https: 'unsafe-eval'`,
+        // Swagger UI loads three same-origin scripts -- ./docs/swagger-ui-bundle.js,
+        // swagger-ui-standalone-preset.js and swagger-ui-init.js -- as *static* <script src> tags
+        // carrying no nonce, and @nestjs/swagger offers no hook to put one there.
+        //
+        // `'strict-dynamic'` therefore had to go. A browser that understands it ignores host and
+        // `'self'` allowlists entirely and trusts only nonced scripts and whatever they load, so
+        // every one of those three tags was blocked and /api/docs rendered a blank page. Adding
+        // `'self'` alone does not fix it: under 'strict-dynamic' 'self' is ignored too, which is
+        // what made the obvious one-word fix look like it should work.
+        //
+        // `'self'` is the *tighter* source here, not a looser one. The page pulls nothing from a
+        // CDN -- Nest serves every asset itself -- so the `https:` this replaces allowed any host
+        // on the internet to introduce an execution path, and bought nothing.
+        //
+        // The nonce stays: nothing on this page uses it today, but it keeps any inline script added
+        // later from being executable by default, at no cost to the static tags above.
+        `script-src 'nonce-${nonce}' 'self' 'unsafe-eval'`,
         // Swagger's stylesheet is injected inline by the bundle, and there is no style nonce worth
-        // having here: no user-supplied markup reaches this page.
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
-        "img-src 'self' data: https://fastly.jsdelivr.net",
-        "font-src 'self' data: https://cdn.jsdelivr.net",
+        // having here: no user-supplied markup reaches this page. The assets are same-origin, so the
+        // jsdelivr entries this used to allow were never reachable from it.
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self' data:",
         "connect-src 'self'",
         "worker-src 'self' blob:",
         "base-uri 'none'",

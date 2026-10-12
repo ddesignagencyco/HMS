@@ -67,6 +67,40 @@ describe('SHM-092: security headers', () => {
     expect(nonceOf(String(first.headers['content-security-policy']))).not.toBe(nonceOf(String(second.headers['content-security-policy'])));
   });
 
+  it('serves a Swagger page whose own assets the policy it returns actually permits', async () => {
+    // /api/docs rendered blank. The page loads three scripts as static <script src> tags with no
+    // nonce, and @nestjs/swagger offers no hook to add one. Under 'strict-dynamic' a browser ignores
+    // every host and 'self' allowlist and trusts only nonced scripts, so all three were blocked --
+    // and adding 'self' does not fix it, because under 'strict-dynamic' 'self' is ignored too.
+    //
+    // Rather than assert a policy string, this reads the HTML the service actually serves and checks
+    // that the policy it sends would let those assets run. If Nest ever starts serving Swagger from
+    // a CDN, or adds an inline script, the requirement here moves and this fails rather than the page
+    // quietly going blank in a developer's browser.
+    const response = await callRoot(app, '/api/docs');
+    expect(response.status).toBe(200);
+    const csp = String(response.headers['content-security-policy']);
+    const scriptSrc = /script-src ([^;]*)/.exec(csp)?.[1] ?? '';
+
+    // Every script and stylesheet the page references is same-origin, so 'self' is what has to
+    // permit them. Asserted about the page's real content, not a hardcoded list.
+    const assets = [...response.body.matchAll(/<(?:script[^>]*src|link[^>]*href)="([^"]+)"/g)].map(match => match[1] ?? '');
+    const scripts = [...response.body.matchAll(/<script[^>]*src="([^"]+)"/g)].map(match => match[1] ?? '');
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const asset of [...assets, ...scripts]) expect(asset, `Swagger loads ${asset}, which is not same-origin`).toMatch(/^\.\/docs\//);
+
+    // So: 'self' present, and 'strict-dynamic' absent — the combination that blocks every static tag.
+    expect(scriptSrc).toContain("'self'");
+    expect(csp).not.toContain('strict-dynamic');
+    // And the nonce is still issued for any inline script added later.
+    expect(/'nonce-[^']+'/.test(scriptSrc)).toBe(true);
+
+    // `https:` allowed any host on the internet to introduce a script into this page and bought
+    // nothing, because the page loads nothing from a CDN. Dropping it is a tightening, not a
+    // concession -- so assert it cannot quietly come back.
+    expect(scriptSrc).not.toContain('https:');
+  });
+
   it('locks down everything a browser can be asked to do that this API never needs', async () => {
     const response = await callRoot(app, '/health/ready');
     expect(String(response.headers['permissions-policy'])).toContain('camera=()');

@@ -300,8 +300,20 @@ describe('SHM-041 / SHM-042 / SHM-043: execution, revisions and completion', () 
       expect(isBusinessInstant(verification[0]!.dueAt)).toBe(true);
       expect(dueAt).toBeGreaterThanOrEqual(createdAt + cashSlaMinutes * 60_000 - 5_000);
       expect(dueAt).toBeLessThan(createdAt + 24 * 60 * 60_000);
-      // Inside one business day the deadline is exactly the SLA length after creation.
-      if (isWithinBusinessHours(verification[0]!.createdAt)) expect(Math.abs(dueAt - createdAt - cashSlaMinutes * 60_000)).toBeLessThanOrEqual(5_000);
+      // Inside one business day the deadline is exactly the SLA length after creation -- but only
+      // when the window did not have to be clamped. `addBusinessMinutes` rolls forward to the 22:00
+      // PKT close and then to the next business day, so a verification raised at 21:50 gets a
+      // deadline ten hours out rather than fifteen minutes out. That is correct behaviour, and this
+      // assertion used to fail on it: it guarded on `isWithinBusinessHours(createdAt)`, which is true
+      // at 21:50, so the run failed for the last quarter-hour of every business day and passed the
+      // other fifteen and three-quarter hours. On GitHub's UTC clock that is a 15-minute window a few
+      // times a day, which is the worst shape for a CI flake.
+      //
+      // The honest guard is whether the window was clamped at all: if createdAt plus the raw SLA is
+      // still a business instant, nothing was rolled forward and the deadline must equal it. The
+      // two assertions above already cover the clamped case, so nothing is given up by skipping here.
+      const unclamped = isWithinBusinessHours(new Date(createdAt + cashSlaMinutes * 60_000));
+      if (unclamped) expect(Math.abs(dueAt - createdAt - cashSlaMinutes * 60_000)).toBeLessThanOrEqual(5_000);
       const tierOnBooking = await prisma.$queryRaw<{ tier: string }[]>(Prisma.sql`SELECT verification_tier::text as tier FROM bookings WHERE id = ${id}::uuid`);
       expect(tierOnBooking[0]?.tier).toBe('A');
 
