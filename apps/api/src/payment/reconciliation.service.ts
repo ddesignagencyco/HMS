@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service.js';
 import { AuditService, appendOutboxEvent } from '../platform/audit.service.js';
+import { MetricsService } from '../platform/metrics.service.js';
 import { QueueRegistry } from '../queues/queue.registry.js';
 
 export type Drift = { check: string; subject: string; expected: string; actual: string };
@@ -21,6 +22,7 @@ export class ReconciliationService implements OnModuleInit {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
     @Inject(QueueRegistry) private readonly queues: QueueRegistry
   ) {}
 
@@ -91,6 +93,12 @@ export class ReconciliationService implements OnModuleInit {
     if ((clearing[0]?.balance ?? 0n) !== (clearing[0]?.expected ?? 0n)) {
       drift.push({ check: 'payout_clearing', subject: 'PAYOUT_CLEARING', expected: `${clearing[0]?.expected ?? 0n} held for approved payouts`, actual: `${clearing[0]?.balance ?? 0n}` });
     }
+
+    // FR-PY-06 / NFR-OBS: each drift, by check, is a counter the `ReconciliationDriftFound` rule
+    // fires on. It is incremented where the check actually runs — here — so a nightly reconciliation
+    // in the worker and a manual one from the finance console both count. It was declared and never
+    // incremented, so the one alert whose whole job is "the ledger does not balance" could not fire.
+    for (const entry of drift) this.metrics.reconciliationDrift.inc({ check: entry.check });
 
     const report: ReconciliationReport = { ranAt: new Date().toISOString(), checks: 7, drift };
     await this.prisma.$transaction(async tx => {

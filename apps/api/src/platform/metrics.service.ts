@@ -102,6 +102,11 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     collectDefaultMetrics({ register: this.registry });
+    // Jobs run in the worker process (started from this same AppModule), so this counter is only
+    // ever non-zero there — which is why the worker exposes /metrics as well as the API. Without
+    // this the counter was declared, emitted a `# HELP` line and never moved: `JobFailureRateHigh`
+    // grouped `by (name)` over a series that never existed, so it could not fire.
+    this.queues.registerJobObserver((name, outcome) => this.jobsRun.inc({ name, outcome }));
   }
 
   onModuleDestroy(): void {

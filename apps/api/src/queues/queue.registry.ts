@@ -20,6 +20,13 @@ export const REPEATABLE_JOBS: readonly { name: string; queue: QueueName; everyMs
   { name: 'recording.purge', queue: 'projections', everyMs: 86_400_000 },
   { name: 'booking.rework-expiry', queue: 'projections', everyMs: 300_000 },
   { name: 'booking.expire-offers', queue: 'projections', everyMs: 30_000 },
+  // A report is normally built on the push it gets when requested (`reports.run`), but that job
+  // can be lost — the worker was down, the queue was purged. `drain` is the safety net that picks
+  // up any run still sitting QUEUED, and `reap-stuck` puts back a run a worker abandoned mid-build
+  // (see ReportsService.build/reapStuck). Registering the tasks without these ticks was the bug:
+  // the handlers existed and were never called.
+  { name: 'reports.drain', queue: 'projections', everyMs: 60_000 },
+  { name: 'reports.reap-stuck', queue: 'projections', everyMs: 300_000 },
   { name: 'payments.abandon-checkouts', queue: 'payments', everyMs: 60_000 },
   { name: 'ledger.reconcile', queue: 'projections', everyMs: 86_400_000 },
   { name: 'plans.schedule-visits', queue: 'projections', everyMs: 86_400_000 }
@@ -34,6 +41,7 @@ export class QueueRegistry implements OnModuleDestroy {
   private readonly events = new Map<QueueName, QueueEvents>();
   private readonly handlers = new Map<string, QueueHandler[]>();
   private readonly scheduled = new Map<string, () => Promise<void>>();
+  private readonly jobObservers = new Set<(name: string, outcome: 'success' | 'failed') => void>();
 
   constructor(@Inject(RedisService) private readonly redis: RedisService) {
     for (const name of QUEUE_NAMES) this.queues.set(name, new Queue(name, { connection: this.redis.duplicate() }));
@@ -47,6 +55,15 @@ export class QueueRegistry implements OnModuleDestroy {
   /** Registers the task a repeatable job (see REPEATABLE_JOBS) runs on each tick. */
   registerScheduled(name: string, task: () => Promise<void>): void {
     this.scheduled.set(name, task);
+  }
+
+  /**
+   * Notified after every job the worker runs, by name and whether it threw. A hook rather than an
+   * injected MetricsService (`shm_jobs_total` is the consumer): the queue layer should not have to
+   * know the observability layer exists, and an observer that throws must never fail a job.
+   */
+  registerJobObserver(observer: (name: string, outcome: 'success' | 'failed') => void): void {
+    this.jobObservers.add(observer);
   }
 
   queue(name: QueueName): Queue {
@@ -68,12 +85,30 @@ export class QueueRegistry implements OnModuleDestroy {
   async startWorker(queue: QueueName): Promise<void> {
     if (this.workers.has(queue)) return;
     const worker = new Worker(queue, async job => {
-      for (const handler of this.handlers.get(job.name) ?? []) await handler(job.data as Record<string, unknown>);
+      try {
+        for (const handler of this.handlers.get(job.name) ?? []) await handler(job.data as Record<string, unknown>);
+        this.recordJob(job.name, 'success');
+      } catch (error) {
+        // Reported before the rethrow: a failed job still counts, and the rethrow is what lets
+        // BullMQ apply the retry/backoff configured on the job.
+        this.recordJob(job.name, 'failed');
+        throw error;
+      }
     }, { connection: this.redis.duplicate(), concurrency: 8 });
     const events = new QueueEvents(queue, { connection: this.redis.duplicate() });
     await events.waitUntilReady();
     this.workers.set(queue, worker);
     this.events.set(queue, events);
+  }
+
+  private recordJob(name: string, outcome: 'success' | 'failed'): void {
+    for (const observer of this.jobObservers) {
+      try {
+        observer(name, outcome);
+      } catch {
+        // An observer is telemetry: it must never be able to fail the job it is observing.
+      }
+    }
   }
 
   async depth(name: QueueName): Promise<number> {
