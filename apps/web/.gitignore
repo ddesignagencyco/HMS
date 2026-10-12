@@ -44,3 +44,6 @@ next-env.d.ts
 
 # local account store (password hashes) - never commit
 .data/
+
+# e2e verification screenshots - written by e2e/verify-*.cjs on every run
+/e2e/*.png

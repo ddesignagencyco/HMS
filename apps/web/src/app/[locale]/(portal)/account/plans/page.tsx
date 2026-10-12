@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { CustomerPlansScreen } from '@/features/customer/plans-view';
+import { CustomerPlansScreen } from '@/features/plans/customer-plans-view';
 import { getDictionary } from '@/lib/dictionaries';
 import { isLocale } from '@/lib/utils';
 

@@ -34,7 +34,31 @@ export const accountKeys = {
   /** The signed-in customer's saved addresses. Theirs alone; never shared. */
   addresses: ['account', 'addresses'] as const,
   /** `GET /me/favourites` — a CUSTOMER-only shortlist of approved providers. */
-  favourites: ['account', 'favourites'] as const
+  favourites: ['account', 'favourites'] as const,
+  /**
+   * `GET /me/subscriptions` — the caller's own maintenance plans.
+   *
+   * Nested under `all` so signing out drops them with the rest of the
+   * account. A subscription is bound to a customer and an address, so
+   * one customer's plan must never survive into another's session.
+   */
+  subscriptions: ['account', 'subscriptions'] as const,
+  subscription: (id: string) => ['account', 'subscriptions', 'detail', id] as const
+} as const;
+
+/**
+ * Maintenance plans.
+ *
+ * The public list is reference data an admin publishes rarely, so it
+ * gets a long window — but it is keyed separately from the catalogue
+ * because it is a different resource with a different invalidation
+ * story: activating a plan is an admin write, and the admin mutations
+ * clear this key as well as `adminKeys.all`.
+ */
+export const planKeys = {
+  all: ['plans'] as const,
+  list: ['plans', 'list'] as const,
+  detail: (planId: string) => ['plans', 'detail', planId] as const
 } as const;
 
 /**
@@ -102,7 +126,14 @@ export const adminKeys = {
   staffConflicts: ['admin', 'staff-conflicts'] as const,
   audit: (action?: string, entityType?: string, entityId?: string, from?: string, to?: string) =>
     ['admin', 'audit', action ?? 'all', entityType ?? 'all', entityId ?? '', from ?? '', to ?? ''] as const,
-  providers: (status?: string, q?: string) => ['admin', 'providers', status ?? 'all', q ?? ''] as const
+  providers: (status?: string, q?: string) => ['admin', 'providers', status ?? 'all', q ?? ''] as const,
+  /**
+   * `GET /admin/plans`. Admin-only and unlike the public list: it
+   * includes deactivated plans and carries the active-subscription
+   * count, so it is a different answer from `planKeys.list` and can
+   * never be served from it.
+   */
+  plans: ['admin', 'plans'] as const
 } as const;
 
 export const bookingKeys = {
@@ -150,7 +181,13 @@ export const FRESHNESS = {
   ratings: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
   conduct: { staleTime: 5 * 60_000, gcTime: 30 * 60_000 },
   penalties: { staleTime: 5 * 60_000, gcTime: 30 * 60_000 },
-  disputes: { staleTime: 60_000, gcTime: 5 * 60_000 }
+  disputes: { staleTime: 60_000, gcTime: 5 * 60_000 },
+  /* Plans. The catalogue-like list is reference data; a customer's own
+     subscription is not — its visit counts move as visits are booked,
+     consumed or refunded, so it is re-read on focus rather than
+     remembered. */
+  plans: { staleTime: 10 * 60_000, gcTime: 60 * 60_000 },
+  subscription: { staleTime: 0, gcTime: 60_000, refetchOnWindowFocus: true }
 } as const;
 
 /** True when the API is saying "this does not exist" rather than "try again". */

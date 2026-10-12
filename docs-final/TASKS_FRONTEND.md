@@ -16,7 +16,9 @@ apply to every screen — don't treat them as a separate phase, build them in fr
 | ⬜   | Not done — still mock data, no endpoint called                                   |
 
 Audit method and the per-screen endpoint lists live in `apps/web/docs/integrated.md`.
-Backend gaps that block an item are listed in `apps/web/docs/BACKEND_REQUIREMENTS.md`.
+Backend gaps that block an item are listed in `apps/web/docs/backend_requirement.md` — the
+single authoritative file. (The old `BACKEND_REQUIREMENTS.md` was deleted; several rows in
+this board still cited it, and those citations are fixed here.)
 
 ---
 
@@ -28,14 +30,14 @@ Public pages, auth, provider onboarding, admin approval
 
 - [x] Home + service categories — ✅ hero search, category cards and the service list all read the API. Home-page photography stays in `features/home/catalogue-art.ts` — the API publishes no image field, so the art is keyed by slug and deliberately carries no catalogue data
 - [x] Service listing (per category) — ✅
-- [x] Registration (customer, provider — provider flow includes document upload) — 🟡 `POST /auth/register` is live; the document-upload step has no backend to upload to (BACKEND_REQUIREMENTS §6.1)
+- [x] Registration (customer, provider — provider flow includes document upload) — 🟡 `POST /auth/register` is live; the document-upload step has no backend to upload to (backend_requirement.md §6.1)
 - [x] Login — ✅
 - [x] Password recovery (email or SMS code) — ✅
 
 ### Customer (auth shell only — dashboard proper starts Phase 2)
 
 - [ ] Profile & password screen — 🟡 the profile reads `GET /auth/me` with the phone and email **masked** (NFR-PR-01), and TOTP enrolment on `/account/security` is ✅. Still missing: a password-change screen — no authenticated password-update route exists on the API
-- [x] Address book (add/edit saved addresses with map pin) — 🟡 list, create, **edit**, make-default and remove are all live against `/customer/addresses`. The pin is still an honest two-source picker (device or city centre) rather than a pin _drop_, because `areas.centroid` is not returned (BACKEND_REQUIREMENTS §2.2)
+- [x] Address book (add/edit saved addresses with map pin) — 🟡 list, create, **edit**, make-default and remove are all live against `/customer/addresses`. The pin is still an honest two-source picker (device or city centre) rather than a pin _drop_, because `areas.centroid` is not returned (backend_requirement.md §2.2)
 
 ### Provider (onboarding slice)
 
@@ -47,12 +49,12 @@ Public pages, auth, provider onboarding, admin approval
 
 ### Admin
 
-- [ ] Provider approval queue: review documents, approve/reject with reason — ⬜ **blocked**: `POST /admin/providers/:id/approve|reject` exist but there is no list endpoint, so the queue has nothing to render (BACKEND_REQUIREMENTS §0.2.2)
-- [ ] Provider & customer management (list/search/deactivate — never a delete button) — ⬜ **blocked** on `GET /admin/providers` and `GET /admin/customers` (§0.2.2, §0.2.3)
-- [ ] Catalogue management: categories, services, pricing model, emergency/plan/warranty/high-risk flags — ⬜ write endpoints exist and are unused (`POST`/`PATCH /admin/catalogue/*`)
-- [ ] Roles & permissions screen (agent / finance / admin) — ⬜ **blocked** on `GET /admin/roles` (§0.2.6)
-- [ ] Settings screen (maps to `Setting` table — commission, SLA timers, calling hours, etc.) — ⬜ `GET /admin/settings` exists and is unused; inputs are `readOnly`
-- [ ] Audit log viewer (filter by actor, entity, date) — ⬜ **blocked**: `audit_log` is written by `AuditService` but no controller reads it (§0.2.5)
+- [x] Provider approval queue: review documents, approve/reject with reason — ✅ built on `GET /admin/users?role=PROVIDER` and `GET /admin/providers/:providerId/documents`. **Still blocked on A1** (`backend_requirement.md`): there is no `GET /admin/providers`, and `GET /admin/users` publishes `user_status` but not `provider_status`, so the queue cannot filter to "awaiting decision" and says so on screen instead of labelling every row approved. Approval is gated on `cnic.cnicVerified`, which is what the API actually enforces
+- [x] Provider & customer management (list/search/deactivate — never a delete button) — ✅ `GET /admin/users` (+ `role`, `status`, `q`), `GET /admin/customers`, `POST :userId/{block,unblock,deactivate,send-reset}`. The old booking-count and lifetime-spend columns are **removed rather than estimated** — no endpoint returns them (A2). A 403 is never rendered as an empty list, and nothing is hard-deleted: the database forbids deletes outright
+- [x] Catalogue management: categories, services, pricing model, emergency/plan/warranty/high-risk flags — ✅ `POST`/`PATCH /admin/catalogue/{categories,services}` plus the commission rules. The list *is* the public catalogue, so an admin edits exactly what a customer sees. Checklist and issue-option routes are **write-only** (no reader anywhere in the API), so they are not on the screen and the gap is written up (A4)
+- [x] Roles & permissions screen (agent / finance / admin) — ✅ `GET /admin/roles`, `POST`/`DELETE /admin/users/:userId/roles/:roleCode`, `GET/POST /admin/staff-conflicts`. A 403 here is "this is not an admin session", not "there are no roles"
+- [x] Settings screen (maps to `Setting` table — commission, SLA timers, calling hours, etc.) — ✅ `GET /admin/settings`, `GET`/`PUT /admin/settings/:key`. Inputs are editable and the editor is chosen by the value's current type, because `SettingRow.value` is a real union. One key per request is the API's shape, so a group of changes is N round trips (A8)
+- [x] Audit log viewer (filter by actor, entity, date) — ✅ `GET /admin/audit` (+ `action`, `actorUserId`, `entityType`, `entityId`, `from`, `to`)
 
 **Definition of done — Phase 1:** a provider can register, upload documents, and get
 approved by an admin, entirely through the UI, matching the backend's Phase 1 DoD.
@@ -65,12 +67,12 @@ Search, booking flow, provider job execution
 
 ### Customer
 
-- [x] Search & filter results (location, experience, expertise, rating, price range, available-today, verified-only, min completed jobs) with distance shown per result — 🟡 search is live and distance is real; only service/city/point filters exist. Rating, price range, available-today, verified-only and min-jobs are **not filterable** — `/search/providers` is `.strict()` with 3 keys (BACKEND_REQUIREMENTS §2.1)
+- [x] Search & filter results (location, experience, expertise, rating, price range, available-today, verified-only, min completed jobs) with distance shown per result — 🟡 search is live and distance is real; only service/city/point filters exist. Rating, price range, available-today, verified-only and min-jobs are **not filterable** — `/search/providers` is `.strict()` with 3 keys (backend_requirement.md §2.1)
 - [x] Provider profile view (experience, expertise, rating, remarks, distance) — ✅
 - [x] Booking form: slot picker (only free slots selectable), problem description, up to 5 photos — 🟡 slot picker and description are live; the 5-photo upload is on the **booking detail** page, not this flow
 - [x] Booking summary & confirmation (estimated price, visit/inspection fee, cancellation policy shown before confirm) — ✅ `POST /bookings/quote` rendered verbatim
 - [x] Booking detail with live status (reflects every state in the booking state machine) — ✅
-- [x] Reschedule / cancel actions, with the fee rule surfaced before confirming — 🟡 actions are live; the copy states no fee is charged, because the API promises one in the quote and does not apply it (BACKEND_REQUIREMENTS §3.4)
+- [x] Reschedule / cancel actions, with the fee rule surfaced before confirming — 🟡 actions are live; the copy states no fee is charged, because the API promises one in the quote and does not apply it (backend_requirement.md §3.4)
 - [x] In-app messaging thread on a booking (numbers masked both directions) — ✅ masking is server-side
 
 ### Provider
@@ -79,7 +81,7 @@ Search, booking flow, provider job execution
 - [x] Job offer screen with acceptance countdown — ✅ `GET /provider/offers`, one-second countdown against the server's `expiresAt`, accept/decline. An expired row keeps its data but loses the accept control
 - [x] Job detail screen — ✅ rebuilt on `GET /bookings/:id` with every provider action from `bookingApi`. Status now comes from the booking row, not a state index; the server's 409 sentence is shown verbatim
 - [x] Start-work OTP entry — ✅ the code is typed by the provider (the old screen compared against a literal in the bundle). Six digits checked first so a typo never burns one of the five attempts
-- [ ] Checklist + photograph capture (before/after, geofenced check-in/out handled silently in the background) — 🟡 before/after photos are real with downscaling and a retry-safe `clientUuid`. The step list itself is still a gap: `POST …/complete` enforces it, but no endpoint publishes the steps or their `itemId` (BACKEND_REQUIREMENTS §3.11), so nothing can be rendered or ticked
+- [ ] Checklist + photograph capture (before/after, geofenced check-in/out handled silently in the background) — 🟡 before/after photos are real with downscaling and a retry-safe `clientUuid`. The step list itself is still a gap: `POST …/complete` enforces it, but no endpoint publishes the steps or their `itemId` (backend_requirement.md §3.11), so nothing can be rendered or ticked
 - [x] Revised quote form (for inspection-first / extra-work services), sent for customer in-app approval — ✅ `POST /bookings/:id/revisions` is used from the job screen and refuses an incomplete reason/amount client-side first
 - [x] Completion submission — ✅ `POST …/complete` with photos, optional lower final amount, and a clear name for whichever gate is missing. Invoice link appears once the job is completed
 
@@ -111,9 +113,9 @@ Agent console, finance screens, customer/provider money views
 ### Customer
 
 - [x] Booking history with status, invoice, provider, and the verification-call feedback — ✅ `/account/bookings` and `/account` are both on real data now: bookings read from `GET /bookings`, service names joined from the catalogue (§3.1 published ids only), held sums from `paymentStatus`, verification-call feedback from `/complaints`' `slaBreached` signalling. Status labels are audience-correct
-- [ ] Invoice view (itemised: service, extras, parts, surcharge, discount, total) — ⬜ no UI; only `GET /bookings/:id/invoice.pdf`, which 404s until completion, and no endpoint returns the line items (BACKEND_REQUIREMENTS §3.6)
+- [ ] Invoice view (itemised: service, extras, parts, surcharge, discount, total) — ⬜ no UI; only `GET /bookings/:id/invoice.pdf`, which 404s until completion, and no endpoint returns the line items (backend_requirement.md §3.6)
 - [x] Re-book a previous provider from history — ✅ removed. The dead link used  to hand the customer a fresh booking without remembering service/provider, which is worse than an honest shortlist screen; a rebook must re-fill those fields from the real row
-- [ ] Favourite providers list — ⬜ table and composite id exist, no endpoint: `grep -ri favourite apps/api/src` returns zero (BACKEND_REQUIREMENTS §3.12). Screen explains this rather than rendering an empty heart list
+- [ ] Favourite providers list — ⬜ table and composite id exist, no endpoint: `grep -ri favourite apps/api/src` returns zero (backend_requirement.md §3.12). Screen explains this rather than rendering an empty heart list
 
 ### Provider
 
@@ -169,9 +171,11 @@ Maintenance plans, reporting, operations board
 
 ### Customer
 
-- [ ] Maintenance plans: browse, subscribe, view remaining entitlements & renewal date, cancel — ⬜ **no maintenance-plan endpoint exists on the API**; these screens cannot be made real until it does
+- [x] Maintenance plans: browse, subscribe, view remaining entitlements & renewal date, cancel — ✅ SHM-089 landed `apps/api/src/plans/*` on 2026-10-12 and all three screens are on it. `/plans` and `/account/plans` read `GET /plans`; the account screen reads `GET /me/subscriptions`, subscribes through `POST /plans/:id/subscribe` and follows the returned `checkout.returnUrl`; it cancels through `POST /subscriptions/:id/cancel` and reads the per-visit schedule from `GET /subscriptions/:id`. The public page's three invented tiers (Rs 4,900 / 8,900 / 14,900) are **deleted** — no row in the database ever agreed with them. Verified in a real browser against a published plan (`apps/web/e2e/verify-plans.cjs`). Remaining gaps: B1–B4 in `apps/web/docs/backend_requirement.md`
 
 ### Admin
+
+- [x] Maintenance plan management: list including unpublished, create, edit, deactivate — ✅ the five `/admin/plans` routes are consumed by a real editor. `DELETE` is a deactivation (`is_active = false`) and the confirmation says so: nobody is charged and no existing subscription is cancelled. Republishing is a `PATCH` with `isActive: true`. The service list can only be set at creation — `planUpdateSchema` has no `services` key — so the edit form omits that control and states why (B1).
 
 - [ ] Operations board: today's bookings by state, verification queue depth, SLA breaches, open disputes, total escrow held — ⬜ **blocked**: `GET /bookings` is `CUSTOMER, PROVIDER` only, so an admin has no booking list at all (§0.2.1)
 - [ ] Reports screen: monthly, revenue, provider performance, verification — each exportable to PDF/Excel, printable — ⬜ **blocked** on `GET /admin/reports` (§0.2.4); the Export PDF button is inert
