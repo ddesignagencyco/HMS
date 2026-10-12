@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AgentAttempts } from "@/features/portal/admin-ops-views";
+import { AgentAttempts } from "@/features/portal/staff-views";
 import { getDictionary } from "@/lib/dictionaries";
 import { isLocale } from "@/lib/utils";
 

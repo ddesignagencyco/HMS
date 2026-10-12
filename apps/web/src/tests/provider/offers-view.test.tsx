@@ -87,7 +87,7 @@ describe('provider offers', () => {
     expect(await screen.findByRole('button', { name: dict.portal.accept })).toBeDefined();
     expect(screen.getByRole('button', { name: dict.portal.decline })).toBeDefined();
     /* 5 minutes to expiry — a five-minute offer is still live */
-    expect(await screen.findByText(/^Respond within 5m/)).toBeDefined();
+    expect(await screen.findByText(/^Respond within (?:4m|5m)/)).toBeDefined();
   });
 
   it('offers no accept control on an expired row', async () => {

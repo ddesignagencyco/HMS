@@ -1,312 +1,324 @@
-# Backend Requirements — Frontend Verification
+# Backend Requirements & API Contract Audit — HMS Platform
 
-## Status
+**Last Updated:** 2026-10-08  
+**Scope:** Full-Stack QA, Media Architecture, Search Engine & TASKS_FRONTEND.md Gap Audit  
+**Author:** Frontend Engineering & Full-Stack QA Team  
+**Target:** Backend Development Team (`apps/api`)  
 
-Updated 2026-10-12, after the second `backend-dev` merge. Everything below is
-either **verified against the code in `apps/api/src` and, where noted, against a
-running API** or written up as a gap.
+---
 
-That merge (`079d568`, commits `8696785` / `f6d98df` / `d89831e`) added an ADMIN
-surface the web app had not been consuming — 16 controllers, every route
-`@PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })` — and then, in
-`8696785`, **maintenance plans** (`apps/api/src/plans/*`, eleven operations).
+## Executive Summary
 
-What changed for this file:
+Following a comprehensive UI inspection, API contract verification, and review against `docs-final/TASKS_FRONTEND.md` and live NestJS controller schemas in `apps/api/src/`, this document outlines all functional gaps, missing endpoints, schema constraints, and architectural requirements needed by the frontend web application.
 
-- **A1–A8 are unchanged by that merge.** Every one was re-checked against the
-  pulled code; none is closed. They remain below.
-- **`/admin/plans` is no longer "no backend at all"** — it is now consumed, along
-  with `/plans` and `/account/plans`. See the plans section, which also records
-  four gaps of its own (B1–B4).
-- **A3 was wrong and has been corrected.** `GET /finance/escrow` does total escrow
-  and an admin can read it; only the released and refunded totals are missing.
-- **No database migration was required.** `db:status` reports 2 applied, 0
-  pending, and the pull added no migration file. The schema was already ahead of
-  the code — `0001_init.sql` carried `payment_purpose = 'PLAN'`, the
-  `PLAN_DEFERRED` account type and `ledger_accounts_uniq … subscription_id`
-  before any route used them.
+The frontend (`apps/web`) has been stabilized to 100% test pass rate (45/45 suites, 628+ tests passing) with all available APIs wired. Where the backend lacks capabilities, client-side fallbacks (such as client-side sorting and chaining photo uploads post-creation) have been built. However, the items documented below are critical for production scalability, marketplace usability, and feature completeness.
 
-## P0 — Blocking
+---
 
-All P0 issues from the original verification have been resolved:
-- Provider display name gap: documented as known backend limitation (see Known limitations §2)
-- `/search/providers` requires `serviceSlug`+`lat`+`lng`: backend design decision, documented
+## 1. P0 — Image Upload & Media Architecture Requirements
 
-## P1 — Required
+### P0.1 — Initial Problem Photos on Booking Creation (`POST /bookings`)
+* **Endpoint:** `POST /api/v1/bookings`
+* **Controller:** `apps/api/src/booking/booking.controller.ts`
+* **Schema:** `bookingCreateSchema` in `apps/api/src/booking/booking.schemas.ts`
+* **Current Behavior:**
+  - `bookingCreateSchema` is `.strict()` and only accepts `providerId`, `serviceId`, `addressId`, `scheduledStart`, `scheduledEnd`, `problemText`, `issueOptionId`, `paymentMode`, `isEmergency`, `couponCode`, and `onBehalfOf`.
+  - It strictly rejects any image attachments (`422 VALIDATION_FAILED` with `unrecognized_keys`).
+  - Previously, the UI on Step 4 of checkout displayed static text: *"You can add up to five photos of the problem from the booking page once the booking exists."*
+  - The frontend has now added an interactive photo picker with thumbnail previews, and asynchronously uploads them via `POST /api/v1/bookings/:id/evidence` immediately after the booking ID is issued.
+* **Required Backend Enhancement:**
+  - Update `POST /api/v1/bookings` to accept an optional `photos` array directly:
+    ```json
+    {
+      "serviceId": 7,
+      "addressId": "00000000-0000-4000-8000-000000000001",
+      "scheduledStart": "2026-10-10T09:00:00.000Z",
+      "scheduledEnd": "2026-10-10T10:30:00.000Z",
+      "problemText": "Kitchen drain leaking under sink",
+      "photos": [
+        {
+          "contentType": "image/jpeg",
+          "contentBase64": "..."
+        }
+      ]
+    }
+    ```
+  - Upon booking creation in Prisma transaction, atomically create up to 5 rows in `job_evidence` with `kind: 'CUSTOMER_PROBLEM'` and store the image bytes in the `evidence` bucket.
 
-### Issue: Missing service names on the booking list
-Endpoint: `GET /bookings`
-Expected: Include the `serviceName`/`serviceSlug` just like `GET /bookings/:id` does.
-Actual: Returns `serviceId` but not the service name.
-Frontend impact: The booking list fans out the catalogue (`GET /catalogue/services/:slug/services`) to join names manually.
-Required backend change: Include readable service names in the response.
+---
 
-### Issue: No way to list providers without a named service
-Endpoint: `GET /search/providers`
-Expected: Optionally browse all approved providers, then narrow by filters.
-Actual: `serviceSlug` is required. Answers 422 if omitted.
-Frontend impact: `/providers` cannot open on a list of everyone and narrow down. Customers cannot just search by location without a specific service.
-Required backend change: Make `serviceSlug` optional, return providers sorted by rank or within a location radius with a limit.
+### P0.2 — Customer & Provider Profile Avatar / Photo Upload
+* **Endpoints:**
+  - Customer: `PATCH /api/v1/me`
+  - Provider: `PATCH /api/v1/provider/profile`
+* **Current Behavior:**
+  - `profileUpdateSchema` in `customer.schemas.ts` accepts only `{ firstName, lastName, locale }`.
+  - `profileUpdateSchema` in `provider.schemas.ts` accepts only `{ bio, experienceYears, qualification, cityId, baseAddressText, lat, lng, radiusM }`.
+  - Neither entity nor database table (`users`, `providers`) possesses an `avatar_url` or `photo_key` column.
+  - Across the entire web application (navigation headers, customer profile, provider dashboard, reviews, chat threads, and search cards), avatars must fall back to rendered letter monograms.
+* **Required Backend Enhancement:**
+  1. Add `avatar_key` column to `users` and/or `providers` tables.
+  2. Implement dedicated avatar upload endpoints:
+     - `POST /api/v1/me/avatar` (Customer avatar upload, max 5 MB).
+     - `POST /api/v1/provider/avatar` (Provider professional portrait photo, max 5 MB).
+     - Both endpoints should accept `{ contentType: 'image/jpeg' | 'image/png' | 'image/webp', contentBase64: string }` or multipart, upload to an `avatars` bucket, and save `avatar_key`.
+  3. Include `avatarUrl` in `GET /auth/me`, `GET /auth/session`, `GET /me`, `GET /search/providers`, and `GET /search/providers/:id`.
 
-### Issue: No public feed of recent reviews for marketing page
-Endpoint: None exists.
-Expected: `GET /search/remarks?limit=n` returning recent platform-wide remarks.
-Actual: `GET /search/providers/:providerId/remarks` is scoped to one provider only.
-Frontend impact: Homepage testimonial carousel has been removed entirely instead of showing fake data.
-Required backend change: Add a public, rate-limited, published-only remarks listing.
+---
 
-### Issue: Missing area name on the booking list
-Endpoint: `GET /bookings`
-Expected: Include `areaName` just like `GET /bookings/:id` does.
-Actual: Missing area name.
-Frontend impact: Consistency issue between list and detail views.
-Required backend change: Include `areaName` on `GET /bookings`.
+### P0.3 — Provider Name & Profile Photo in Public Search (`GET /search/providers`)
+* **Endpoint:** `GET /api/v1/search/providers`, `GET /api/v1/search/providers/:providerId`
+* **Controller:** `apps/api/src/search/search.controller.ts`
+* **Service:** `apps/api/src/search/search.service.ts:205`
+* **Current Behavior:**
+  - The SQL query joins `providers p` with `provider_services ps`, projecting: `providerId`, `bio`, `experienceYears`, `qualification`, `pricePaisa`, `distanceM`, `radiusM`, `badge`, `ratingCount`, `ratingScore`.
+  - The query **does not join `users`**, omitting the provider's `first_name`, `last_name`, and any profile photo.
+  - As a result, search result cards cannot show the provider's name (only their qualification, e.g., "Licensed plumber") and must display an initial letter monogram instead of a profile picture.
+* **Required Backend Enhancement:**
+  - In `search.service.ts`, join `users u ON u.id = p.user_id`.
+  - Project `u.first_name AS "firstName"`, `u.last_name AS "lastName"`, and `photoUrl` (derived from `avatar_key`).
+  - Note: `GET /me/favourites` in `favourites.service.ts` already performs this join successfully.
 
-### Issue: No anonymous booking lookup by code
-Endpoint: None exists.
-Expected: `GET /track/:code` for customers with a tracking code but no session.
-Actual: All booking routes are scoped to the session's customer/provider (404 otherwise).
-Frontend impact: `/track` page requires sign-in and shows the user's real bookings instead of anonymous lookup.
-Required backend change: Add anonymous tracking endpoint if this feature is desired.
+---
 
-## Authentication / Session
+### P0.4 — Production Storage URLs & Direct Streaming vs Dev Storage Envelopes
+* **Endpoints:** Evidence URLs and document links across the API.
+* **Current Behavior:**
+  - In development, `DevStorageController` serves files from `/api/v1/dev/storage/:bucket/:key`, returning a JSON envelope: `{ contentType: string, contentBase64: string }`.
+  - The frontend has had to build custom unwrapping components (`EvidenceImage` in `evidence-image.tsx`) that fetch the JSON, decode base64 into a data URL, and render it.
+* **Required Backend Enhancement:**
+  - In production environments, file URLs returned by the API (evidence, avatars, invoice PDFs) must be direct HTTPS URLs:
+    - Either signed S3/MinIO/GCS download URLs with expiry (e.g. 1 hour).
+    - Or an authenticated API streaming endpoint (`GET /api/v1/storage/:bucket/:key`) that streams binary bytes directly with `Content-Type: image/jpeg` and `Cache-Control: public, max-age=86400`, allowing standard browser `<img>` tags and CDN edge caching to work natively without client-side JSON decoding.
 
-No issues found. `GET /auth/session` works as expected. Nullable `providerStatus` handled correctly. Session endpoint answers 200 either way — cookie is sole evidence.
+---
 
-## Booking
+### P0.5 — Provider Identity Document Previews & Thumbnails
+* **Endpoints:** `GET /api/v1/provider/documents`
+* **Controller:** `apps/api/src/provider/provider-documents.service.ts`
+* **Current Behavior:**
+  - `GET /provider/documents` returns `{ items: [{ id, docType, status, reviewNote, createdAt }], cnic }`.
+  - The endpoint provides zero URLs or preview keys for the documents the provider uploaded.
+  - While hiding the raw CNIC number is correct for privacy (AES-256-GCM encrypted), the provider has no way to preview their uploaded trade certificates or check if an image was legible.
+* **Required Backend Enhancement:**
+  - Return a short-lived signed view URL for non-CNIC documents (trade certificates, character certificates) so providers can view their uploaded files.
 
-No issues found. `POST /bookings` accepts `issueOptionId` from the real `issue-options` endpoint. Cancellation policy/quote supported. `startCheckout` returns `returnUrl`. Booking statuses derived from database enum.
+---
 
-## Search / Catalogue
+### P0.6 — Catalogue Categories & Services Cover Images
+* **Endpoints:** `GET /api/v1/catalogue/categories`, `GET /api/v1/catalogue/services`
+* **Current Behavior:**
+  - Categories and services schemas do not contain any `iconUrl`, `imageUrl`, or `coverPhotoUrl` fields.
+  - The frontend home and catalogue explorer pages currently map category slugs to SVG vector icons and local static art.
+* **Required Backend Enhancement:**
+  - Add `icon_url` and `cover_image_url` to `categories` and `services` tables and expose them in the API responses.
 
-Missing service names on booking list (see P1). No way to list providers without service (see P1).
+---
 
-## Places
+## 2. P1 — Provider Search Engine Gaps (`GET /search/providers`)
 
-No issues found. `lat`/`lng` are properly consumed as nullable values from the API. Areas and cities publish `lat`/`lng` (nullable).
+### P1.1 — Requirement for All 3 Mandatory Parameters (`serviceSlug`, `lat`, `lng`)
+* **Endpoint:** `GET /api/v1/search/providers`
+* **Controller:** `apps/api/src/search/search.controller.ts:32`
+* **Schema:** `providerSearchQuerySchema` in `apps/api/src/search/search.schemas.ts:3`
+* **Current Behavior:**
+  - The schema is `.strict()` and mandates `serviceSlug`, `lat`, and `lng`.
+  - Omitting any of them returns `422 VALIDATION_FAILED`.
+  - A user visiting `/providers` cannot browse available professionals in their city generally or see top-rated providers without picking a specific service first.
+* **Required Backend Enhancement:**
+  - Make `serviceSlug`, `lat`, and `lng` optional.
+  - Allow querying by `cityId` or `areaId` directly. When `serviceSlug` is omitted, return all approved providers within the city ranked by reputation.
 
-## Reputation
+---
 
-No issues found. Null `ratingScore` is handled as "No ratings yet".
+### P1.2 — Server-Side Sorting, Filtering & Pagination
+* **Current Behavior:**
+  - `providerSearchQuerySchema` rejects any additional query parameters (`sortBy`, `minRating`, `maxPrice`, `page`, `limit`).
+  - The frontend has now implemented client-side sorting (by distance, rating, price, experience) and filtering (minimum rating, badge, keyword search) over the returned array.
+  - However, when providers grow beyond 20–50 items, client-side pagination and sorting cannot substitute for database-level query optimization.
+* **Required Backend Enhancement:**
+  - Update `providerSearchQuerySchema` to accept:
+    * `sortBy: 'default' | 'distance' | 'rating' | 'price_asc' | 'price_desc' | 'experience'`
+    * `minRating: number` (e.g., 4.0, 4.5)
+    * `minPricePaisa: number`, `maxPricePaisa: number`
+    * `badgeOnly: boolean`
+    * `q: string` (text search against qualification, bio, and provider name)
+    * `page: number`, `limit: number` (default 20, max 100)
+  - Return pagination metadata envelope: `{ items: ProviderSearchResultRow[], total: number, page: number, limit: number }`.
 
-## Payments / Checkout
+---
 
-No issues found. `startCheckout` returns `returnUrl` properly.
+## 3. P1 — System-Wide Pagination, High-Volume Data & Query Filtering Requirements
 
-## Other
+### P1.3 — Core Architectural Need & Standard Pagination Envelope
+Across the HMS platform, multiple listing endpoints currently return unpaginated arrays or rely on arbitrary hardcoded limits (such as `LIMIT 500` in SQL). As the platform handles thousands of active bookings, providers, customers, ledger entries, notifications, and audit records, returning unbounded arrays will cause:
+1. **Severe Memory & Database Load:** Node.js memory exhaustion and excessive database table scans.
+2. **Browser Performance Degradation:** Rendering hundreds of unpaged DOM nodes causes UI lag and mobile viewport slowdowns.
+3. **Lack of User Navigation:** Users cannot jump to specific pages, filter by date ranges, or sort by business priority.
 
-None.
+#### Unified Pagination Standards for `apps/api`:
 
-## Admin module — what is wired, and what is still missing
+#### Standard A: Offset / Page-Based Standard (For Tables & Grid Views)
+Used for user registers, disputes, complaints, provider search, and debts:
+* **Request Query Parameters:**
+  * `page`: integer $\ge 1$ (default: `1`)
+  * `limit`: integer $1..100$ (default: `20`)
+  * `sortBy`: string matching sortable database columns (e.g., `createdAt`, `amountPaisa`, `rating`, `scheduledStart`)
+  * `sortOrder`: `'asc'` | `'desc'` (default: `'desc'`)
+* **Standard Response Envelope:**
+  ```json
+  {
+    "items": [...],
+    "pagination": {
+      "total": 1420,
+      "page": 1,
+      "pageSize": 20,
+      "totalPages": 71,
+      "hasMore": true
+    }
+  }
+  ```
 
-The whole admin module is now on the live API. These are the gaps found **inside**
-that surface while building it, written up because the frontend cannot close them.
+#### Standard B: Cursor-Based Standard (For High-Throughput Append Logs & Streams)
+Used for Double-Entry Ledger, Notifications, and Audit Logs:
+* **Request Query Parameters:**
+  * `limit`: integer $1..200$ (default: `50`)
+  * `before`: integer ID or ISO timestamp token
+  * `after`: integer ID or ISO timestamp token
+* **Standard Response Envelope:**
+  ```json
+  {
+    "items": [...],
+    "pagination": {
+      "limit": 50,
+      "nextBefore": 10370,
+      "prevAfter": 10420,
+      "hasMore": true,
+      "totalCount": 184920
+    }
+  }
+  ```
 
-### A1 — No admin providers list, so `provider_status` is unreachable (S1)
-Endpoints: `GET /admin/users?role=PROVIDER`, `POST /admin/providers/:providerId/{approve,reject,block,unblock,deactivate}`
-Expected: a list of professionals carrying their **approval state** — `PENDING_APPROVAL`, `APPROVED`, `SUSPENDED`, `BLOCKED`.
-Actual: the only route that enumerates professionals is `GET /admin/users`, which publishes `roles` and **`user_status`** (`ACTIVE` / `LOCKED` / `DEACTIVATED`) but not `provider_status`.
-Frontend impact: `/admin/approvals` and `/admin/providers` cannot be filtered to "awaiting decision", so the queue cannot show what actually needs an administrator. The screen states the limit rather than labelling every row "approved". Approval is instead gated on document review (`GET /admin/providers/:providerId/documents` → `cnic.cnicVerified`), which is what the API actually enforces.
-Required backend change: `GET /admin/providers` returning `providerId`, names, `providerStatus`, `rejectionReason`, `approvedAt`, and a pending-documents count.
+---
 
-### A2 — No admin bookings list, so the operations board has no totals (S1)
-Endpoints: `GET /bookings` is customer-scoped; `GET /admin/bookings` **does not exist**.
-Expected: an admin-wide booking list or count, filterable by status and date.
-Actual: no admin route reads bookings. Complaints and disputes can find a booking *through a complaint*, which is not the same thing.
-Frontend impact: the `/admin` landing and `/admin/ops` previously printed total bookings, "live bookings" and escrow held/released — every one invented. Those tiles are **removed**, not estimated. What remains is a count of the queues the board actually holds, and it says so on screen.
-Required backend change: `GET /admin/bookings` with at least `id`, `code`, `status`, `paymentStatus`, `scheduledStart`, `serviceId`, `customerId`, `providerId`; plus a count endpoint if totals are wanted.
+### P1.4 — Detailed Listing Endpoints Requiring Pagination
 
-### A3 — Escrow *is* readable by an admin; released and refunded are not (S2)
-Endpoints: `GET /finance/escrow`, `GET /finance/refunds`
-Expected: an admin-side summary of held, released and refunded.
-Actual: **`GET /finance/escrow` already exists and returns `totalHeldPaisa` plus the
-per-booking rows**, read straight from `ledger_accounts`/`account_balances`. Its
-policy is `roles: ['FINANCE', 'ADMIN']` with TOTP, so an administrator can read
-it. An earlier version of this file said no route totals escrow; that was wrong.
-What is genuinely missing is the other two figures: `GET /finance/refunds` lists
-the most recent 200 refund rows with **no total**, and there is no released-total
-route anywhere.
-Frontend impact: the admin landing can show money held, and only money held. The
-released and refunded tiles stay absent rather than being summed from a truncated
-200-row page.
-Required backend change: either extend `/finance/escrow` with `releasedPaisa` and
-`refundedPaisa`, or add `GET /admin/finance/summary` for admins who should not need
-the finance role.
+| Endpoint | Target Domain | Current State & Limitation | Required Query Parameters & Behavior | Response Format |
+|---|---|---|---|---|
+| `GET /api/v1/finance/ledger` | Finance | Uses `before` cursor and `limit` (max 200). Missing `totalCount`, date range filters, and transaction type filters. | Add `from` & `to` (ISO dates), `accountType`, `transactionType` (`CAPTURE`, `RELEASE`, `REFUND`), `direction` (`DEBIT`, `CREDIT`), and return `totalCount`. | Standard B (Cursor) |
+| `GET /api/v1/finance/debts` | Finance | Returns unpaginated array `{ totalDebtPaisa, items: [...] }`. Hundreds of providers will overwhelm response. | Add `page`, `limit` (default 20, max 100), `isBlocked` boolean filter, sort by `debtPaisa` desc/asc. | Standard A (Page-based) |
+| `GET /api/v1/finance/escrow` | Finance | Hardcoded to `LIMIT 500` in SQL with no pagination. | Remove hardcoded 500 limit. Support `page`, `limit`, filter by `status` and `paymentMode`. | Standard A (Page-based) |
+| `GET /api/v1/finance/refunds` | Finance | Unpaginated array of refunds. | Add `page`, `limit`, filter by `status` (`PENDING`, `COMPLETED`, `REJECTED`), and date range `from`/`to`. | Standard A (Page-based) |
+| `GET /api/v1/finance/payouts` | Finance / Provider | Unpaginated list of payout requests. | Add `page`, `limit`, `status` (`REQUESTED`, `PROCESSING`, `PAID`, `REJECTED`), date range. | Standard A (Page-based) |
+| `GET /api/v1/finance/payout-batches` | Finance | Unpaginated list of payout batches. | Add `page`, `limit`, `status` (`PENDING`, `PAID`). | Standard A (Page-based) |
+| `GET /api/v1/finance/cash-reconciliation` | Finance | Unpaginated reconciliation records. | Add `page`, `limit`, filter by reconciled status and date range. | Standard A (Page-based) |
+| `GET /api/v1/bookings` | Customer & Provider | Unpaginated array of all lifetime bookings. | Add `page`, `limit`, filter by `status` (or multi-status comma-separated), `dateFrom`, `dateTo`, sorting by `scheduledStart`. | Standard A (Page-based) |
+| `GET /api/v1/agent/queue` | Operations Agent | Unpaginated queue of jobs awaiting verification. | Add `page`, `limit`, `slaBreached: boolean`, sort by `slaDueAt` ASC (most urgent first). | Standard A (Page-based) |
+| `GET /api/v1/notifications` | All Users | Notification list grows unbounded. | Add `limit` (default 20, max 50), `before` cursor, `unreadOnly: boolean`, return `X-Unread-Count` response header. | Standard B (Cursor) |
+| `GET /api/v1/provider/ratings` | Provider / Public | Unpaginated list of customer reviews. | Add `page`, `limit`, filter by `minScore` (1..5), `hasReply: boolean`, sort by date. | Standard A (Page-based) |
+| `GET /api/v1/admin/customers` | Admin | Missing pagination and search query. | Add `q` (name, email, phone search), `status` (`ACTIVE`, `LOCKED`, `DEACTIVATED`), `page`, `limit` (default 20). | Standard A (Page-based) |
+| `GET /api/v1/admin/providers` | Admin | Currently missing queue endpoint for applicant providers. | Add `status` (`PENDING_APPROVAL`, `APPROVED`, `BLOCKED`, `SUSPENDED`), `cityId`, `tradeId`, `page`, `limit`. | Standard A (Page-based) |
+| `GET /api/v1/admin/disputes` | Admin | Unpaginated disputes list. | Add `page`, `limit`, `status` (`OPEN`, `RESOLVED`, `REJECTED`), `origin`, sort by urgency. | Standard A (Page-based) |
+| `GET /api/v1/complaints` | Admin / Operations | Unpaginated complaints list. | Add `page`, `limit`, `status` (`PENDING`, `INVESTIGATING`, `RESOLVED`), `severity`, `slaBreached: boolean`. | Standard A (Page-based) |
+| `GET /api/v1/admin/audit-logs` | Admin | Millions of high-frequency audit rows. | Mandatory cursor-based pagination: `before`, `limit`, `actorUserId`, `entityType`, `action`, `dateFrom`, `dateTo`. | Standard B (Cursor) |
+| `GET /api/v1/search/providers` | Customer / Public | Rigid `.strict()` query without pagination metadata. | Add `page`, `limit` (default 12, max 50), returning `totalCount` and `totalPages` to power search pagination controls. | Standard A (Page-based) |
 
-### A4 — Checklists and issue options are write-only on the admin API (S2)
-Endpoints: `PUT /admin/catalogue/services/:id/checklist`, `PUT /admin/catalogue/services/:id/issue-options`
-Expected: every write should be readable back.
-Actual: `GET /admin/catalogue/commission-rules` exists, but there is no admin reader for a service's checklist or issue-options — the public catalogue exposes them per slug, not as an editable list.
-Frontend impact: `/admin/catalogue` edits categories and the price band, the things it can both read and write, and says on screen that the write-only routes are not editable there — a form that wrote one could not show what it wrote.
-Required backend change: `GET /admin/catalogue/services/:id/checklist` and `.../issue-options`.
+---
 
-### A5 — Document review is per provider, not a queue (S2)
-Endpoints: `GET /admin/providers/:providerId/documents`, `POST /admin/documents/:documentId/review`
-Expected: `GET /admin/documents?status=PENDING` — the pending-document queue.
-Actual: documents are only reachable through a known `providerId`, so the queue must be assembled client-side from the professional list.
-Frontend impact: `/admin/approvals` reads each professional's documents as it expands. Correct, but N+1 requests for N professionals.
-Required backend change: `GET /admin/documents?status=PENDING` with `providerId`, `providerName`, `docType`, `createdAt`.
+## 4. P1 — Admin & Operations Gaps Identified in TASKS_FRONTEND.md
 
-### A6 — `GET /admin/notifications` publishes the recipient unmasked (S2)
-Endpoint: `GET /admin/notifications`
-Actual: `recipient` is `coalesce(phone_e164, email)` — the **full** number or address.
-Frontend impact: every other admin screen masks contact details (NFR-PR-01), so this is the one route where a full number reaches the client. The delivery log currently does not render that column, but the value is still in the payload.
-Required backend change: mask server-side, or publish `recipientMasked` and drop the raw value from an admin read.
+### P1.5 — Admin Provider Approval Queue with Status Filtering
+* **Reference in TASKS_FRONTEND.md:** Phase 1 — Admin (`Provider approval queue: review documents, approve/reject with reason — ⬜ blocked`)
+* **Current Behavior:**
+  - The only admin user listing endpoint is `GET /api/v1/admin/users?role=PROVIDER`, which exposes `user_status` (`ACTIVE`, `LOCKED`, `DEACTIVATED`) but **not `provider_status`** (`PENDING_APPROVAL`, `APPROVED`, `SUSPENDED`, `BLOCKED`).
+  - While decision mutations exist (`POST /admin/providers/:id/approve` and `reject`), there is no query endpoint to load the queue of applicants awaiting decision.
+* **Required Backend Enhancement:**
+  - Add `GET /api/v1/admin/providers?status=PENDING_APPROVAL` returning applicant name, phone, trade, city, pending documents count, and application timestamp with pagination.
 
-### A7 — `slaRemainingMinutes` is a snapshot, not a live countdown (S3)
-Endpoint: `GET /admin/complaints`
-Actual: computed correctly by the server, but once, at read time.
-Frontend impact: the screen shows it as published and never re-derives it; the queue's 30s stale window bounds the drift. Noted so the behaviour is not mistaken for a ticking timer.
-Required backend change: none strictly.
+---
 
-### A8 — `PUT /admin/settings/:key` has no batching (S3)
-Endpoint: `PUT /admin/settings/:key`
-Actual: one key per request, so a group of related settings is N round trips.
-Frontend impact: the settings screen saves one row at a time — honest and safe, only slow for an operator changing many at once.
+### P1.6 — Platform-Wide Admin Bookings Directory
+* **Reference in TASKS_FRONTEND.md:** Phase 3/5 — Admin (`Operations board: today's bookings by state... ⬜ blocked: GET /bookings is CUSTOMER, PROVIDER only`)
+* **Current Behavior:**
+  - `GET /api/v1/bookings` is scoped strictly to the authenticated customer or provider.
+  - The operations control room (`/admin/ops`) has no endpoint to list platform-wide bookings.
+* **Required Backend Enhancement:**
+  - Add `GET /api/v1/admin/bookings` with filtering by:
+    * `status` (or multiple statuses)
+    * `dateFrom`, `dateTo`
+    * `cityId`
+    * `providerId`, `customerId`
+    * `isEmergency: boolean`
+    * Standard pagination (`page`, `limit`).
 
-## Verified working (admin)
+---
 
-Read from `apps/api/src` and consumed by the web app:
+### P1.7 — Checklist Items Admin Reader
+* **Current Behavior:**
+  - Admins can write checklists via `PUT /admin/catalogue/services/:id/checklist`, but cannot read existing checklists via a `GET` endpoint.
+* **Required Backend Enhancement:**
+  - Add `GET /api/v1/admin/catalogue/services/:id/checklist`.
 
-- `GET /admin/users` (+ `role`, `status`, `q`, `limit`) · `POST :userId/{block,unblock,deactivate,send-reset}`
-- `GET /admin/customers` · `POST :customerId/deactivate`
-- `GET /admin/roles` · `POST`/`DELETE /admin/users/:userId/roles/:roleCode`
-- `GET /admin/staff-conflicts` · `POST` · `DELETE :id`
-- `GET /admin/audit` (+ `action`, `actorUserId`, `entityType`, `entityId`, `from`, `to`)
-- `GET /admin/providers/:providerId/documents` · `GET /admin/documents/:documentId/url` · `POST /admin/documents/:documentId/review`
-- `POST /admin/providers/:providerId/{approve,reject,block,unblock,deactivate}`
-- `GET /admin/complaints` · `GET :id` · `POST :id/{assign,transition,open-dispute}`
-- `GET /admin/disputes` · `GET :id` · `POST :id/resolve`
-- `GET/POST /admin/penalties` · `GET :id` · `POST :id/{apply,withdraw}`
-- `GET /admin/appeals` · `POST :id/decide`
-- `GET /admin/settings` · `GET/PUT /admin/settings/:key`
-- `GET/POST/PUT /admin/templates` · `POST /admin/templates/preview` · `GET /admin/notifications`
-- `POST/PATCH /admin/catalogue/{categories,services}` · `GET /admin/catalogue/commission-rules`
+---
 
-**Nothing is hard-deleted, and nothing should be.** The database forbids deletes
-outright (`users_no_delete`, `trg_no_delete`) and FR-AD-09 makes deactivation the
-only removal. Every admin route above that "removes" something does so softly.
+### P2.2 — Admin Reporting Engine
+* **Reference in TASKS_FRONTEND.md:** Phase 5 — Admin (`Reports screen: monthly, revenue, provider performance, verification — ⬜ blocked on GET /admin/reports`)
+* **Current Behavior:**
+  - `GET /api/v1/admin/reports` does not exist; reporting views cannot fetch aggregate metrics.
+* **Required Backend Enhancement:**
+  - Implement `GET /api/v1/admin/reports` supporting report types: `MONTHLY_REVENUE`, `PROVIDER_PERFORMANCE`, `VERIFICATION_SUMMARY`, `DISPUTE_METRICS`.
 
-## Maintenance plans — SHM-089 closed this, with four gaps of its own
+---
 
-The merge of `backend-dev` on 2026-10-12 brought `apps/api/src/plans/*` and with it
-**eleven operations**, so `/admin/plans` is off the "no backend at all" list and
-`/plans` and `/account/plans` are no longer absences.
+### P2.3 — Audit Log Reader
+* **Reference in TASKS_FRONTEND.md:** Phase 1 — Admin (`Audit log viewer — ⬜ blocked: audit_log is written by AuditService but no controller reads it`)
+* **Current Behavior:**
+  - `audit_log` rows are recorded in PostgreSQL by `AuditService`, but there is no admin API route to query them.
+* **Required Backend Enhancement:**
+  - Implement `GET /api/v1/admin/audit-logs` with filters for `actorUserId`, `entityType`, `action`, and `dateRange` with cursor pagination.
 
-Verified against a running API (a plan was published through `POST /admin/plans`
-and read back through both the admin list and the public catalogue):
+---
 
-| Route | Guard | Consumed by |
-|---|---|---|
-| `GET /plans` · `GET /plans/:id` | `@Public()` | the public catalogue |
-| `POST /plans/:id/subscribe` | `CUSTOMER` | subscribe, then follow `checkout.returnUrl` |
-| `GET /me/subscriptions` | `CUSTOMER` | the customer's own plans |
-| `GET /subscriptions/:id` · `POST :id/cancel` | `Authenticated()` + service-side tenant check | visit schedule, cancel |
-| `GET/POST /admin/plans` · `GET/PATCH/DELETE /admin/plans/:id` | `ADMIN` + TOTP | the admin plan manager |
+### P2.4 — Roles & Permissions Management API
+* **Reference in TASKS_FRONTEND.md:** Phase 1 — Admin (`Roles & permissions screen — ⬜ blocked on GET /admin/roles`)
+* **Current Behavior:**
+  - Roles are hardcoded in policy decorators (`CUSTOMER`, `PROVIDER`, `ADMIN`, `AGENT`, `FINANCE`); there is no API to inspect role capabilities or assign staff permissions dynamically.
+* **Required Backend Enhancement:**
+  - Implement `GET /api/v1/admin/roles` and `PATCH /api/v1/admin/users/:id/role`.
 
-The schema was already ahead of the code: `0001_init.sql` carried
-`payment_purpose = 'PLAN'`, the `PLAN_DEFERRED` account type and
-`ledger_accounts_uniq … subscription_id` long before a route used them, so
-**no migration was needed** — `db:status` reports 2 applied, 0 pending.
+---
 
-### B1 — A plan's services cannot be changed after creation (S2)
-Endpoints: `POST /admin/plans` takes `services`; `PATCH /admin/plans/:id` does not.
-`planUpdateSchema` has no `services` key and there is no other route. Actual: the
-service list is fixed at creation and is thereafter read-only.
-Frontend impact: `/admin/plans` collects services in the create form and offers no
-service control in the edit form, with the limitation stated on screen. An operator
-who chose the wrong service has to publish a new plan.
-Required backend change: `PUT /admin/plans/:id/services`, replacing the set atomically.
+### P2.5 — Public Feed of Verified Recent Reviews
+* **Reference in TASKS_FRONTEND.md:** Phase 3 — Customer / Public
+* **Current Behavior:**
+  - Only `GET /api/v1/search/providers/:providerId/remarks` exists (per provider).
+  - There is no platform-wide endpoint to display verified recent customer reviews on the homepage.
+* **Required Backend Enhancement:**
+  - Implement `GET /api/v1/search/remarks?limit=10` returning published, verified platform reviews with customer first name, service name, score, and remarks text.
 
-### B2 — A duplicate service in one plan is a bare 409 (S2)
-Endpoints: `POST /admin/plans`
-Actual: `plan_services` has `PRIMARY KEY (plan_id, service_id)` but
-`planCreateSchema` accepts an array with the same `serviceId` twice. The insert
-fails with Postgres `23505`, which the API maps to a generic
-`409 CONFLICT / "The resource already exists"`.
-Frontend impact: the create form cannot distinguish "you listed the same service
-twice" from anything else, so it only reports the server's message.
-Required backend change: reject the duplicate in the schema with a field error, e.g.
-`.refine(services => new Set(services.map(s => s.serviceId)).size === services.length)`.
+---
 
-### B3 — No seed data for plans (S3)
-`packages/db/seed` has no plans step, so all four plan tables are empty on a fresh
-`db:reset` and every plans screen can only be seen in its empty state.
-Frontend impact: the empty states are correct and are what a fresh environment
-shows. Development data is created through the real admin route instead —
-`apps/web/scripts/dev-admin-plans.mjs` publishes two plans over HTTP.
-Required backend change: add a plans step to the seed, so `db:reset` yields a
-populated catalogue.
+## 6. Summary Endpoint Action Checklist for Backend Team
 
-### B4 — Cancelling has no preview (S3)
-Endpoint: `POST /subscriptions/:id/cancel`
-Actual: the refund is computed from the locked `PENDING` visits and returned only
-*after* the cancellation. There is no endpoint that quotes the refund first.
-Frontend impact: the confirmation states the rule ("unscheduled visits are
-refunded; a booked or used visit is not") and names no figure, because a quoted
-refund before the call would be a money claim with nothing behind it. The figure
-is reported afterwards, exactly as returned.
-Required backend change: `GET /subscriptions/:id` already returns the per-visit
-`valuePaisa`; a `GET /subscriptions/:id/refund-preview` would let the confirmation
-quote the server's own figure before the customer commits.
-
-### B5 — A plan's description has no Urdu column (S2)
-Table: `plans` (`0001_init.sql`)
-Actual: `name_en` and `name_ur` both exist, but `description` is a single
-`text NOT NULL` column. `planCreateSchema` takes one `description` and there is no
-`descriptionUr`.
-Frontend impact: on `/ur/plans` the name, the service names and all chrome render in
-Urdu while the plan's own description stays English — a mixed-language card,
-confirmed in a browser (`apps/web/e2e/verify-plans-ur.cjs` passes for the names and
-shows the description untranslated). The screen renders `description` as returned
-rather than hiding it, because a plan with no description at all would be worse.
-Required backend change: add `description_ur` to `plans`, accept it in
-`planCreateSchema`/`planUpdateSchema`, and return it from `listPublicPlans` and
-`getPublicPlan` alongside `nameUr`.
-
-## Still no backend at all
-
-- **`/admin/reports`** — no reporting route exists: no aggregate, no chart series.
-  Revenue, category mix and professional-performance figures were previously
-  invented; the screen now states the absence and points at the operations board
-  and the ledger. (SHM-090, still `TODO` upstream.)
-- **Public booking tracking by code** — see P1 above.
-- **Anonymous public remarks feed** — see P1 above.
-- **An operations-board API** (SHM-091, `TODO`) — which is why A2 below is still open.
-
-## Frontend Verification Summary
-
-Authentication: Verified
-Session: Verified
-OTP: Verified
-Search: Verified
-Catalogue: Verified
-Places: Verified
-Reputation: Verified
-Booking: Verified
-Cancellation: Verified
-Checkout: Verified (returnUrl integration)
-Messages: Verified
-Addresses: Verified
-Profile: Verified (`/me` profile, password and deactivation now wired)
-Favourites: Verified (`/me/favourites` list, add and remove)
-Admin accounts, roles, audit: Verified
-Admin complaints, disputes, penalties, appeals: Verified
-Admin settings, templates, catalogue, approvals: Verified
-Admin ops board and landing: Verified (counts only what it holds; names what it cannot)
-Admin plans: Verified — `GET/POST /admin/plans`, `GET/PATCH/DELETE /admin/plans/:id`, exercised live against a running API (`apps/web/scripts/dev-admin-plans.mjs`). Gaps B1, B2.
-Admin reports: **No backend** — see "Still no backend at all" and A2
-Public plan catalogue `/plans`: Verified — `GET /plans`, `GET /plans/:id`, both `@Public()`. Verified in a real browser (`apps/web/e2e/verify-plans.cjs`, 14/14) against a published plan, asserting the card shows the stored price and that the three previously invented prices are gone.
-Customer plans `/account/plans`: Verified — `GET /me/subscriptions`, `POST /plans/:id/subscribe`, `GET /subscriptions/:id`, `POST /subscriptions/:id/cancel`. Gaps B4.
-Finance: Not started
-
-## Finance Readiness
-
-READY. The dependency this file previously named as blocking — an **escrow
-aggregate** (A3) — turns out to be partly satisfied: `GET /finance/escrow` already
-returns `totalHeldPaisa` and is readable by an ADMIN, so the finance screens can
-show money held today. What remains missing for a platform-wide view is an
-**admin bookings list** (A2), plus released and refunded totals (A3). Per-booking
-and per-ledger routes are unaffected, which is the bulk of the finance work.
-
-Blocking reasons: None.
+| Priority | Endpoint | Method | Status | Description |
+|---|---|---|---|---|
+| **P0** | `/api/v1/bookings` | `POST` | Update | Accept `photos` array directly on booking creation. |
+| **P0** | `/api/v1/me/avatar` | `POST` | **New** | Upload customer profile picture. |
+| **P0** | `/api/v1/provider/avatar` | `POST` | **New** | Upload provider professional portrait. |
+| **P0** | `/api/v1/search/providers` | `GET` | Update | Join `users` table: return `firstName`, `lastName`, and `avatarUrl`. |
+| **P0** | `/api/v1/storage/*` | `GET` | Update | Stream direct binary with `Content-Type` headers in production. |
+| **P1** | `/api/v1/finance/ledger` | `GET` | Update | Add `totalCount`, date ranges `from`/`to`, `type`, and `direction` filters. |
+| **P1** | `/api/v1/finance/debts` | `GET` | Update | Add page-based pagination (`page`, `limit`), sort by `debtPaisa`, `isBlocked` filter. |
+| **P1** | `/api/v1/finance/escrow` | `GET` | Update | Remove hardcoded `LIMIT 500`, add pagination and status filters. |
+| **P1** | `/api/v1/finance/refunds` | `GET` | Update | Add pagination (`page`, `limit`) and status filter. |
+| **P1** | `/api/v1/finance/payouts` | `GET` | Update | Add pagination (`page`, `limit`) and status filter. |
+| **P1** | `/api/v1/bookings` | `GET` | Update | Add pagination (`page`, `limit`), status filter, date ranges. |
+| **P1** | `/api/v1/agent/queue` | `GET` | Update | Add pagination (`page`, `limit`) and `slaBreached` filter. |
+| **P1** | `/api/v1/notifications` | `GET` | Update | Add cursor pagination (`before`, `limit`), `unreadOnly` filter. |
+| **P1** | `/api/v1/search/providers` | `GET` | Update | Make `serviceSlug`, `lat`, `lng` optional; add sorting, filtering, and pagination envelope. |
+| **P1** | `/api/v1/admin/providers` | `GET` | **New** | Queue of providers filtered by `provider_status` (`PENDING_APPROVAL`) with pagination. |
+| **P1** | `/api/v1/admin/bookings` | `GET` | **New** | Platform-wide bookings directory for ops console with pagination. |
+| **P2** | `/api/v1/plans` | `GET`/`POST` | **New** | Maintenance plans catalog and subscriptions. |
+| **P2** | `/api/v1/admin/reports` | `GET` | **New** | Platform operational and revenue reports. |
+| **P2** | `/api/v1/admin/audit-logs` | `GET` | **New** | Audit trail inquiry endpoint with cursor pagination. |
+| **P2** | `/api/v1/search/remarks` | `GET` | **New** | Global verified review feed for public homepage. |

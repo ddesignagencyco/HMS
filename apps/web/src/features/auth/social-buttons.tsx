@@ -57,7 +57,11 @@ export function SocialButtons({ dict, className }: { dict: Dictionary; className
         <button
           type="button"
           onClick={comingSoon}
-          className="group relative inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[9px] border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 shadow-2xs transition-colors hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99] outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
+          /* Colour *and* transform, named explicitly. `transition-colors` left the
+             press animation — `active:translate-y-px` — with nothing to interpolate
+             it, so the button snapped by a pixel instead of easing, which reads as a
+             flicker next to the eased hover on every other button in the app. */
+          className="group relative inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[9px] border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 shadow-2xs transition-[background-color,border-color,color,transform] duration-150 ease-out motion-reduce:transition-none hover:border-slate-300 hover:bg-slate-50 active:translate-y-px motion-reduce:active:translate-y-0 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
         >
           <GoogleMark />
           <span>{dict.auth.continueWithGoogle}</span>
@@ -65,7 +69,7 @@ export function SocialButtons({ dict, className }: { dict: Dictionary; className
         <button
           type="button"
           onClick={comingSoon}
-          className="group relative inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[9px] border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 shadow-2xs transition-colors hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99] outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
+          className="group relative inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[9px] border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 shadow-2xs transition-[background-color,border-color,color,transform] duration-150 ease-out motion-reduce:transition-none hover:border-slate-300 hover:bg-slate-50 active:translate-y-px motion-reduce:active:translate-y-0 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
         >
           <FacebookMark />
           <span>{dict.auth.continueWithFacebook}</span>

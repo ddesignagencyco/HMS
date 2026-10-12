@@ -235,6 +235,57 @@ export type CreateBookingInput = {
 
 export type RescheduleInput = { scheduledStart: string; scheduledEnd: string };
 
+/**
+ * One step of the service's checklist, for this booking's visit.
+ *
+ * `GET /bookings/:id/checklist` (execution.service.ts → `ChecklistItemView`).
+ *
+ * `itemId` is the integer `POST /bookings/:id/checklist/:itemId` expects. It is
+ * published here and only here: the booking row carries no checklist, and the
+ * public catalogue's checklist is keyed by service rather than by booking, so this
+ * is the single route from which a professional can learn which steps exist.
+ */
+export type ChecklistStep = {
+  itemId: number;
+  position: number;
+  labelEn: string;
+  labelUr: string;
+  /** A photo step also needs the `evidenceId` of a CHECKLIST photo for that step. */
+  requiresPhoto: boolean;
+  done: boolean;
+  evidenceId: string | null;
+  doneAt: string | null;
+};
+
+export type Checklist = {
+  items: ChecklistStep[];
+  /**
+   * How many steps are not done. This is the same count `POST /bookings/:id/complete`
+   * refuses on, so the two cannot disagree about what is left to do.
+   */
+  outstanding: number;
+};
+
+/**
+ * Where this job is — `GET /bookings/:id/service-address`.
+ *
+ * Readable by the customer, and by the assigned provider **once the job has left
+ * REQUESTED**. Everyone else gets 404, including a provider still being asked
+ * whether they want the job: the booking row deliberately carries only an
+ * `addressId`, because every provider-facing endpoint returns that row and an
+ * address on it would travel with the offer list before anyone had committed.
+ */
+export type ServiceAddress = {
+  label: string | null;
+  line1: string | null;
+  line2: string | null;
+  areaId: number | null;
+  areaName: string | null;
+  /** The point the arrival check-in is measured against. */
+  lat: number | null;
+  lng: number | null;
+};
+
 /** `POST /bookings/:id/evidence` — one photo, base64, insert-only. */
 export type EvidenceKind = "CUSTOMER_PROBLEM" | "BEFORE" | "AFTER" | "CHECKLIST";
 
@@ -381,6 +432,19 @@ export const bookingApi = {
 
   listEvidence: (bookingId: string, options?: BookingOptions) =>
     call<{ items: Evidence[] }>(`/bookings/${encodeURIComponent(bookingId)}/evidence`, {}, options),
+
+  /**
+   * The service's checklist for this visit, with what has been done on it.
+   *
+   * Answers at any status and changes nothing, so it is safe to read early — what
+   * is *shown* is a separate decision made where the status is known.
+   */
+  listChecklist: (bookingId: string, options?: BookingOptions) =>
+    call<Checklist>(`/bookings/${encodeURIComponent(bookingId)}/checklist`, {}, options),
+
+  /** 404 while the booking is still REQUESTED — see `ServiceAddress`. */
+  serviceAddress: (bookingId: string, options?: BookingOptions) =>
+    call<ServiceAddress>(`/bookings/${encodeURIComponent(bookingId)}/service-address`, {}, options),
 
   addEvidence: (bookingId: string, input: AddEvidenceInput, options?: BookingOptions) =>
     call<AddEvidenceResult>(

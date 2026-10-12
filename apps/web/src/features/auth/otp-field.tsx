@@ -47,7 +47,14 @@ export function OtpField({
   return (
     <div className="grid gap-2">
       <span className="text-sm font-medium text-navy">{label}</span>
-      <div dir="ltr" role="group" aria-label={label} className="flex justify-between gap-1.5">
+      {/* Centred, and each box capped rather than stretched.
+          `flex-1` alone let six boxes share the whole card width on a wide screen,
+          which made each one a 68px-wide rectangle around a single digit — six times
+          the space a digit needs, and a row that read as five empty fields and one
+          odd one out. The cap keeps them square at 44px while `flex-1` still lets
+          them shrink, which is what the narrow column beside the two-factor QR needs,
+          where six boxes share about 200px. */}
+      <div dir="ltr" role="group" aria-label={label} className="flex items-center justify-center gap-1.5">
         {digits.map((digit, index) => (
           <input
             key={index}
@@ -86,7 +93,7 @@ export function OtpField({
             aria-label={`${label} ${index + 1}`}
             aria-invalid={error === undefined ? undefined : true}
             className={cn(
-              "h-12 w-full min-w-0 rounded-[9px] border bg-white text-center text-lg font-semibold text-navy transition focus-visible:outline-none focus-visible:ring-4",
+              "h-11 w-full max-w-[2.75rem] min-w-0 flex-1 rounded-[9px] border bg-white text-center text-base font-semibold tabular-nums text-navy transition focus-visible:outline-none focus-visible:ring-4",
               error === undefined
                 ? "border-line focus-visible:border-primary focus-visible:ring-blue-100"
                 : "border-rose-300 focus-visible:border-rose-400 focus-visible:ring-rose-100",

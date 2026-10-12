@@ -146,7 +146,13 @@ export function SubmitButton({
       disabled={pending}
       className={buttonStyles({
         className: cn(
-          "w-full min-h-[40px] rounded-[9px] font-semibold text-[13.5px] shadow-xs transition-all active:scale-[0.99] disabled:opacity-60 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0",
+          /* `transition-all` was here, and it is the reason this card felt like it
+             was shaking. It animates *every* animatable property, so the 1px hover
+             lift in the shared button contract, the spinner swap and the disabled
+             fade were all being interpolated together — and anything else that
+             happened to change got a transition it never asked for. The same
+             explicit list the shared button styles use, and nothing else. */
+          "w-full min-h-[40px] rounded-[9px] font-semibold text-[13.5px] shadow-xs transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out motion-reduce:transition-none active:translate-y-0 disabled:opacity-60 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0",
           className,
         ),
       })}

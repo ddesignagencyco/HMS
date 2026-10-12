@@ -127,19 +127,18 @@ export const adminKeys = {
   audit: (action?: string, entityType?: string, entityId?: string, from?: string, to?: string) =>
     ['admin', 'audit', action ?? 'all', entityType ?? 'all', entityId ?? '', from ?? '', to ?? ''] as const,
   providers: (status?: string, q?: string) => ['admin', 'providers', status ?? 'all', q ?? ''] as const,
-  /**
-   * `GET /admin/plans`. Admin-only and unlike the public list: it
-   * includes deactivated plans and carries the active-subscription
-   * count, so it is a different answer from `planKeys.list` and can
-   * never be served from it.
-   */
-  plans: ['admin', 'plans'] as const
+  /* A finance route, read by an admin. Keyed under `admin` because that is the
+     surface it is displayed on and so that an admin-wide invalidation refreshes
+     it alongside the rest of the admin numbers. */
+  escrow: () => ['admin', 'escrow'] as const
 } as const;
 
 export const bookingKeys = {
   all: ['account', 'bookings'] as const,
   list: (status?: BookingListStatus) => ['account', 'bookings', 'list', status ?? 'all'] as const,
-  detail: (bookingId: string) => ['account', 'bookings', 'detail', bookingId] as const
+  detail: (bookingId: string) => ['account', 'bookings', 'detail', bookingId] as const,
+  checklist: (bookingId: string) => ['account', 'bookings', bookingId, 'checklist'] as const,
+  serviceAddress: (bookingId: string) => ['account', 'bookings', bookingId, 'service-address'] as const
 } as const;
 
 /**

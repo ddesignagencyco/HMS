@@ -5,18 +5,17 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { ArrowRight, KeyRound, Lock, Mail } from "lucide-react";
+import { ArrowRight, Lock, Mail } from "lucide-react";
 import { z } from "zod";
 import { ApiError } from "@/lib/api/problem";
 import type { Dictionary } from "@/lib/dictionaries";
 import { localizedPath, type Locale } from "@/lib/utils";
-import { buttonStyles } from "@/components/ui";
 import { useSession } from "./session";
 import { loginIdentifier, loginSchema, totpCodeSchema, type LoginValues } from "./schemas";
 import { Field, PasswordField, SubmitButton } from "./auth-fields";
 import { AUTH_HERO_IMAGE, AuthShell } from "./auth-shell";
 import { OtpField } from "./otp-field";
-import { actorRoles, returnToForRoles, signInPath } from "./routing";
+import { actorRoles, returnToForRoles, totpPath } from "./routing";
 import { applyServerFieldErrors, authErrorMessage, toastError, toastSuccess } from "./auth-feedback";
 import { describeTarget } from "./target";
 import { SocialButtons } from "./social-buttons";
@@ -27,9 +26,9 @@ type Challenge = { identifier: string; password: string } | null;
 export function SignInForm({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { signIn, status, user } = useSession();
+  const { signIn, status, user, totpPending } = useSession();
   const [challenge, setChallenge] = useState<Challenge>(null);
-  const [pendingTotp, setPendingTotp] = useState(false);
+  const [enrollingTotp, setEnrollingTotp] = useState(false);
 
   const returnTo = searchParams.get("returnTo");
 
@@ -45,11 +44,24 @@ export function SignInForm({ locale, dict }: { locale: Locale; dict: Dictionary 
     mode: "onBlur",
   });
 
+  /* A staff session that has not finished its two-factor check goes back to the
+     route that finishes it. Sending it to the role home instead is what put an
+     administrator on an empty dashboard after pressing "Back to sign in" without
+     ever entering a code. */
   useEffect(() => {
-    if (status === "authenticated" && user !== null && challenge === null && !pendingTotp) {
-      router.replace(returnToForRoles(returnTo, actorRoles(user), locale));
-    }
-  }, [challenge, locale, pendingTotp, returnTo, router, status, user]);
+    if (status !== "authenticated" || user === null || challenge !== null) return;
+    if (totpPending || enrollingTotp) router.replace(totpPath(locale, returnTo));
+    else router.replace(returnToForRoles(returnTo, actorRoles(user), locale));
+  }, [challenge, enrollingTotp, locale, returnTo, router, status, totpPending, user]);
+
+  /* A staff account that has to turn two-factor on is sent to the one route that
+     can do it. Sign-in used to draw the enrolment card here as well and link across
+     to it, which meant the same two-factor screen appeared twice in a row — once to
+     be left, once to be arrived at. A handover state is all that belongs here. */
+  useEffect(() => {
+    if (!enrollingTotp) return;
+    router.replace(totpPath(locale, returnTo));
+  }, [enrollingTotp, locale, returnTo, router]);
 
   const onSubmit = form.handleSubmit(
     async (values) => {
@@ -57,7 +69,7 @@ export function SignInForm({ locale, dict }: { locale: Locale; dict: Dictionary 
       try {
         const result = await signIn({ identifier, password: values.password });
         if (result.totpRequired) {
-          setPendingTotp(true);
+          setEnrollingTotp(true);
           return;
         }
         toastSuccess(locale === "ur" ? "خوش آمدید! آپ سائن ان ہو چکے ہیں" : "Welcome back! Signed in successfully");
@@ -85,7 +97,7 @@ export function SignInForm({ locale, dict }: { locale: Locale; dict: Dictionary 
       try {
         const result = await signIn({ identifier: challenge.identifier, password: challenge.password, totpCode: code });
         if (result.totpRequired) {
-          setPendingTotp(true);
+          setEnrollingTotp(true);
           return;
         }
         toastSuccess(locale === "ur" ? "کامیابی سے تصدیق ہو گئی" : "Verification successful!");
@@ -102,7 +114,10 @@ export function SignInForm({ locale, dict }: { locale: Locale; dict: Dictionary 
     },
   );
 
-  if (pendingTotp) {
+  /* Handing over to the two-factor route. A title and a spinner, nothing more: the
+     card that explains the step lives on `/auth/totp`, and this must not grow into
+     a second copy of it. */
+  if (enrollingTotp) {
     return (
       <AuthShell
         locale={locale}
@@ -113,17 +128,9 @@ export function SignInForm({ locale, dict }: { locale: Locale; dict: Dictionary 
         imageSrc={AUTH_HERO_IMAGE}
         imagePlacement="right"
       >
-        <div className="grid gap-4">
-          <p className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 text-sm text-blue-900 leading-relaxed">
-            {dict.auth.totpSetupText}
-          </p>
-          <Link href={localizedPath(locale, "/auth/totp")} className={buttonStyles({ className: "w-full" })}>
-            <KeyRound className="size-4" aria-hidden="true" />
-            {dict.auth.totpSetupTitle}
-          </Link>
-          <Link href={signInPath(locale, returnTo)} className={buttonStyles({ variant: "ghost", className: "w-full" })}>
-            {dict.auth.backToSignIn}
-          </Link>
+        <div className="grid gap-4" aria-busy="true" aria-live="polite">
+          <span className="skeleton h-11 w-full rounded-[9px]" />
+          <span className="skeleton h-11 w-2/3 rounded-[9px]" />
         </div>
       </AuthShell>
     );

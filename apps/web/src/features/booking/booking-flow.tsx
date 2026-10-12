@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Info, ShieldCheck, Zap } from "lucide-react";
+import { CalendarDays, Camera, CheckCircle2, ChevronLeft, ChevronRight, Info, ShieldCheck, Upload, X, Zap } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Dictionary } from "@/lib/dictionaries";
@@ -18,7 +18,8 @@ import { DayPicker, ProviderChoiceStep, RequestedWindowPicker, formatDay, isAuto
 import { useCreateBooking, useQuote } from "@/features/booking/queries";
 import { useIssueOptions } from "@/features/catalogue/queries";
 import { isAwaitingProvider, isHeldPayment } from "@/features/booking/status";
-import type { CreatedBooking, PaymentMode, Quote } from "@/features/booking/api";
+import { bookingApi, type CreatedBooking, type PaymentMode, type Quote } from "@/features/booking/api";
+import { prepareEvidenceImage } from "@/features/uploads/image";
 import type { CatalogueService } from "@/features/catalogue/api";
 
 /* The booking flow, against the live API.
@@ -91,6 +92,7 @@ export function BookingFlow({
   );
   const [point, setPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [created, setCreated] = useState<CreatedBooking | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [slotTaken, setSlotTaken] = useState(false);
   const [localError, setLocalError] = useState("");
   const quote = useQuote(null, locale);
@@ -230,6 +232,28 @@ export function BookingFlow({
         ...(chosenProviderId === null ? {} : { providerId: chosenProviderId }),
         ...(emergencyAllowed && basket.emergency ? { isEmergency: true } : {}),
       });
+
+      /* If the customer selected problem photos during checkout, upload them as evidence now */
+      if (photos.length > 0) {
+        void (async () => {
+          for (const file of photos.slice(0, 5)) {
+            try {
+              const prepared = await prepareEvidenceImage(file);
+              if (prepared.rejected === undefined) {
+                await bookingApi.addEvidence(booking.id, {
+                  clientUuid: crypto.randomUUID(),
+                  kind: "CUSTOMER_PROBLEM",
+                  contentType: prepared.contentType,
+                  contentBase64: prepared.base64,
+                }, { locale });
+              }
+            } catch {
+              // Non-blocking: booking creation succeeded regardless
+            }
+          }
+        })();
+      }
+
       setCreated(booking);
     } catch (error) {
       /* 409 SLOT_TAKEN is the documented outcome of two people taking the same
@@ -370,6 +394,8 @@ export function BookingFlow({
                   serviceSlug={service.slug}
                   issueOptionId={basket.issueOptionId}
                   notes={basket.problem}
+                  photos={photos}
+                  onPhotos={setPhotos}
                   onSelect={(issueOptionId) => {
                     update({ issueOptionId });
                     /* The complaint on screen was "choose the problem"; they just
@@ -523,6 +549,8 @@ function ProblemStep({
   serviceSlug,
   issueOptionId,
   notes,
+  photos,
+  onPhotos,
   onSelect,
   onNotes,
 }: {
@@ -531,17 +559,46 @@ function ProblemStep({
   serviceSlug: string;
   issueOptionId: number | null;
   notes: string;
+  photos: File[];
+  onPhotos: (photos: File[]) => void;
   onSelect: (issueOptionId: number | null) => void;
   onNotes: (value: string) => void;
 }) {
   const options = useIssueOptions(serviceSlug, locale);
   const list = options.data?.items ?? [];
   const failed = options.isError;
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   const optionList = [
     { value: "", label: dict.booking.issueChoose },
     ...list.map((option) => ({ value: String(option.id), label: locale === "ur" ? option.labelUr : option.labelEn })),
   ];
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPhotoError(null);
+    const chosen = Array.from(e.target.files ?? []);
+    if (chosen.length === 0) return;
+
+    if (photos.length + chosen.length > 5) {
+      setPhotoError(locale === "ur" ? "زیادہ سے زیادہ 5 تصاویر منتخب کی جا سکتی ہیں۔" : "You can attach up to 5 photos in total.");
+      return;
+    }
+
+    const validFiles: File[] = [];
+    for (const f of chosen) {
+      if (f.size > 5 * 1024 * 1024) {
+        setPhotoError(locale === "ur" ? "تصویر کا سائز 5MB سے کم ہونا چاہیے۔" : `${f.name} exceeds the 5 MB limit.`);
+        return;
+      }
+      validFiles.push(f);
+    }
+    onPhotos([...photos, ...validFiles]);
+    e.target.value = "";
+  };
+
+  const removePhoto = (indexToRemove: number) => {
+    onPhotos(photos.filter((_, idx) => idx !== indexToRemove));
+  };
 
   return (
     <div>
@@ -594,7 +651,75 @@ function ProblemStep({
         <p className="text-xs text-muted">{dict.booking.problemHint}</p>
       </div>
 
-      <p className="mt-4 rounded-[9px] border border-line bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.booking.photosAfterBooking}</p>
+      <div className="mt-6 rounded-[12px] border border-line bg-surface-2/60 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <Label htmlFor="booking-photos-input" className="flex items-center gap-2 font-semibold text-navy">
+              <Camera className="size-4 text-primary" aria-hidden="true" />
+              {locale === "ur" ? "مسئلے کی تصاویر (اختیاری)" : "Photos of the problem (optional)"}
+            </Label>
+            <p className="mt-1 text-xs text-muted">
+              {locale === "ur"
+                ? "5 تک تصاویر منتخب کریں۔ یہ بکنگ مکمل ہونے پر خودکار منسلک ہو جائیں گی۔"
+                : "Attach up to 5 photos (JPEG, PNG, WebP up to 5MB). They will be uploaded with your booking."}
+            </p>
+          </div>
+          <label
+            htmlFor="booking-photos-input"
+            className={cn(
+              buttonStyles({ variant: "secondary", size: "sm" }),
+              "cursor-pointer shrink-0 inline-flex items-center gap-1.5",
+              photos.length >= 5 && "pointer-events-none opacity-50"
+            )}
+          >
+            <Upload className="size-3.5" aria-hidden="true" />
+            {locale === "ur" ? "تصویر شامل کریں" : "Attach Photos"}
+          </label>
+          <input
+            id="booking-photos-input"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            className="sr-only"
+            disabled={photos.length >= 5}
+            onChange={handleFileChange}
+          />
+        </div>
+
+        {photoError !== null ? (
+          <p role="alert" className="mt-2 text-xs font-medium text-rose-700">
+            {photoError}
+          </p>
+        ) : null}
+
+        {photos.length > 0 ? (
+          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-5">
+            {photos.map((file, idx) => (
+              <div key={`${file.name}-${idx}`} className="group relative aspect-square overflow-hidden rounded-[8px] border border-line bg-white shadow-xs">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={URL.createObjectURL(file)}
+                  alt={file.name}
+                  className="size-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => removePhoto(idx)}
+                  className="absolute end-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-slate-900/80 text-white transition-opacity hover:bg-rose-600 focus:outline-none"
+                  aria-label={locale === "ur" ? "تصویر ہٹائیں" : "Remove photo"}
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </button>
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/80 to-transparent p-1.5">
+                  <p className="truncate text-[10px] text-white">{file.name}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs leading-5 text-secondary">{dict.booking.photosAfterBooking}</p>
+        )}
+      </div>
     </div>
   );
 }

@@ -4,19 +4,33 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import type { Locale } from "@/lib/utils";
 import { useSession } from "@/features/auth/session";
-import { homePathForRoles, isPermittedForPath, signInPath } from "@/features/auth/routing";
+import { homePathForRoles, isPermittedForPath, signInPath, totpPath } from "@/features/auth/routing";
 
 /* Front-end gating for the portal. It keeps a signed-out visitor out of the
    workspace shells and sends them to sign-in with a safe destination to come
    back to. It also verifies that authenticated users have the required role
-   to view the specific portal area. */
+   to view the specific portal area.
+
+   A staff session that has not finished its two-factor check is authenticated but
+   not yet usable, and it is held on the one route that can finish it. The API
+   already refuses every staff action for such a session — `policy.ts` throws
+   TOTP_REQUIRED before a staff route runs — so this gate is not the thing standing
+   between the session and the data. Without it the shell rendered anyway, on top
+   of a screenful of 401s, which reads as a broken dashboard rather than as "finish
+   signing in". Reloading part-way through enrolment used to land here for exactly
+   that reason. */
 
 export function RequireSession({ locale, children }: { locale: Locale; children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { status, roles } = useSession();
+  const { status, roles, totpPending } = useSession();
 
-  const permitted = status === "authenticated" && isPermittedForPath(pathname, roles);
+  const onTotpRoute = pathname === `/${locale}/auth/totp`;
+  /* A session that still owes a two-factor check is permitted on exactly one path:
+     the one that settles it. Anywhere else it needs the usual role permission. */
+  const permitted =
+    status === "authenticated" &&
+    (totpPending ? onTotpRoute : isPermittedForPath(pathname, roles));
 
   useEffect(() => {
     if (status === "anonymous") {
@@ -24,13 +38,19 @@ export function RequireSession({ locale, children }: { locale: Locale; children:
       router.replace(signInPath(locale, destination));
       return;
     }
+    if (status === "authenticated" && totpPending && !onTotpRoute) {
+      router.replace(totpPath(locale));
+      return;
+    }
     if (status === "authenticated" && !permitted) {
       router.replace(homePathForRoles(roles, locale));
     }
-  }, [locale, pathname, permitted, roles, router, status]);
+  }, [locale, onTotpRoute, pathname, permitted, roles, router, status, totpPending]);
 
   /* While /auth/me is in flight or if the user is unauthenticated or not permitted,
-     the shell is withheld rather than flashed. */
+     the shell is withheld rather than flashed. A session that still owes a two-factor
+     check is withheld for the same reason: the shell would be a portal with nothing
+     in it. */
   if (status !== "authenticated" || !permitted) {
     return (
       <div className="min-h-dvh bg-page" aria-busy="true" aria-live="polite">

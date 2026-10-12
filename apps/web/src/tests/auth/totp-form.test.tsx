@@ -89,6 +89,12 @@ const beginSetup = async () => {
   fireEvent.click(screen.getByRole("button", { name: dict.auth.totpSetupTitle }));
 };
 
+/** Enrolment is two steps: the QR, then the code. This crosses to the code. */
+const goToCodeStep = async () => {
+  const cont = await screen.findByRole("button", { name: dict.auth.totpContinue });
+  fireEvent.click(cont);
+};
+
 describe("TotpForm", () => {
   beforeEach(() => {
     resetAccessToken();
@@ -125,23 +131,53 @@ describe("TotpForm", () => {
     expect(frame?.className).toContain("max-w-[248px]");
   });
 
-  it("puts the code entry beside the QR on desktop, because stacked the card outgrew the fixed auth frame", async () => {
+  it("shows the QR alone first, and the code alone after Continue", async () => {
     stubStaffSession();
     renderForm();
     await beginSetup();
 
-    /* The desktop auth frame is fixed height with overflow hidden: a card that
-       outgrows it clips the confirm button off the bottom with no way to reach
-       it. This one measured 927px stacked. */
-    const qr = await screen.findByRole("img", { name: dict.auth.totpQrAlt });
-    const row = qr.closest("div.grid")?.parentElement;
-    expect(row?.className).toContain("lg:grid-cols-[212px_minmax(0,1fr)]");
-    /* And the confirm button belongs to the code column, not under both. */
-    const confirm = screen.getByRole("button", { name: dict.auth.totpConfirm });
-    expect(qr.closest("div.grid")?.contains(confirm)).toBe(false);
+    /* One action per step. Asked to do both at once, the card put a QR and six
+       code boxes side by side inside a 439px column, which left the boxes 30px
+       wide beside a QR twice their size. */
+    expect(await screen.findByRole("img", { name: dict.auth.totpQrAlt })).not.toBeNull();
+    expect(screen.queryByLabelText(`${dict.auth.totpCode} 1`)).toBeNull();
+    expect(screen.queryByRole("button", { name: dict.auth.totpConfirm })).toBeNull();
+
+    await goToCodeStep();
+
+    /* And the QR is gone, rather than sitting above a second thing to do. */
+    expect(screen.queryByRole("img", { name: dict.auth.totpQrAlt })).toBeNull();
+    expect(screen.getByLabelText(`${dict.auth.totpCode} 1`)).not.toBeNull();
+    expect(screen.getByRole("button", { name: dict.auth.totpConfirm })).not.toBeNull();
   });
 
-it("shows the setup key in a dialog rather than expanding it in place, so the card cannot outgrow the fixed frame", async () => {
+  it("goes back to the same QR rather than issuing a new one", async () => {
+    const setups: string[] = [];
+    writeAccessToken("held", 900);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("/auth/session")) return json(200, { authenticated: true, user: agent });
+        if (url.endsWith("/auth/totp/setup")) {
+          setups.push(url);
+          return json(200, secret);
+        }
+        return json(500, problem(500, "INTERNAL_ERROR"));
+      }),
+    );
+
+    renderForm();
+    await beginSetup();
+    await goToCodeStep();
+    fireEvent.click(screen.getByRole("button", { name: dict.auth.totpBackToQr }));
+
+    /* The secret is shown once. Asking for another would invalidate the entry
+       already sitting in the person's authenticator app. */
+    expect(await screen.findByRole("img", { name: dict.auth.totpQrAlt })).not.toBeNull();
+    expect(setups).toHaveLength(1);
+  });
+
+  it("shows the setup key in a dialog rather than expanding it in place, so the card cannot outgrow the fixed frame", async () => {
     stubStaffSession();
     renderForm();
     await beginSetup();
@@ -152,20 +188,15 @@ it("shows the setup key in a dialog rather than expanding it in place, so the ca
        read. */
     await screen.findByRole("img", { name: dict.auth.totpQrAlt });
 
-    const cardBefore = screen.getByRole("button", { name: dict.auth.totpConfirm }).closest(".relative.grid");
-    expect(cardBefore).not.toBeNull();
-
     /* A plain button now, not a <details> that expands in place. */
     expect(screen.getByRole("button", { name: dict.auth.totpManualTitle })).not.toBeNull();
     expect(document.querySelector("details")).toBeNull();
 
-    /* And the key lives in a dialog that sits outside the two-column row that
+    /* And the key lives in a dialog that sits outside the step content which
        gives the card its height. A closed <dialog> is display:none and an open
        one is promoted to the top layer, so neither state can resize the card. */
     const dialog = document.querySelector("dialog");
     expect(dialog).not.toBeNull();
-    const row = screen.getByRole("img", { name: dict.auth.totpQrAlt }).closest("div.grid")?.parentElement;
-    expect(row?.contains(dialog ?? null)).toBe(false);
     expect(dialog?.contains(screen.getByText(secret.secret))).toBe(true);
   });
 
@@ -188,6 +219,7 @@ it("shows the setup key in a dialog rather than expanding it in place, so the ca
 
     renderForm();
     await beginSetup();
+    await goToCodeStep();
 
     await screen.findByLabelText(`${dict.auth.totpCode} 1`);
     for (const [index, digit] of Array.from("123456").entries()) {
@@ -215,6 +247,7 @@ it("shows the setup key in a dialog rather than expanding it in place, so the ca
 
     renderForm();
     await beginSetup();
+    await goToCodeStep();
 
     await screen.findByText(secret.secret);
     for (const [index, digit] of Array.from("000000").entries()) {
@@ -226,5 +259,7 @@ it("shows the setup key in a dialog rather than expanding it in place, so the ca
     /* Not a restart: the same key is still there to be copied, because the API
        only ever issues it once. */
     expect(document.querySelector("dialog")?.textContent).toContain(secret.secret);
+    /* And the step is still the code step, so the code can simply be retyped. */
+    expect(screen.getByRole("button", { name: dict.auth.totpConfirm })).not.toBeNull();
   });
 });

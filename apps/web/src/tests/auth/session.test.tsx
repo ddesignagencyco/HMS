@@ -43,6 +43,7 @@ const signedOut = () => json(200, { authenticated: false, user: null });
 const signedInAs = (user: unknown) => json(200, { authenticated: true, user });
 
 const customer = { id: "u1", phoneE164: "+923001234567", email: null, firstName: "Ayesha", lastName: "Khan", locale: "en", status: "ACTIVE", roles: ["CUSTOMER"], totpEnabled: false, providerStatus: null };
+const admin = { ...customer, id: "u9", email: "admin@smart-home.local", firstName: "Bilal", lastName: "Ahmed", roles: ["ADMIN"] };
 
 const renderSession = () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -160,7 +161,10 @@ describe("SessionProvider", () => {
     vi.stubGlobal("fetch", vi.fn(async () => signedInAs(customer)));
     const { queryClient } = renderSession();
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("authenticated"));
-    expect(queryClient.getQueryData(sessionKeys.me)).toEqual({ user: customer });
+    /* One entry, and it carries the two-factor standing alongside the user. That
+       flag is the only record of whether this session still owes a check, so it
+       lives here rather than in a second cache entry that could disagree. */
+    expect(queryClient.getQueryData(sessionKeys.me)).toEqual({ user: customer, totpRequired: false });
   });
 });
 
@@ -234,5 +238,61 @@ describe("RequireSession", () => {
 
     expect(screen.queryByText("secret portal")).toBeNull();
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/en/account"));
+  });
+
+  /* The bug this pins: a staff session that had not finished its two-factor check
+     rendered the portal anyway. The API refused every staff call underneath it
+     (`policy.ts` throws TOTP_REQUIRED before a staff route body runs), so nothing
+     leaked — but a full admin shell over a screenful of 401s reads as a working
+     dashboard, and reloading mid-enrolment used to land there every time. */
+  const unverifiedStaffSession = () => {
+    writeAccessToken("held", 900);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        /* `/auth/session` publishes no two-factor flag — only the refresh does. */
+        if (url.endsWith("/auth/session")) return signedInAs(admin);
+        if (url.endsWith("/auth/refresh")) {
+          return json(200, { user: { ...admin, totpEnabled: false }, accessToken: "held", expiresInSeconds: 900, totpRequired: true });
+        }
+        return json(200, {});
+      }),
+    );
+  };
+
+  it("holds a staff session that still owes two-factor off the portal, even on a full page load", async () => {
+    currentPathname = "/en/admin";
+    unverifiedStaffSession();
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <SessionProvider locale="en">
+          <RequireSession locale="en">
+            <p>secret portal</p>
+          </RequireSession>
+        </SessionProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/en/auth/totp"));
+    expect(screen.queryByText("secret portal")).toBeNull();
+  });
+
+  it("lets that same session reach the two-factor route, or it would loop", async () => {
+    currentPathname = "/en/auth/totp";
+    unverifiedStaffSession();
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <SessionProvider locale="en">
+          <RequireSession locale="en">
+            <p>enrolment card</p>
+          </RequireSession>
+        </SessionProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByText("enrolment card")).toBeTruthy());
+    expect(replace).not.toHaveBeenCalled();
   });
 });

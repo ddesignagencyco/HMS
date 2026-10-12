@@ -3,9 +3,10 @@
 import { AlertTriangle, CalendarDays, FileWarning, Receipt, ShieldCheck, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { Button, Card, Input, Label, PageHeader, Textarea } from '@/components/ui';
+import { Button, Card, Label, PageHeader, Textarea } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
 import { ProblemPhotos, canAttachProblemPhotos } from '@/features/booking/booking-detail';
+import { BookingChat } from '@/features/booking/booking-chat';
 import { useBooking, useOnBehalfContact, useWarrantyClaim } from '@/features/booking/queries';
 import type { BookingStatus } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
@@ -231,6 +232,9 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
               </div>
             ) : null}
           </Card>
+
+          {/* Real-time booking messages thread */}
+          <BookingChat locale={locale} dict={dict} booking={current} />
 
           {/* Raising a complaint. Real categories, real floor, real endpoint. */}
           {raising ? (

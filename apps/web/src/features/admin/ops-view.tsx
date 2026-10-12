@@ -3,11 +3,11 @@
 import { Activity } from 'lucide-react';
 import Link from 'next/link';
 import { Button, Card, PageHeader } from '@/components/ui';
-import { useAdminProviders, useAdminUsers } from '@/features/admin/queries';
+import { useAdminProviders, useAdminUsers, useEscrow } from '@/features/admin/queries';
 import { useComplaintQueue, useDisputes, usePenalties } from '@/features/admin/cases-queries';
 import { ApiError } from '@/lib/api/problem';
 import type { Dictionary } from '@/lib/dictionaries';
-import { formatNumber, localizedPath, type Locale } from '@/lib/utils';
+import { formatMoney, formatNumber, localizedPath, type Locale } from '@/lib/utils';
 
 /* The operations board — the live queue, from the queues themselves.
  *
@@ -31,6 +31,9 @@ export function AdminOps({ locale, dict }: { locale: Locale; dict: Dictionary })
   const disputes = useDisputes(undefined, locale);
   const penalties = usePenalties({}, locale);
 
+  const isAnyLoading = complaints.isLoading || disputes.isLoading || penalties.isLoading;
+  const isRefetching = complaints.isRefetching || disputes.isRefetching || penalties.isRefetching;
+
   const complaintRows = complaints.data?.items ?? [];
   const disputeRows = disputes.data?.items ?? [];
   const penaltyRows = penalties.data?.items ?? [];
@@ -45,15 +48,39 @@ export function AdminOps({ locale, dict }: { locale: Locale; dict: Dictionary })
   ];
 
   const anyError = complaints.error ?? disputes.error ?? penalties.error;
-  const forbidden = anyError instanceof ApiError && anyError.status === 403;
+  const errorStatus =
+    (anyError instanceof ApiError && anyError.status) ||
+    (anyError as { status?: number })?.status ||
+    (anyError as { problem?: { status?: number } })?.problem?.status;
+
+  const isForbidden = errorStatus === 403;
+  const isUnauthenticated = errorStatus === 401;
+
+  const retryAll = () => {
+    void complaints.refetch();
+    void disputes.refetch();
+    void penalties.refetch();
+  };
 
   return (
     <div>
       <PageHeader eyebrow={dict.portal.admin} title={dict.admin.ops} description={dict.admin.opsText} />
 
-      {forbidden ? (
+      {isForbidden ? (
+        <div role="alert" className="mt-6 rounded-[14px] border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm font-semibold text-amber-900">{dict.admin.adminTotpRequired}</p>
+          <p className="mt-1 text-xs text-amber-700">Administrator role with verified two-factor authentication is required to access live operations queues.</p>
+        </div>
+      ) : isUnauthenticated ? (
         <div role="alert" className="mt-6 rounded-[14px] border border-rose-200 bg-rose-50 p-5">
-          <p className="text-sm font-medium leading-6 text-rose-800">{dict.admin.adminTotpRequired}</p>
+          <p className="text-sm font-semibold text-rose-900">Administrator session required</p>
+          <p className="mt-1 text-xs text-rose-700">Please sign in with an administrator account to view the operations control room.</p>
+          <Link
+            href={localizedPath(locale, "/auth/login")}
+            className="mt-3 inline-flex items-center gap-2 rounded-[8px] bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-rose-700"
+          >
+            {dict.nav.signIn}
+          </Link>
         </div>
       ) : null}
 
@@ -62,7 +89,7 @@ export function AdminOps({ locale, dict }: { locale: Locale; dict: Dictionary })
           <Card key={entry.label} className="p-5">
             <p className="text-sm text-muted">{entry.label}</p>
             <p className={entry.tone === 'rose' && entry.value > 0 ? 'mt-2 text-3xl font-semibold text-rose-700 tabular-nums' : 'mt-2 text-3xl font-semibold text-navy tabular-nums'}>
-              {formatNumber(entry.value, locale)}
+              {isAnyLoading ? '...' : formatNumber(entry.value, locale)}
             </p>
           </Card>
         ))}
@@ -85,11 +112,14 @@ export function AdminOps({ locale, dict }: { locale: Locale; dict: Dictionary })
         ) : null}
       </Card>
 
-      {anyError !== undefined && !forbidden ? (
+      {anyError !== undefined && !isForbidden && !isUnauthenticated ? (
         <div role="alert" className="mt-5 rounded-[14px] border border-rose-200 bg-rose-50 p-5">
           <p className="text-sm font-medium leading-6 text-rose-800">{dict.admin.opsLoadError}</p>
-          <Button type="button" variant="secondary" size="sm" className="mt-4" onClick={() => void complaints.refetch()}>
-            {dict.catalogue.retry}
+          {anyError instanceof Error && anyError.message ? (
+            <p className="mt-1 text-xs text-rose-600">{anyError.message}</p>
+          ) : null}
+          <Button type="button" variant="secondary" size="sm" className="mt-4" onClick={retryAll} disabled={isRefetching}>
+            {isRefetching ? '...' : dict.catalogue.retry}
           </Button>
         </div>
       ) : null}
@@ -109,9 +139,12 @@ export function AdminOps({ locale, dict }: { locale: Locale; dict: Dictionary })
  * whose job is to tell an administrator what is at risk.
  *
  * So the landing is now a **directory**: the counts it can honestly produce (the
- * queues above) plus links to the sections. It does not claim a bookings total or
- * an escrow balance, because there is no admin route for either — see
- * `docs/backend_requirement.md`.
+ * queues above) plus links to the sections. It does not claim a bookings total,
+ * because there is no admin bookings list — see `docs/backend_requirement.md`.
+ *
+ * The escrow figure is the one that came back: `GET /finance/escrow` allows ADMIN,
+ * and returns the ledger's own `totalHeldPaisa`. It is a real balance, so it is
+ * shown — formatted from the paisa the API sends, never summed from `items`.
  */
 export function AdminOverview({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const complaints = useComplaintQueue({}, locale);
@@ -119,10 +152,12 @@ export function AdminOverview({ locale, dict }: { locale: Locale; dict: Dictiona
   const penalties = usePenalties({}, locale);
   const users = useAdminUsers({}, locale);
   const providers = useAdminProviders({}, locale);
+  const escrow = useEscrow(locale);
 
   const complaintRows = complaints.data?.items ?? [];
   const disputeRows = disputes.data?.items ?? [];
   const penaltyRows = penalties.data?.items ?? [];
+  const heldAccounts = escrow.data?.items.length ?? null;
 
   const sections = [
     { href: '/admin/ops', label: dict.admin.ops, value: complaintRows.filter((row) => row.status === 'OPEN').length + disputeRows.filter((row) => row.status !== 'RESOLVED').length },
@@ -137,10 +172,25 @@ export function AdminOverview({ locale, dict }: { locale: Locale; dict: Dictiona
     <div>
       <PageHeader eyebrow={dict.portal.admin} title={dict.portal.adminOverview} description={dict.admin.overviewText} />
 
+      {/* The escrow balance is the one figure on this page that is a held sum of
+          money rather than a count of rows, and it is the one an administrator
+          most needs to see. A dash, not a zero, if the read failed — "PKR 0"
+          would read as "nothing is being held" when it may mean nothing at all. */}
       <Card className="mt-6 p-5">
+        <h2 className="font-semibold text-navy">{dict.admin.escrowHeldTitle}</h2>
+        {escrow.data ? (
+          <>
+            <p className="mt-2 text-2xl font-semibold text-navy tabular-nums">{formatMoney(escrow.data.totalHeldPaisa, locale)}</p>
+            <p className="mt-1 text-sm leading-6 text-secondary">{dict.admin.escrowHeldAccounts.replace('{count}', String(heldAccounts ?? 0))}</p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm leading-6 text-secondary">{escrow.isError ? dict.admin.escrowHeldFailed : dict.admin.escrowHeldLoading}</p>
+        )}
+      </Card>
+
+      <Card className="mt-4 p-5">
         <h2 className="font-semibold text-navy">{dict.admin.overviewWhatIsMissing}</h2>
         <p className="mt-2 text-sm leading-6 text-secondary">{dict.admin.opsNoBookingTotals}</p>
-        <p className="mt-1 text-sm leading-6 text-secondary">{dict.admin.overviewNoEscrow}</p>
       </Card>
 
       <ul className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

@@ -24,25 +24,25 @@
   line-height: 1.5;
 }
 
-/* Eliminate all harsh outlines and rings across the authentication form */
+/* Smooth focus styling with accessible focus-visible outline (NFR-US-04) */
 [data-auth-card] input,
 [data-auth-card] button,
 [data-auth-card] label,
 [data-auth-card] select {
-  outline: none !important;
-  box-shadow: none !important;
+  outline: none;
 }
 
 [data-auth-card] input:focus,
-[data-auth-card] input:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-  border-color: #2563eb !important;
+[data-auth-card] select:focus {
+  outline: none;
+  border-color: #2563eb;
 }
 
-[data-auth-card] *:focus,
-[data-auth-card] *:focus-visible {
-  outline: none !important;
+[data-auth-card] input:focus-visible,
+[data-auth-card] button:focus-visible,
+[data-auth-card] select:focus-visible {
+  outline: 2px solid #2563eb !important;
+  outline-offset: 2px !important;
 }
 
 [data-auth-heading]:focus {

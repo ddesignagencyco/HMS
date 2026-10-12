@@ -155,8 +155,69 @@ export const useCompleteBooking = (locale: Locale) =>
 
 export const useCashReceived = (locale: Locale) => useBookingAction((id: string) => bookingApi.cashReceived(id, { locale }));
 
-export const useMarkChecklistDone = (locale: Locale) =>
-  useBookingAction((input: { id: string; itemId: number; evidenceId?: string }) => bookingApi.markChecklistDone(input.id, input.itemId, input.evidenceId, { locale }));
+/**
+ * Ticks one step done.
+ *
+ * `evidenceId` is required by the server for a photo step (`422` without it) and
+ * ignored for the rest, so it is only sent when the caller has one. On success the
+ * checklist is refetched rather than patched locally: `done`, `evidenceId` and
+ * `doneAt` are all server-stamped, and a locally guessed tick would claim a
+ * timestamp and an evidence link the server never recorded.
+ */
+export const useMarkChecklistDone = (locale: Locale) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; itemId: number; evidenceId?: string }) => bookingApi.markChecklistDone(input.id, input.itemId, input.evidenceId, { locale }),
+    onSuccess: (_result, variables) => queryClient.invalidateQueries({ queryKey: bookingKeys.checklist(variables.id) }),
+    ...noRetry
+  });
+};
+
+/**
+ * The service's checklist for this booking.
+ *
+ * Fetched regardless of status on purpose. The route answers at any status, and
+ * gating the *query* on `IN_PROGRESS` would leave the list absent from the cache
+ * at exactly the moment the professional needs to see it. What is rendered is a
+ * separate decision, made where the status is known.
+ *
+ * Cached on the booking's own key rather than the detail's, because ticking a step
+ * must invalidate this list and nothing else — refetching the whole booking to
+ * redraw four ticks would be wasteful and would re-fetch the chat thread with it.
+ */
+export function useChecklist(bookingId: string | null, locale: Locale) {
+  return useQuery({
+    queryKey: bookingKeys.checklist(bookingId ?? ''),
+    queryFn: ({ signal }) => bookingApi.listChecklist(bookingId as string, { signal, locale }),
+    enabled: bookingId !== null && bookingId !== '',
+    /* Ticking a step changes it, so it is never cached for long. */
+    staleTime: FRESHNESS.messages.staleTime,
+    gcTime: FRESHNESS.messages.gcTime,
+    /* 404 means "not your booking", exactly as the detail does. */
+    retry: (failureCount, error) => !isNotFoundError(error) && publicRetry(failureCount, error)
+  });
+}
+
+/**
+ * Where this job is.
+ *
+ * `enabled` is left to the caller, because the route is deliberately closed to a
+ * provider while the booking is still REQUESTED — they are being asked to commit
+ * to a job they may not yet be told where. Asking anyway would produce a 404 for
+ * every open offer, so the query waits until the caller knows the job is theirs.
+ */
+export function useServiceAddress(bookingId: string | null, enabled: boolean, locale: Locale) {
+  return useQuery({
+    queryKey: bookingKeys.serviceAddress(bookingId ?? ''),
+    queryFn: ({ signal }) => bookingApi.serviceAddress(bookingId as string, { signal, locale }),
+    enabled: enabled && bookingId !== null && bookingId !== '',
+    staleTime: FRESHNESS.booking.staleTime,
+    gcTime: FRESHNESS.booking.gcTime,
+    /* 404 is a designed answer, not a fault: the address is withheld while the job
+       can still change hands. Retrying would only delay the correct not-found. */
+    retry: false
+  });
+}
 
 export const useCreateRevision = (locale: Locale) =>
   useBookingAction((input: { id: string; deltaPaisa: number; reason: string }) => bookingApi.createRevision(input.id, { deltaPaisa: input.deltaPaisa, reason: input.reason }, { locale }));

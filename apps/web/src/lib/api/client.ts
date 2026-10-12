@@ -155,6 +155,36 @@ let refreshUnavailable = false;
 /** Long enough to cover a refresh response landing and its cookie being stored. */
 const REFRESH_GRACE_MS = 1_000;
 
+/**
+ * Whether the session the last refresh returned still owes a two-factor check.
+ *
+ * `POST /auth/refresh` publishes `totpRequired` on every response, and it is the
+ * only call in the app that reports it outside sign-in — `GET /auth/session`
+ * answers `{ authenticated, user }` and nothing more. Discarding the flag here is
+ * what let a staff member reload mid-enrolment and land on a working dashboard:
+ * the token was valid, the user was known, and nothing in the client knew the
+ * session had not been verified.
+ *
+ * `true` means verified-and-not-required, which is the answer for every customer
+ * and for staff who have finished. It is reset on a refused refresh, because a
+ * session that no longer exists owes nothing.
+ */
+let sessionTotpVerified = true;
+
+export const sessionNeedsTotp = (): boolean => !sessionTotpVerified;
+
+/**
+ * Forgets the two-factor standing of a session that has ended.
+ *
+ * Signing out is the one path that learns nothing from a response body — the API
+ * answers 204 — so this is where the flag is cleared. Left set, a signed-out
+ * document would still believe it owed a two-factor check and would send the next
+ * visitor to `/auth/totp`.
+ */
+export const forgetSessionTotpState = (): void => {
+  sessionTotpVerified = true;
+};
+
 const performRefresh = async (locale: Locale | undefined): Promise<boolean> => {
   /* Whether there was anything to lose. Somebody arriving on the sign-in page
      has no token and no cookie, so a refused refresh is the absence of a
@@ -165,11 +195,13 @@ const performRefresh = async (locale: Locale | undefined): Promise<boolean> => {
     if (status >= 200 && status < 300 && typeof body === 'object' && body !== null && 'accessToken' in body) {
       const result = body as SessionResult;
       writeAccessToken(result.accessToken, result.expiresInSeconds);
+      sessionTotpVerified = result.totpRequired !== true;
       refreshUnavailable = false;
       return true;
     }
     writeAccessToken(null);
     refreshUnavailable = true;
+    sessionTotpVerified = true;
     if (hadToken) announceSessionLost();
     return false;
   } catch (error) {

@@ -5,6 +5,8 @@ import { PageBanner, Section } from "@/components/ui";
 import { Container } from "@/components/ui/primitives";
 import { getDictionary } from "@/lib/dictionaries";
 import { isLocale } from "@/lib/utils";
+import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
 
 /* Contact details for the deployment. Replace both before launch — the tel:
    and mailto: links below are wired to these values. */
@@ -16,6 +18,12 @@ const channelIcons: Record<string, LucideIcon> = {
   email: Mail,
   visit: MapPin,
 };
+
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  const dict = getDictionary(isLocale(locale) ? locale : "en");
+  return pageMetadata(locale, "/contact", dict.legal.contactTitle, dict.legal.contactIntro);
+}
 
 export default async function ContactPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
