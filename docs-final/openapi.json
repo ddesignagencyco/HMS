@@ -328,7 +328,7 @@
     },
     "/api/v1/dev/payments/{paymentId}": {
       "get": {
-        "description": "Development-only stand-in for a payment provider's hosted page. Returns what would be shown; use POST /dev/payments/{paymentId}/complete to pay or fail it.",
+        "description": "Development-only stand-in for a payment provider's hosted page. The `actions` it returns are absolute-enough paths that work in a browser: open either one and it completes the payment, by GET as well as POST. In production this is the provider's own page and none of this exists.",
         "operationId": "DevPaymentsController_page",
         "parameters": [],
         "responses": {
@@ -344,8 +344,8 @@
     },
     "/api/v1/dev/payments/{paymentId}/complete": {
       "post": {
-        "description": "Development-only: plays the part of the gateway, delivering its 'payment captured' (or 'failed') event through the same path as a real signed webhook, so a whole online checkout can be driven locally.",
-        "operationId": "DevPaymentsController_complete",
+        "description": "Development-only: plays the part of the gateway, delivering its 'payment captured' (or 'failed') event through the same path as a real signed webhook, so a whole online checkout can be driven locally. Also accepts GET, so the links on the mock payment page work when they are simply clicked.",
+        "operationId": "DevPaymentsController_completePost",
         "parameters": [],
         "responses": {
           "200": {
@@ -353,6 +353,20 @@
           }
         },
         "summary": "Complete a mock payment",
+        "tags": [
+          "development"
+        ]
+      },
+      "get": {
+        "description": "Identical to POST /dev/payments/{paymentId}/complete. Exists so the Pay and Fail links on the mock payment page work when clicked.",
+        "operationId": "DevPaymentsController_completeGet",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Complete a mock payment (browser-navigable)",
         "tags": [
           "development"
         ]
@@ -5318,6 +5332,27 @@
           }
         ],
         "summary": "Mark yourself en route",
+        "tags": [
+          "booking"
+        ]
+      }
+    },
+    "/api/v1/bookings/{id}/start-code": {
+      "post": {
+        "description": "Returns a fresh start code for this booking so the customer can read it out to the provider at the door, instead of having to find an SMS sent when the booking was accepted. Sent to the customer only — a provider asking for this gets a 404, because the whole point of the code is that the customer authorises the work. Calling it issues a NEW code and invalidates any previous one, and re-sends the SMS as it always did; a database dump still contains nothing that can start a job, because the stored value is a hash. 404 if the booking is not yours or does not exist, 409 CONFLICT once the job has been started.",
+        "operationId": "BookingController_startCode",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Show the start code on the customer’s screen",
         "tags": [
           "booking"
         ]

@@ -846,12 +846,46 @@ infer from a path.
 
 ## Development-only mocks
 
-| Operation | Role | Summary |
+**All four are `@Public()` — no token needed — and all four answer `403` unless
+`DEV_INBOX_ENABLED` is true**, which is refused at boot outside `development` and
+`test`. The "AUTHENTICATED" in the generated index below is wrong for these four; the
+generated classifier does not read `@Public()`. Trust this table over the index on
+this point only.
+
+| Operation | Method | Summary |
 |---|---|---|
-| `GET /api/v1/dev/inbox` | AUTHENTICATED | View messages the mock SMS/email/WhatsApp senders "sent" |
-| `GET /api/v1/dev/payments/{paymentId}` | AUTHENTICATED | Mock payment page (where the mock gateway redirects to) |
-| `POST /api/v1/dev/payments/{paymentId}/complete` | AUTHENTICATED | Complete a mock payment |
-| `GET /api/v1/dev/storage/{bucket}/{key}` | AUTHENTICATED | Download a file from the mock file storage |
+| `GET /api/v1/dev/inbox` | GET | View messages the mock SMS/email/WhatsApp senders "sent" |
+| `GET /api/v1/dev/payments/{paymentId}` | GET | The mock gateway's hosted page — where checkout redirects you |
+| `GET /api/v1/dev/payments/{paymentId}/complete?outcome=captured\|failed` | GET or POST | Complete a mock payment |
+| `GET /api/v1/dev/storage/{bucket}/{key}` | GET | Download a file from the mock file storage |
+
+### Driving an online checkout by hand
+
+`POST /bookings/checkout` with `paymentMode: "ONLINE"` answers 201 with
+`payment.redirectUrl`, which points at the mock page. Open it. It returns:
+
+```json
+{ "paymentId": "…", "returnUrl": "…",
+  "actions": {
+    "pay":  { "method": "GET", "url": "/api/v1/dev/payments/{id}/complete?outcome=captured" },
+    "fail": { "method": "GET", "url": "/api/v1/dev/payments/{id}/complete?outcome=failed" } } }
+```
+
+**Both actions work by GET as well as POST**, so they are clickable as plain links —
+which is what a real gateway's page is. Open either one and the payment completes
+through the same signed-webhook path a real gateway would use, so the booking moves
+`PENDING_PAYMENT` → `REQUESTED` (captured) or → `ABANDONED` (failed).
+
+`outcome` is validated. A missing or unrecognised value is `422 VALIDATION_FAILED`
+with a field error on `outcome` — it is **not** treated as `captured`. An earlier
+version defaulted anything unrecognised to a capture, so `?outcome=succes` took the
+customer's money.
+
+If you script it, keep using POST; nothing about the GET form is required.
+
+**These routes disappear in production.** When `SHM-095` lands, `redirectUrl` points
+at a real gateway and none of this exists — do not build UI that depends on it.
+
 
 ## Health & welcome
 
