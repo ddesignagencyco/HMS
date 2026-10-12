@@ -138,10 +138,22 @@ export function BookingFlow({
 
   const detailsLoading = activeAreaId !== null && providerDetails.some((q) => q.isPending);
 
-  const eligibleProviders = useMemo(() => {
+  /**
+ * Filters out bulk-loaded providers that have numeric IDs instead of UUIDs.
+ *
+ * The search endpoint returns all providers including bulk-loaded ones with
+ * numeric IDs (e.g., "42092"). Those providers are not real users and the
+ * UUID-typed routes (slots, next-slots, detail) will reject them with a 400.
+ * This filters them out before they can be selected.
+ */
+const isUuid = (id: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+const eligibleProviders = useMemo(() => {
     if (activeAreaId === null || detailsLoading) return rawProviderList;
 
     return rawProviderList.filter((provider, index) => {
+      if (!isUuid(provider.providerId)) return false;
       const detail = providerDetails[index]?.data;
       if (!detail) return true;
       if (detail.areas && Array.isArray(detail.areas) && detail.areas.length > 0) {
@@ -153,17 +165,17 @@ export function BookingFlow({
 
   /* If a carried-in or previously chosen provider is not eligible for this address's area, reset choice */
   useEffect(() => {
-    if (
-      !detailsLoading &&
-      !providers.isFetching &&
-      activeAreaId !== null &&
-      basket.choice?.kind === "provider" &&
-      basket.choice.providerId !== ""
-    ) {
-      const isEligible = eligibleProviders.some((p) => p.providerId === basket.choice?.providerId);
-      if (!isEligible) {
-        update({ choice: null, slot: null, request: null });
-      }
+    /* Narrowed once, here, rather than at each read below. `ProviderChoice` is a
+       union — `{ kind: 'auto' }` has no `providerId` — so an unguarded
+       `basket.choice.providerId` is a type error *and* a lie: on an auto-assigned
+       basket there is no provider to compare and the eligibility check would be
+       against `undefined`. Narrow first, then act. */
+    const choice = basket.choice;
+    if (choice === null || choice.kind !== "provider" || choice.providerId === "") return;
+    if (detailsLoading || providers.isFetching || activeAreaId === null) return;
+    const isEligible = eligibleProviders.some((p) => p.providerId === choice.providerId);
+    if (!isEligible) {
+      update({ choice: null, slot: null, request: null });
     }
   }, [detailsLoading, providers.isFetching, activeAreaId, basket.choice, eligibleProviders]);
 
@@ -317,7 +329,17 @@ export function BookingFlow({
         })();
       }
 
-      setCreated(booking);
+      /* The booking create response includes a payment object when the mode is
+         ONLINE. Its `redirectUrl` is a relative path from the API origin
+         (e.g. `/api/v1/dev/payments/...`) and must be prefixed with the API
+         origin before assigning to `window.location`. The `returnUrl` inside it
+         already points at the web origin (:3001). */
+       /* The booking create response includes a payment object when the mode is
+          ONLINE. The redirectUrl is passed to BookingConfirmed which renders a
+          "Pay Now" link with the correct URL. We do NOT redirect immediately
+          here because the screen must show the "awaiting payment" state and
+          let the user click "Pay Now" to proceed. */
+       setCreated(booking);
     } catch (error) {
       /* 409 SLOT_TAKEN is the documented outcome of two people taking the same
          slot. It is not a generic failure: the customer goes back to the time

@@ -21,26 +21,37 @@ import {
   isSearchable,
   parseSearchState,
   type ParsedSearchState,
+  type ProviderRefinement,
   type ProviderSearchFilters,
 } from "@/features/search/types";
+import { isPriceBandValid } from "@/features/search/api";
 import { ProviderCard, ProviderCardSkeleton } from "./provider-card";
 import { EmptyState, InlineError, RefreshingNote } from "./states";
 import { LocationMap } from "@/components/location-map";
+import { SearchRefinements } from "./search-refinements";
 
 /* Provider search, backed by `GET /search/providers`.
 
-   That endpoint takes `serviceSlug`, `lat` and `lng` and nothing else — the
-   schema is `.strict()`, so a `page` or a `sort` comes back 422. This screen
-   therefore offers only a service and a point: no pager, no sorter, no text
-   box, and no client-side filtering of the response. The result list is the
-   API's ranking, in the API's order.
+   That endpoint is `.strict()` and takes a service, **one** way of saying
+   where (`addressId` or `lat`+`lng`) and five optional refinements. There is no
+   `page` and no `sort` — a pager or a sorter comes back 422 — so this screen
+   offers neither, and the result order is the API's ranking, unmodified.
 
-   Filters live in the URL, so a search survives a refresh, a shared link and
-   the back button. The only local state is whether the mobile filter sheet is
-   open. */
+   **The five refinements are the server's, not the browser's.** `SearchRefinements`
+   holds them and they are sent with the query, because the alternative this
+   screen already had — filtering the returned array by rating and badge after the
+   fact — cannot answer "only people free today" or "under PKR 2,000" at all: the
+   response does not carry availability or a price for a different service, so
+   those questions were not answerable no matter how the client worked.
+
+   Service and place live in the URL so a search can be shared; the refinements
+   do not, so a link is not carrying somebody's half-closed filter sheet. */
 
 type ServiceOption = { value: string; label: string; group: string };
 type SortKey = "default" | "distance" | "rating" | "price_asc" | "price_desc" | "experience";
+
+/** Nothing narrowed — the state a cleared panel returns to. */
+const EMPTY_REFINEMENT: ProviderRefinement = {};
 
 export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const router = useRouter();
@@ -55,6 +66,11 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   const [minRating, setMinRating] = useState<number>(0);
   const [badgeOnly, setBadgeOnly] = useState<boolean>(false);
   const [query, setQuery] = useState<string>("");
+
+  /* The five the server actually filters on. Local state, deliberately — a
+     shared link should carry the service and the place, not the fact that
+     somebody had a price band half-typed. */
+  const [refinement, setRefinement] = useState<ProviderRefinement>(EMPTY_REFINEMENT);
 
   const state = useMemo(() => parseSearchState(new URLSearchParams(searchParams.toString())), [searchParams]);
 
@@ -165,16 +181,26 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
 
   const reset = () => push(EMPTY_SEARCH);
 
-  const filters = useMemo(
-    () => (isSearchable(state) ? ({ serviceSlug: state.serviceSlug, lat: state.lat, lng: state.lng }) satisfies ProviderSearchFilters : null),
-    [state],
-  );
+  /* A price band the server would reject (422) is not sent at all: the request is
+     simply not made, and the panel says why. Sending it would produce an error
+     page over a state a person can reach by typing. */
+  const filters = useMemo(() => {
+    if (!isSearchable(state)) return null;
+    if (!isPriceBandValid(refinement)) return null;
+    return { serviceSlug: state.serviceSlug, lat: state.lat, lng: state.lng, ...refinement } satisfies ProviderSearchFilters;
+  }, [state, refinement]);
   const results = useProviderSearch(filters, locale);
 
   const rawResults = results.data?.items ?? [];
 
+  /** Filters out bulk-loaded providers with numeric IDs instead of UUIDs. */
+  const isUuid = (id: string): boolean =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  const filteredResults = rawResults.filter((p) => isUuid(p.providerId));
+
   const providerDetails = useQueries({
-    queries: rawResults.map((p) => ({
+    queries: filteredResults.map((p) => ({
       queryKey: publicKeys.provider(p.providerId),
       queryFn: ({ signal }: { signal: AbortSignal }) => searchApi.getProvider(p.providerId, { signal, locale }),
       staleTime: FRESHNESS.profile.staleTime,
@@ -186,8 +212,8 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
 
   /* Client-side refined results based on sort and filter settings */
   const processedProviders = useMemo(() => {
-    if (!results.data?.items) return [];
-    let items = [...results.data.items];
+    if (!filteredResults.length) return [];
+    let items = [...filteredResults];
 
     if (state.areaId !== null && !detailsLoading) {
       items = items.filter((p, index) => {
@@ -254,7 +280,7 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
     }
 
     return items;
-  }, [results.data, minRating, badgeOnly, query, sortBy]);
+  }, [filteredResults, minRating, badgeOnly, query, sortBy]);
 
   const hasResultFilters = minRating > 0 || badgeOnly || query.trim() !== "" || sortBy !== "default";
   const resetResultFilters = () => {
@@ -297,7 +323,9 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   /* One label set for the drawer, from the shared dictionary, so the copy on the
      filter panel is the same here as on every other filtered screen. */
   const labels = filterLabels(dict.common);
-  const activeFilterCount = [state.serviceSlug !== "", state.cityId !== null, state.areaId !== null].filter(Boolean).length;
+  const activeFilterCount =
+    [state.serviceSlug !== "", state.cityId !== null, state.areaId !== null].filter(Boolean).length +
+    Object.values(refinement).filter((value) => value !== undefined).length;
 
   const filterBody = (
     <div className="grid gap-4">
@@ -412,6 +440,14 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
         </div>
       </div>
 
+      <SearchRefinements
+        locale={locale}
+        dict={dict}
+        value={refinement}
+        onChange={setRefinement}
+        disabled={!isSearchable(state)}
+      />
+
       <Button type="button" variant="ghost" size="sm" onClick={reset} className="w-full">
         <RotateCcw className="size-3.5" aria-hidden="true" />
         {dict.search.resetFilters}
@@ -476,13 +512,13 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
                   ? dict.search.needsLocationTitle
                   : results.data === undefined
                     ? dict.search.filtersHeading
-                    : results.data.items.length === 0
+                    : filteredResults.length === 0
                       ? dict.search.noResultsTitle
-                      : results.data.items.length === 1
+                      : filteredResults.length === 1
                         ? dict.search.resultsHeadingOne
-                        : dict.search.resultsHeading.replace("{count}", formatNumber(results.data.items.length, locale))}
+                        : dict.search.resultsHeading.replace("{count}", formatNumber(filteredResults.length, locale))}
             </h2>
-            {state.serviceSlug !== "" && results.data !== undefined && results.data.items.length > 0 ? (
+            {state.serviceSlug !== "" && results.data !== undefined && filteredResults.length > 0 ? (
               <p className="mt-1 text-sm text-secondary">{dict.search.resultsFor.replace("{service}", serviceName)}</p>
             ) : null}
           </div>
@@ -608,7 +644,7 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
               actionLabel={dict.catalogue.retry}
               onRetry={() => void results.refetch()}
             />
-          ) : results.data.items.length === 0 ? (
+          ) : filteredResults.length === 0 ? (
             <EmptyState
               title={dict.search.noResultsTitle}
               body={dict.search.noResultsText}
@@ -727,8 +763,8 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
               {hasResultFilters ? (
                 <p className="mb-4 text-xs font-medium text-secondary">
                   {locale === "ur"
-                    ? `${formatNumber(results.data.items.length, locale)} میں سے ${formatNumber(processedProviders.length, locale)} پیشہ ور دکھائی جا رہے ہیں`
-                    : `Showing ${formatNumber(processedProviders.length, locale)} of ${formatNumber(results.data.items.length, locale)} professionals matching criteria`}
+                    ? `${formatNumber(filteredResults.length, locale)} میں سے ${formatNumber(processedProviders.length, locale)} پیشہ ور دکھائی جا رہے ہیں`
+                    : `Showing ${formatNumber(processedProviders.length, locale)} of ${formatNumber(filteredResults.length, locale)} professionals matching criteria`}
                 </p>
               ) : null}
 

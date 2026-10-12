@@ -6,16 +6,53 @@
               expanded. None of it belongs in a URL.
    Server   — the results themselves, in TanStack Query.
 
-   `ProviderSearchFilters` is exactly what `/search/providers` accepts. It has
-   no page, no sort and no text, because the API has none. */
+   `ProviderSearchFilters` is exactly what `/search/providers` accepts. It has no
+   page and no sort, because the API has neither — and the seven filters it does
+   accept are all below, each optional and each meaning "and additionally". */
 
 import type { Locale } from "@/lib/utils";
 
+/**
+ * `providerSearchQuerySchema`, all eight keys.
+ *
+ * **Money is in paisa, not rupees.** `minPricePaisa`/`maxPricePaisa` are compared
+ * against `provider_services.price_paisa` directly, so sending 1500 where the
+ * schema wants 150000 filters out everything rather than filtering by a cheaper
+ * band. `minPricePaisa` above `maxPricePaisa` is a 422 from the schema itself.
+ *
+ * `addressId` and `lat`/`lng` are **alternatives, not additions**: the schema
+ * requires exactly one of them, and half a pair is a 422. `addressId` is the
+ * better of the two whenever the customer has picked a saved address, because
+ * the server resolves it to coordinates itself rather than trusting coordinates
+ * a browser derived from a map.
+ */
 export type ProviderSearchFilters = {
   serviceSlug: string;
-  lat: number;
-  lng: number;
+  /** A saved address, resolved server-side. Mutually exclusive with lat/lng. */
+  addressId?: string;
+  lat?: number;
+  lng?: number;
+  /** FR-SR-02: at least this many years' experience. */
+  minExperienceYears?: number;
+  /** FR-SR-03: at least this many completed jobs. */
+  minCompletedJobs?: number;
+  minPricePaisa?: number;
+  maxPricePaisa?: number;
+  /** FR-SR-05: has a free slot later today, local time. */
+  availableToday?: boolean;
+  /** FR-SR-07: every one of their documents has been verified. */
+  verifiedDocsOnly?: boolean;
 };
+
+/**
+ * The half of a filter set that is a *refinement*, not a *place*.
+ *
+ * A search is only callable once a service and a point are known. These five
+ * narrow the answer within that point, and they are kept out of the URL on
+ * purpose: a shareable link should carry the service and the place, not the fact
+ * that somebody had the sheet open.
+ */
+export type ProviderRefinement = Omit<ProviderSearchFilters, "serviceSlug" | "addressId" | "lat" | "lng">;
 
 export const SEARCH_PARAM = {
   service: "service",

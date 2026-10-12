@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Loader2, Save, Tag } from 'lucide-react';
 import { Button, Card, PageHeader } from '@/components/ui';
+import { CommissionRulesPanel } from '@/features/admin/commission-rules';
 import { useCategories, useAllServices } from '@/features/catalogue/queries';
 import type { Category, CatalogueService } from '@/features/catalogue/api';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -106,6 +107,11 @@ export function AdminCatalogue({ locale, dict }: { locale: Locale; dict: Diction
           </div>
         </div>
       )}
+
+      {/* Commission lives on this screen because it prices the catalogue: a
+          category's rate is part of what a category is, and burying the rules on
+          a separate route is how a rate ends up nobody's job. */}
+      <CommissionRulesPanel locale={locale} dict={dict} />
     </div>
   );
 }

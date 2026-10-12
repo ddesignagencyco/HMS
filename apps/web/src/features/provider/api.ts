@@ -33,6 +33,40 @@ const call = <T>(path: string, request: ApiRequest = {}, options?: ProviderOptio
 /** `provider_status` in the schema. `PENDING_APPROVAL` sees a queued workspace. */
 export type ProviderStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | 'BLOCKED';
 
+/**
+ * What `POST /provider/submit` answers with — `ProviderOnboardingRow`.
+ *
+ * **`status` is `PENDING_APPROVAL` on every success**, including a resubmission
+ * after a rejection: submitting does not approve, it queues. The useful signal
+ * here is `submittedAt`, which is what turns "PENDING_APPROVAL because they
+ * registered" into "PENDING_APPROVAL because they finished and are waiting".
+ *
+ * `penaltyScheduleAcceptedAt` is `COALESCE`d, so a second submit keeps the
+ * original acceptance rather than rewriting it.
+ */
+export type ProviderSubmission = {
+  userId: string;
+  status: ProviderStatus;
+  /** Null until submitted — the whole difference the endpoint exists to make. */
+  submittedAt: string | null;
+  penaltyScheduleAcceptedAt: string | null;
+};
+
+/**
+ * The screens `submitForApproval`'s 400 errors point at.
+ *
+ * Taken from `REQUIRED_STEPS` in `provider-onboarding.service.ts:26` — the same
+ * order the wizard presents them in. A `path` the server sends that is not in
+ * here still renders, as a plain message rather than a link, so a new step on the
+ * backend degrades to text instead of vanishing.
+ */
+export const ONBOARDING_STEP_PATHS = ['profile', 'services', 'areas', 'availability', 'documents'] as const;
+
+export type OnboardingStepPath = (typeof ONBOARDING_STEP_PATHS)[number];
+
+export const isOnboardingStepPath = (value: string): value is OnboardingStepPath =>
+  (ONBOARDING_STEP_PATHS as readonly string[]).includes(value);
+
 export type ProviderProfile = {
   userId: string;
   status: ProviderStatus;
@@ -547,5 +581,35 @@ export const providerApi = {
   disputes: (options?: ProviderOptions) => call<{ items: ProviderDispute[] }>('/provider/disputes', {}, options),
   dispute: (id: string, options?: ProviderOptions) => call<ProviderDisputeDetail>(`/provider/disputes/${encodeURIComponent(id)}`, {}, options),
   replyToDispute: (id: string, body: string, options?: ProviderOptions) =>
-    call<ProviderDisputeDetail>(`/provider/disputes/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { body } }, options)
+    call<ProviderDisputeDetail>(`/provider/disputes/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { body } }, options),
+
+  /* ---- Onboarding (SHM-021) ---- */
+  /**
+   * Moves the profile from DRAFT / PENDING_APPROVAL / REJECTED into the approval
+   * queue, and stamps the penalty schedule as accepted on the way through.
+   *
+   * **This is the call the whole onboarding wizard was missing.** Registering
+   * already puts the account in `PENDING_APPROVAL`, which reads as "queued" but
+   * is only a statement about the account; `submitted_at` is what says there is
+   * something for an admin to review. Without this call a finished profile and a
+   * half-filled one are indistinguishable on the admin queue — which is exactly
+   * the gap SHM-021 was raised to close.
+   *
+   * Two failure modes the screen has to tell apart, because they need different
+   * things done:
+   *
+   * · **409** — wrong state, or already submitted. Nothing to fix; re-read the
+   *   profile and say which.
+   * · **400 with `errors[].path`** — one entry per unfinished step, `path`
+   *   being `profile` | `services` | `areas` | `availability` | `documents`
+   *   (`provider-onboarding.service.ts:26`). Those are **links**, not just text:
+   *   each names the screen that closes it.
+   *
+   * `providerSubmitSchema` is `{ acceptPenaltySchedule: z.literal(true) }` and
+   * `.strict()` — so `true` is the only accepted value and the key cannot be
+   * omitted. It is sent here rather than asked of the caller so no screen can
+   * produce a 422 by forgetting it.
+   */
+  submitForApproval: (options?: ProviderOptions) =>
+    call<ProviderSubmission>('/provider/submit', { method: 'POST', body: { acceptPenaltySchedule: true } }, options)
 };

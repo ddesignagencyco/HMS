@@ -137,6 +137,86 @@ const call = <T>(path: string, init: ApiRequest = {}, options?: AdminApiOptions)
     ...(options?.signal === undefined ? {} : { signal: options.signal })
   });
 
+/* ---- the operations board (`GET /admin/ops-board`) -------------------- */
+
+/**
+ * One read, from `OpsBoardService.compute()`.
+ *
+ * **Every figure here is queried from the table it describes**, recomputed on a
+ * shared five-second cadence and cached in Redis. That is the whole point of the
+ * endpoint: an operations board that had quietly drifted from the thing it
+ * reports would be worse than no board at all, so nothing on this screen may be
+ * derived, re-summed or cached client-side.
+ *
+ * Two shapes in here are deliberately not the usual ones:
+ *
+ * · **`escrow.heldPaisa` is a string.** It is a Postgres int8 handed straight
+ *   through (`ops-board.service.ts:137`), so it must go through the same
+ *   paisa-to-number conversion as every other money figure before it is shown.
+ * · **`alerts` is sorted worst-first by the server.** Rendering it in another
+ *   order would hide the thing the endpoint is trying to put at the top.
+ */
+export type OpsBoard = {
+  /** When this snapshot was computed. Not when this browser asked for it. */
+  generatedAt: string;
+  /** Bookings *created* today, not booked for today. */
+  bookingsToday: { total: number; byStatus: Record<string, number> };
+  /** Waiting depth per background queue. A number that keeps climbing is the alert. */
+  queueDepth: { outbox: number; notifications: number; payments: number; verification: number; projections: number };
+  slaBreaches: { verifications: number; complaints: number };
+  openDisputes: { total: number; awaitingReply: number };
+  escrow: { heldPaisa: string; bookingsHolding: number };
+  debtBlockedProviders: number;
+  alerts: { severity: 'CRITICAL' | 'WARNING' | 'INFO'; code: string; detail: string; count: number }[];
+};
+
+/**
+ * `GET /admin/providers/{providerId}/ratings` — `reputation.service.ts:215`.
+ *
+ * Note what this is for: it is the **moderation** view. The public remarks list
+ * never shows an unpublished remark, so an admin has no way to take one back
+ * from anywhere else — this screen is the only place `remarkId` and
+ * `unpublishedReason` are both available, and therefore the only place
+ * `POST /admin/remarks/{id}/unpublish` can be offered.
+ */
+export type AdminProviderRating = {
+  ratingId: string;
+  bookingCode: string;
+  score: number;
+  createdAt: string;
+  /** Null when the rating carried no remark, so there is nothing to moderate. */
+  remarkId: string | null;
+  body: string | null;
+  displayName: string | null;
+  /** **Null means no remark exists** — not an unpublished one. */
+  published: boolean | null;
+  unpublishedReason: string | null;
+};
+
+/** `CommissionRuleRow` from `catalogue.service.ts:69`. */
+export type CommissionRule = {
+  id: string;
+  scope: 'GLOBAL' | 'CATEGORY' | 'PROVIDER';
+  categoryId: number | null;
+  providerId: string | null;
+  /** Basis points: 1500 is 15%. The API stores and returns integers only. */
+  rateBp: number;
+  effectiveFrom: string;
+  /** Non-null means the rule has been closed and no longer applies. */
+  effectiveTo: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type CommissionRuleInput = {
+  scope: CommissionRule['scope'];
+  /** Required for CATEGORY, forbidden for GLOBAL — the schema refuses a mismatch. */
+  categoryId?: number | null;
+  /** Required for PROVIDER, forbidden for GLOBAL. */
+  providerId?: string | null;
+  rateBp: number;
+};
+
 /** Drops `undefined` so a filter that is not in use is absent, not empty-string. */
 const filterQuery = (filters: Record<string, string | number | undefined>, max = MAX_LIMIT): Record<string, string | number> => {
   const query: Record<string, string | number> = {};
@@ -256,7 +336,86 @@ rejectProviderService: (providerId: string, serviceId: number, options?: AdminAp
    * total is the figure to show and the rows are a drill-down, not a complete
    * list of every booking that has ever moved money.
    */
-  escrow: (options?: AdminApiOptions) => call<EscrowRead>(`/finance/escrow`, {}, options)
+  escrow: (options?: AdminApiOptions) => call<EscrowRead>(`/finance/escrow`, {}, options),
+
+  /* ---- the operations board --------------------------------------------
+   * A **finance** policy (`roles: ['FINANCE', 'ADMIN']`, `totpRequired`) despite
+   * living under `/admin`, which is why the admin rail can link to it and why a
+   * 403 here is still the second factor rather than the role.
+   *
+   * Cached in Redis server-side for fifteen seconds and recomputed every five, so
+   * it is cheap to poll — but polling is handled by the live stream, not by
+   * refetching this on a timer from a dozen open tabs. */
+
+  opsBoard: (options?: AdminApiOptions) => call<OpsBoard>(`/admin/ops-board`, {}, options),
+
+  /* ---- commission rules (`/admin/catalogue/commission-rules`) ----------- */
+
+  /**
+   * Rates are **basis points**, not percentages: 100bp is 1%, so the seeded
+   * platform rate of 15% is 1500. The screen must not send 15.
+   *
+   * Global, category and provider rules can overlap and the most specific one
+   * applies at booking time — so this list is not "the one current rate", and
+   * showing a single highlighted row would misstate how pricing works.
+   */
+  listCommissionRules: (
+    filters: { scope?: CommissionRule['scope']; categoryId?: number; providerId?: string } = {},
+    options?: AdminApiOptions
+  ) =>
+    call<{ items: CommissionRule[] }>(
+      '/admin/catalogue/commission-rules',
+      {
+        query: {
+          ...(filters.scope === undefined ? {} : { scope: filters.scope }),
+          ...(filters.categoryId === undefined ? {} : { categoryId: filters.categoryId }),
+          ...(filters.providerId === undefined ? {} : { providerId: filters.providerId })
+        }
+      },
+      options
+    ),
+
+  /**
+   * **Creates; it does not replace.** A live rule stays live until it is closed,
+   * because a commission rate that changed without a boundary would make every
+   * booking priced under the old rate unexplainable afterwards. Close the old one
+   * with `endCommissionRule` first — the two are deliberately two actions.
+   *
+   * 404 if the category or provider does not exist; the schema also refuses a
+   * scope/target mismatch (CATEGORY without a `categoryId`) as a 422.
+   */
+  createCommissionRule: (input: CommissionRuleInput, options?: AdminApiOptions) =>
+    call<CommissionRule>('/admin/catalogue/commission-rules', { method: 'POST', body: { ...input } }, options),
+
+  /** Stamps `effectiveTo`. Never a delete — the history they drove has to stay. */
+  endCommissionRule: (id: string, options?: AdminApiOptions) =>
+    call<CommissionRule>(`/admin/catalogue/commission-rules/${encodeURIComponent(id)}/end`, { method: 'POST' }, options),
+
+  /* ---- remark moderation (`/admin/remarks`) ---------------------------- */
+
+  /**
+   * Every rating for a provider, **unpublished remarks included**, with who
+   * removed them and why. This is the admin's copy and the public one is not the
+   * same list.
+   */
+  providerRatings: (providerId: string, options?: AdminApiOptions) =>
+    call<{ reputation: { score: number | null; ratingCount: number; verifiedJobs: number }; items: AdminProviderRating[] }>(
+      `/admin/providers/${encodeURIComponent(providerId)}/ratings`,
+      {},
+      options
+    ),
+
+  /**
+   * Hides an abusive remark from the public. **The rating behind it stays in the
+   * provider's score** — removing the words must not move the number, which is
+   * why this is not a rating deletion.
+   *
+   * `reason` is 3–500 characters and is kept and audited, so the screen must ask
+   * for one rather than posting an empty string. 409 if it is already
+   * unpublished.
+   */
+  unpublishRemark: (remarkId: string, reason: string, options?: AdminApiOptions) =>
+    call<{ id: string; published: false }>(`/admin/remarks/${encodeURIComponent(remarkId)}/unpublish`, { method: 'POST', body: { reason } }, options)
 };
 
 /** One person's name, from the two fields the API splits it into. */
@@ -265,3 +424,19 @@ export const personName = (row: { firstName: string; lastName: string }): string
     .filter((part) => part !== '')
     .join(' ')
     .trim();
+
+/**
+ * The live board, as Server-Sent Events.
+ *
+ * A path rather than a method, because this one **cannot go through
+ * `apiRequest`**: that reads the body to the end and would wait forever on a
+ * stream that stays open by design. It cannot go through `EventSource` either —
+ * that cannot send an `Authorization` header, and the board is
+ * `totpRequired`. So `useOpsBoardStream` opens it with `fetch` and reads the
+ * body as a stream.
+ *
+ * The server names its event `board` and recomputes on one shared five-second
+ * cadence however many streams are open, so an operator with six tabs costs the
+ * database one recompute, not six.
+ */
+export const OPS_BOARD_STREAM_PATH = '/admin/ops-board/stream';

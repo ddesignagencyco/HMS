@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { Button, Card, Label, PageHeader, Textarea } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
 import { ProblemPhotos, canAttachProblemPhotos } from '@/features/booking/booking-detail';
+import { InvoiceDownload, isInvoiceReady } from '@/features/booking/invoice-download';
 import { BookingChat } from '@/features/booking/booking-chat';
 import { StartCodeCard } from '@/features/booking/start-code-card';
 import { RevisionCard } from '@/features/booking/revision-card';
@@ -357,6 +358,14 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
               {dict.portal.receipt}
             </h2>
             <p className="mt-2 text-sm leading-6 text-secondary">{dict.portal.invoiceNote}</p>
+            {/* The invoice is written when the job completes, and the API serves
+                it to the booking's customer as well as its provider. This card used
+                to carry the sentence above and nothing else — the professional's
+                job screen had a download and the customer's did not, so the party
+                who paid could not get a receipt for what they paid. */}
+            {isInvoiceReady(current.status) ? (
+              <InvoiceDownload bookingId={current.id} locale={locale} dict={dict} />
+            ) : null}
           </Card>
 
           <Card className="p-5">

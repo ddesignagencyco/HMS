@@ -11,6 +11,7 @@ import { ratingOf } from '@/features/search/location';
 import { useConduct, useEarnings, useProviderDocuments, useProviderOffers, useProviderProfile, useProviderRatings, useWallet } from '@/features/provider/queries';
 import type { ProviderStatus } from '@/features/provider/api';
 import { useNow } from '@/features/provider/offers-view';
+import { ProviderSubmitCard } from '@/features/provider/submit-card';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDateTime, formatMoney, formatNumber, localizedPath, type Locale } from '@/lib/utils';
 
@@ -134,6 +135,18 @@ export function ProviderDashboardScreen({ locale, dict }: { locale: Locale; dict
             </Link>
           </span>
         </p>
+      ) : null}
+
+      {/* `POST /provider/submit` is the call that sets `submitted_at`, and nothing
+          else in the product made it. Offered for every status that can still enter
+          the queue — APPROVED, SUSPENDED and BLOCKED cannot, and a press there
+          would only ever be a 409. The card holds its own "submitted" state
+          because `GET /provider/profile` does not return `submitted_at`. */}
+      {profile.data !== undefined &&
+      profile.data.status !== 'APPROVED' &&
+      profile.data.status !== 'SUSPENDED' &&
+      profile.data.status !== 'BLOCKED' ? (
+        <ProviderSubmitCard locale={locale} dict={dict} />
       ) : null}
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

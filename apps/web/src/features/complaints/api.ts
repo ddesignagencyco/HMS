@@ -148,5 +148,71 @@ export const complaintsApi = {
   reply: (id: string, body: string, options?: ComplaintOptions) => call<ComplaintDetail>(`/complaints/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { body } }, options),
 
   /** `complaintEvidenceSchema` is the photo on its own, not wrapped in `photos`. */
-  addEvidence: (id: string, photo: ComplaintPhotoInput, options?: ComplaintOptions) => call<ComplaintEvent>(`/complaints/${encodeURIComponent(id)}/evidence`, { method: 'POST', body: photo }, options)
+  addEvidence: (id: string, photo: ComplaintPhotoInput, options?: ComplaintOptions) => call<ComplaintEvent>(`/complaints/${encodeURIComponent(id)}/evidence`, { method: 'POST', body: photo }, options),
+
+  /**
+   * `POST /complaints/from-receipt` — **the only complaint route that is
+   * `@Public()`**, and the one that made the cash flow complete.
+   *
+   * Cash jobs are settled against an SMS receipt rather than a card, so the
+   * person who wants to complain is often holding a printed or texted slip and
+   * is not signed in. The `token` on that link *is* the proof of which booking it
+   * is — there is no session to check against — so this call is deliberately the
+   * only unauthenticated write in the whole complaints module, and
+   * `auth: false` below is what keeps a stale bearer token from turning a
+   * signed-out complaint into an attributed one.
+   *
+   * · **404 for a token the platform did not issue**, and the response is
+   *   identical to a nonexistent booking's. The screen must say the link is not
+   *   valid, never that the booking is missing — the difference would confirm a
+   *   booking exists to somebody holding a guessed token.
+   * · `token` is 20–300 characters (`complaints.schemas.ts:20`), which is what
+   *   distinguishes a real link from a typo before the request is made.
+   * · Same categories, same photo cap and the same 10-character minimum on
+   *   `description` as `complaintCreateSchema`, so this form shares its
+   *   validation with the signed-in one rather than inventing looser rules for
+   *   people who are not signed in.
+   *
+   * The response is `{ id, severity }` — **not** the `viewFor` shape `create`
+   * returns. There is no session, so there is no `youAre`, no timeline and
+   * nothing this caller is allowed to read back: the reference is the only
+   * thing they get, and `severity` is what decides whether this lands in the
+   * one-hour urgent bucket.
+   */
+  createFromReceipt: (input: ReceiptComplaintInput, options?: ComplaintOptions) =>
+    apiRequest<{ id: string; severity: ComplaintSeverity }>('/complaints/from-receipt', {
+      method: 'POST',
+      body: input,
+      auth: false,
+      refreshOnExpiry: false,
+      locale: options?.locale
+    })
+};
+
+/** `receiptComplaintSchema`. `token` proves which booking; it is never displayed. */
+export type ReceiptComplaintInput = {
+  token: string;
+  category: ComplaintCategory;
+  description: string;
+  photos?: ComplaintPhotoInput[];
+};
+
+/**
+ * The receipt link's own bounds, from `receiptComplaintSchema`.
+ *
+ * Checked here as well as on the server so a 20-character paste is told what is
+ * wrong before a round trip — but the server's rule is the one that decides.
+ */
+export const MIN_RECEIPT_TOKEN_LENGTH = 20;
+export const MAX_RECEIPT_TOKEN_LENGTH = 300;
+
+/**
+ * Whether a token could be one of ours, before anything is sent.
+ *
+ * Shape only. It cannot tell a valid token from a fabricated one of the right
+ * length — only the API can, and it answers 404 for both.
+ */
+export const isPlausibleReceiptToken = (token: string): boolean => {
+  const trimmed = token.trim();
+  return trimmed.length >= MIN_RECEIPT_TOKEN_LENGTH && trimmed.length <= MAX_RECEIPT_TOKEN_LENGTH;
 };

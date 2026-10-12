@@ -1,9 +1,10 @@
 'use client';
 
-import { AlertTriangle, ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, PhoneCall, Receipt, TrendingUp } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, PhoneCall, TrendingUp } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button, Card, FileInput, Input, Label, PageHeader, Textarea } from '@/components/ui';
 import { useAllServices } from '@/features/catalogue/queries';
+import { InvoiceDownload, isInvoiceReady } from '@/features/booking/invoice-download';
 import {
   useAcceptBooking,
   useAddEvidence,
@@ -971,14 +972,13 @@ function ActionsCard({
         </div>
       ) : null}
 
-      {booking.status === 'AWAITING_VERIFICATION' || booking.status === 'VERIFIED' || booking.status === 'PAYMENT_RELEASED' ? (
-        <a
-          href={`/api/v1/bookings/${encodeURIComponent(booking.id)}/invoice.pdf`}
-          className="mt-4 flex items-center gap-2 text-sm font-medium text-primary-strong underline"
-        >
-          <Receipt className="size-4" aria-hidden="true" />
-          {dict.job.invoiceLink}
-        </a>
+      {isInvoiceReady(booking.status) ? (
+        /* This was an `<a href="/api/v1/bookings/:id/invoice.pdf">`, which cannot
+           work: the route needs the bearer token and the refresh cookie is scoped
+           to `/api/v1/auth`, so following it returned a 401 problem document
+           rendered as JSON. `InvoiceDownload` fetches it properly. It also appears
+           once the invoice actually exists rather than at the old fixed status. */
+        <InvoiceDownload bookingId={booking.id} locale={locale} dict={dict} />
       ) : null}
     </Card>
   );

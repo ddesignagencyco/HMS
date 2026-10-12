@@ -20,12 +20,15 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import type { Dictionary } from "@/lib/dictionaries";
-import { formatDate, formatMoney, type Locale } from "@/lib/utils";
-import { Card, PageHeader, StatCard, StatusBadge } from "@/components/ui";
+import { formatDate, formatDateTime, formatMoney, type Locale } from "@/lib/utils";
+import { Card, PageHeader, StatCard, StatusBadge, ButtonLink } from "@/components/ui";
+import { localizedPath } from "@/lib/utils";
 import {
   financeApi,
   type FinanceLedgerEntry,
+  type FinanceReconciliationReport,
   type LedgerQueryParams,
 } from "./finance-api";
 
@@ -379,11 +382,17 @@ export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Diction
         eyebrow={dict.portal.finance}
         title={dict.portal.payouts}
         description={dict.finance.payoutsText}
+        /* **This button used to do nothing.** It has been on this screen since the
+           finance console was written, styled and labelled and wired to no route,
+           because `POST /finance/payout-batches` did not exist. It does now, and
+           building a batch is a separate screen — it gathers every approved payout
+           into a bank file and settles it, which is not a thing this table's
+           "Approve" button should be able to do. */
         action={
-          <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-[9px] bg-primary px-5 text-sm font-semibold text-white transition hover:bg-primary-strong">
+          <ButtonLink href={localizedPath(locale, "/finance/payout-batches")}>
             <FileSpreadsheet className="size-4" aria-hidden="true" />
             {dict.finance.buildBatch}
-          </button>
+          </ButtonLink>
         }
       />
 
@@ -647,6 +656,98 @@ export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionar
  * Ledger — drill-down from /finance/ledger
  * ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ *
+ * Reconciliation — FR-PY-06 / TRD A13
+ * ------------------------------------------------------------------ */
+
+/**
+ * `POST /finance/reconciliation/run`, offered from the ledger screen because
+ * that is the screen that used to *claim* the books balanced.
+ *
+ * **It is a mutation, not a read**, and it is treated as one: no retry, no
+ * polling. It writes to the audit log and raises an event for every drift it
+ * finds, so a replayed press would be a second audit entry for one human
+ * decision.
+ *
+ * It is also the only place in the app that can honestly answer "do the books
+ * add up?" — the ledger read above returns flat entries with one account each,
+ * so debits-equal-credits is not computable from it. This returns seven checks
+ * the server ran against the entries themselves.
+ */
+export function FinanceReconciliation({ dict, locale }: { dict: Dictionary; locale: Locale }) {
+  const [report, setReport] = useState<FinanceReconciliationReport | null>(null);
+  const run = useMutation({
+    mutationFn: () => financeApi.runReconciliation({ locale }),
+    onSuccess: (result) => setReport(result),
+    onError: (error: Error) => toast.error(error.message || dict.finance.reconcileFailed),
+    retry: false
+  });
+
+  const drifted = report?.drift.length ?? 0;
+
+  return (
+    <Card className="mt-5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-navy">{dict.finance.reconcileTitle}</h2>
+          <p className="mt-1 max-w-xl text-sm leading-6 text-secondary">{dict.finance.reconcileText}</p>
+        </div>
+        <button
+          type="button"
+          disabled={run.isPending}
+          onClick={() => run.mutate()}
+          className="inline-flex min-h-11 items-center gap-2 rounded-[9px] bg-primary px-5 text-sm font-semibold text-white transition hover:bg-primary-strong disabled:opacity-55"
+        >
+          <Scale className="size-4" aria-hidden="true" />
+          {run.isPending ? dict.finance.reconciling : dict.finance.reconcileAction}
+        </button>
+      </div>
+
+      {report === null ? null : drifted === 0 ? (
+        <div role="status" className="mt-4 rounded-[9px] border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-semibold text-emerald-900">
+            {dict.finance.reconcileBalanced.replace("{checks}", String(report.checks))}
+          </p>
+          <p className="mt-1 text-xs text-emerald-700">{formatDateTime(report.ranAt, locale)}</p>
+        </div>
+      ) : (
+        <div role="alert" className="mt-4">
+          <p className="rounded-[9px] border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-900">
+            {dict.finance.reconcileDrift.replace("{count}", String(drifted))}
+          </p>
+          <p className="mt-1 text-xs text-muted">{formatDateTime(report.ranAt, locale)}</p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="bg-slate-50 text-xs text-muted">
+                <tr>
+                  <th className="p-3 text-start">{dict.finance.reconcileCheck}</th>
+                  <th className="p-3 text-start">{dict.finance.reconcileSubject}</th>
+                  <th className="p-3 text-start">{dict.finance.reconcileExpected}</th>
+                  <th className="p-3 text-start">{dict.finance.reconcileActual}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {report.drift.map((entry, index) => (
+                  <tr key={`${entry.check}-${entry.subject}-${index}`} className="hover:bg-slate-50">
+                    <td className="p-3 font-mono text-xs text-secondary">{entry.check}</td>
+                    <td className="p-3 font-mono text-xs text-navy">{entry.subject}</td>
+                    <td className="p-3 text-xs text-secondary">{entry.expected}</td>
+                    <td className="p-3 text-xs font-semibold text-rose-700">{entry.actual}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Ledger — the double-entry journal every other figure derives from
+ * ------------------------------------------------------------------ */
+
 export function FinanceLedger({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const { data: ledgerData, isLoading, isError } = useFinanceLedger(undefined, locale);
 
@@ -746,6 +847,8 @@ export function FinanceLedger({ locale, dict }: { locale: Locale; dict: Dictiona
           )}
         </Card>
       </div>
+
+      <FinanceReconciliation dict={dict} locale={locale} />
     </div>
   );
 }

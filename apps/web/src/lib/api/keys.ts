@@ -21,12 +21,37 @@ export const publicKeys = {
   issueOptions: (slug: string) => ['public', 'services', slug, 'issue-options'] as const,
   cities: ['public', 'places', 'cities'] as const,
   areas: (cityId: number) => ['public', 'places', 'cities', cityId, 'areas'] as const,
-  /** Every effective filter, in a fixed order, so equivalent searches share a key. */
-  providerSearch: (filters: ProviderSearchFilters) => ['public', 'search', 'providers', filters.serviceSlug, filters.lat, filters.lng] as const,
+  /** Every effective filter, in a fixed order, so equivalent searches share a key.
+   *
+   *  **A resolved point is part of the key, not a raw coordinate.** A search may
+   *  arrive as `addressId` or as `lat`/`lng`, and both are answers to the same
+   *  question — where is the work. When both are present `addressId` wins (see
+   *  `providerSearchQuery`), so the key hashes the address, never both.
+   *
+   *  The five refinements are in the key too. Two people a kilometre apart
+   *  searching the same service with different price bands are asking different
+   *  questions, and serving one the other's results is a confident wrong answer
+   *  rather than a stale one. */
+  providerSearch: (filters: ProviderSearchFilters) =>
+    [
+      'public',
+      'search',
+      'providers',
+      filters.serviceSlug,
+      filters.addressId ?? `${filters.lat ?? ''},${filters.lng ?? ''}`,
+      filters.minExperienceYears ?? '',
+      filters.minCompletedJobs ?? '',
+      filters.minPricePaisa ?? '',
+      filters.maxPricePaisa ?? '',
+      filters.availableToday ?? '',
+      filters.verifiedDocsOnly ?? ''
+    ] as const,
   provider: (providerId: string) => ['public', 'providers', providerId] as const,
   reputation: (providerId: string) => ['public', 'providers', providerId, 'reputation'] as const,
   remarks: (providerId: string, limit: number) => ['public', 'providers', providerId, 'remarks', limit] as const,
-  slots: (providerId: string, serviceId: number, date: string) => ['public', 'providers', providerId, 'slots', serviceId, date] as const
+  slots: (providerId: string, serviceId: number, date: string) => ['public', 'providers', providerId, 'slots', serviceId, date] as const,
+  /** "When can they get in soonest?" — needs a service, because the slot length comes from it. */
+  nextSlots: (providerId: string, serviceId: number) => ['public', 'providers', providerId, 'next-slots', serviceId] as const
 } as const;
 
 export const accountKeys = {
@@ -134,7 +159,43 @@ export const adminKeys = {
   /* `GET /admin/plans`. Keyed under `admin` for the same reason, and kept as
      its own key rather than folded into `all` so a plan write invalidates the
      list an operator is editing without discarding every other admin read. */
-  plans: ['admin', 'plans'] as const
+  plans: ['admin', 'plans'] as const,
+  /* The operations board. It is a *live* surface, so it gets its own key and is
+     refreshed by the SSE stream rather than by refetching this on a timer.
+     Not nested under `escrow` or `all`: an admin-wide invalidation should not
+     blank the board an operator is watching while it reconnects. */
+  opsBoard: ['admin', 'ops-board'] as const,
+  /* `GET /admin/catalogue/commission-rules`. Its own key because closing a rule
+     is a write that must invalidate the list being edited without discarding
+     the catalogue read next to it. */
+  commissionRules: (scope?: string) => ['admin', 'commission-rules', scope ?? 'all'] as const,
+  /* The moderation view. Scoped by provider so one provider's read is not
+     invalidated by another provider's. */
+  providerRatings: (providerId: string) => ['admin', 'providers', providerId, 'ratings'] as const
+} as const;
+
+/**
+ * The finance surface.
+ *
+ * **Separate from `adminKeys`**, because the policy is different in kind even
+ * though ADMIN is allowed on it: these are `FINANCE` routes that happen to admit
+ * an administrator. Signing a finance session in and signing an admin session in
+ * must not share one another's caches, and a report run queued by one is not
+ * something the other should see listed.
+ *
+ * `reports` is separate from `batches` because one is polled to completion and
+ * the other is settled by hand — invalidating a report list because a batch was
+ * marked paid would be noise, and they share nothing.
+ */
+export const financeKeys = {
+  all: ['finance'] as const,
+  reports: ['finance', 'reports'] as const,
+  report: (id: string) => ['finance', 'reports', 'detail', id] as const,
+  payoutBatches: ['finance', 'payout-batches'] as const,
+  ledger: (accountType?: string, before?: number) => ['finance', 'ledger', accountType ?? 'all', before ?? 'first'] as const,
+  escrow: ['finance', 'escrow'] as const,
+  /** The ledger's own proof that it balances. Never cached — it is a mutation. */
+  reconciliation: ['finance', 'reconciliation'] as const
 } as const;
 
 export const bookingKeys = {
@@ -161,6 +222,11 @@ export const FRESHNESS = {
   reputation: { staleTime: 2 * 60_000, gcTime: 15 * 60_000 },
   /** Availability: no stale window, re-read when the window regains focus. */
   slots: { staleTime: 0, gcTime: 60_000, refetchOnWindowFocus: true },
+  /* The operations board. Server-side it is recomputed every five seconds and
+     cached for fifteen, so the REST read that paints the first frame is always
+     at most fifteen seconds behind. No stale window at all here: the SSE stream
+     is what keeps it current, and a "cached" board is one nobody is watching. */
+  opsBoard: { staleTime: 0, gcTime: 5 * 60_000 },
   /* Authenticated reads. Short windows throughout: every one of these belongs
      to a person who is waiting on a job, and a stale status is worse than a
      slow page. */
