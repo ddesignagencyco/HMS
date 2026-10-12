@@ -255,6 +255,49 @@ describe('SHM-037: online checkout, capture and abandonment', () => {
     expect(read.body.status).toBe('REQUESTED');
   });
 
+  it('the mock gateway page works by clicking its links, which is how a hosted payment page behaves', async () => {
+    // The page returned bare URLs and the completion route was POST-only, so following one with a
+    // browser answered 404 "Cannot GET ..." on a route that plainly existed. A hosted payment page's
+    // Pay control is a link; a mock that only answers POST cannot be driven by hand.
+    const first = await onlineBooking();
+    const page = await callApi<{ actions: { pay: { method: string; url: string }; fail: { method: string; url: string } } }>(app, `/dev/payments/${first.paymentId}?returnUrl=http%3A%2F%2Flocalhost%3A3001%2Freturn`, { method: 'GET' });
+    expect(page.status).toBe(200);
+    // The verb is stated rather than implied, because the failure was a method the page never named.
+    expect(page.body.actions.pay.method).toBe('GET');
+    expect(page.body.actions.pay.url).toContain(`/dev/payments/${first.paymentId}/complete?outcome=captured`);
+
+    // Follow the Pay link exactly as a browser would: a plain GET, no body, no auth.
+    const paid = await callApi(app, page.body.actions.pay.url, { method: 'GET' });
+    expect(paid.status).toBe(200);
+    expect((await callApi<{ status: string }>(app, `/bookings/${first.booking.id}`, bearer(first.customer.accessToken))).body.status).toBe('REQUESTED');
+
+    // And the fail link, on a fresh payment, drives the other branch: a failed payment abandons the
+    // booking rather than leaving it pending, which is what the gateway-delivered failure means.
+    const second = await onlineBooking();
+    const failed = await callApi(app, `/dev/payments/${second.paymentId}/complete?outcome=failed`, { method: 'GET' });
+    expect(failed.status).toBe(200);
+    expect((await callApi<{ status: string }>(app, `/bookings/${second.booking.id}`, bearer(second.customer.accessToken))).body.status).toBe('ABANDONED');
+  });
+
+  it('refuses a misspelled outcome instead of capturing the money', async () => {
+    // `?outcome=succes` used to fall through to payment.captured. On a payment path a value nobody
+    // recognises is a mistake to name, not a default to guess at.
+    const { customer, booking, paymentId } = await onlineBooking();
+    for (const outcome of ['succes', 'CAPTURED', '', 'refunded']) {
+      const attempt = await callApi<{ code?: string; errors?: { path: string; code: string }[] }>(app, `/dev/payments/${paymentId}/complete?outcome=${outcome}`, { method: 'POST' });
+      expect(attempt.status, `outcome=${outcome}`).toBe(422);
+      expect(attempt.body.code).toBe('VALIDATION_FAILED');
+      expect(attempt.body.errors?.[0]).toMatchObject({ path: 'outcome', code: 'unknown_outcome' });
+    }
+    const missing = await callApi(app, `/dev/payments/${paymentId}/complete`, { method: 'POST' });
+    expect(missing.status).toBe(422);
+
+    // Nothing was captured by any of those attempts, and the booking is still waiting for its money.
+    const captures = await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM ledger_transactions WHERE booking_id = ${booking.id}::uuid AND type = 'CAPTURE'`);
+    expect(captures[0]?.n).toBe(0n);
+    expect((await callApi<{ status: string }>(app, `/bookings/${booking.id}`, bearer(customer.accessToken))).body.status).toBe('PENDING_PAYMENT');
+  });
+
   it('50 concurrent checkouts for one slot: exactly one succeeds, the rest get 409 SLOT_TAKEN', async () => {
     const { customer, addressId } = await customerWithAddress(setup.areaId);
     nextSlot += 24;

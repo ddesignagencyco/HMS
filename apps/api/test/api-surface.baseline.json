@@ -1263,9 +1263,18 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/api/v1/dev/payments/{paymentId}/complete",
+      "operationId": "DevPaymentsController_completeGet",
+      "summary": "Complete a mock payment (browser-navigable)",
+      "tags": [
+        "development"
+      ]
+    },
+    {
       "method": "POST",
       "path": "/api/v1/dev/payments/{paymentId}/complete",
-      "operationId": "DevPaymentsController_complete",
+      "operationId": "DevPaymentsController_completePost",
       "summary": "Complete a mock payment",
       "tags": [
         "development"
