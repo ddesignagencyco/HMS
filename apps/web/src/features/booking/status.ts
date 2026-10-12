@@ -152,3 +152,17 @@ export const isHeldPayment = (booking: Pick<Booking, "paymentStatus">): boolean 
  */
 export const bookingTotalPaisa = (booking: Pick<Booking, "approvedTotalPaisa" | "finalAmountPaisa">): number =>
   booking.finalAmountPaisa ?? booking.approvedTotalPaisa;
+
+/**
+ * Customer can request or reveal the 6-digit start code only before work begins.
+ * Once the job is underway (IN_PROGRESS or later), there is nothing left to authorise,
+ * and the API answers 409 CONFLICT.
+ */
+const START_CODE_STATUSES: readonly BookingStatus[] = [
+  "ACCEPTED",
+  "SCHEDULED",
+  "EN_ROUTE",
+];
+
+export const canRequestStartCode = (status: BookingStatus): boolean =>
+  contains(START_CODE_STATUSES, status);

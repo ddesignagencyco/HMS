@@ -7,6 +7,8 @@ import { Button, Card, Label, PageHeader, Textarea } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
 import { ProblemPhotos, canAttachProblemPhotos } from '@/features/booking/booking-detail';
 import { BookingChat } from '@/features/booking/booking-chat';
+import { StartCodeCard } from '@/features/booking/start-code-card';
+import { RevisionCard } from '@/features/booking/revision-card';
 import { useBooking, useOnBehalfContact, useWarrantyClaim } from '@/features/booking/queries';
 import type { BookingStatus } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
@@ -194,6 +196,12 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
               <p className="mt-3 rounded-[9px] bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.bookingStatus[current.status]}</p>
             )}
           </Card>
+
+          {/* Pending quote revision (extra charges proposal) from provider */}
+          <RevisionCard locale={locale} dict={dict} booking={current} />
+
+          {/* Start code for the customer to give the provider at arrival */}
+          <StartCodeCard locale={locale} dict={dict} booking={current} />
 
           {/* Photos of the problem. The booking step tells the customer they can
               add these "from the booking page once the booking exists", so this is

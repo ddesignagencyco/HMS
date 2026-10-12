@@ -17,7 +17,7 @@
  * rounded by hand.
  *
  * **The four visit counts are shown, not collapsed into one.**
- * `GET /me/subscriptions` returns `totalVisits`, `pendingVisits`,
+ * `GET /me/subscriptions` returns `visitCount`, `pendingVisits`,
  * `bookedVisits`, `consumedVisits` and `refundedVisits` as five
  * separate `COUNT(...) FILTER (...)` columns. The screen reports all
  * five. The tempting shortcut — one "3 of 4 remaining" — is wrong in a
@@ -170,7 +170,7 @@ function SubscriptionCard({ subscription, locale, dict }: { subscription: MySubs
       <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-secondary">
         <div className="flex gap-1.5">
           <dt className="text-muted">{dict.portal.planTotalVisits}</dt>
-          <dd className="font-medium text-navy tabular-nums">{formatNumber(subscription.totalVisits, locale)}</dd>
+          <dd className="font-medium text-navy tabular-nums">{formatNumber(subscription.visitCount, locale)}</dd>
         </div>
         <div className="flex gap-1.5">
           <dt className="text-muted">{dict.portal.planRunsUntil}</dt>
@@ -186,7 +186,7 @@ function SubscriptionCard({ subscription, locale, dict }: { subscription: MySubs
           for a live plan: a cancelled one has nothing left to spend. */}
       {active ? (
         <p className="mt-4 rounded-[9px] border border-line bg-surface-2 p-3 text-sm leading-6 text-secondary">
-          {formatNumber(subscriptionRemainingVisits(subscription), locale)} {dict.portal.planPendingVisits.toLowerCase()} · {dict.common.total} {formatNumber(subscription.totalVisits, locale)}
+          {formatNumber(subscriptionRemainingVisits(subscription), locale)} {dict.portal.planPendingVisits.toLowerCase()} · {dict.common.total} {formatNumber(subscription.visitCount, locale)}
         </p>
       ) : null}
 

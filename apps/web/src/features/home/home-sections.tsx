@@ -5,7 +5,7 @@ import type { Dictionary } from '@/lib/dictionaries';
 /* Only the decorative photography remains. Everything on this page that used to be
    a professional, a rating, a service or an area came from this import and was
    fabricated; those sections are now in `home-platform.tsx`, reading the API. */
-import { heroImage, journeyImage } from '@/lib/data';
+import { heroImage, journeyImage } from '@/lib/brand-images';
 import { getText, localizedPath, type Locale } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
@@ -75,16 +75,18 @@ export function HomeHero({ locale, dict, search }: { locale: Locale; dict: Dicti
                   <BadgeCheck className={iconTone('text-yellow-500')} aria-hidden="true" />
                   {dict.providers.verified}
                 </span>
+                {/* Removed: five filled stars, a hardcoded "4.9/5", and "Verified in
+                    Lahore", sitting on a stock photograph.
+
+                    A rating is a claim about other people's work. Nothing on
+                    this hero is derived from the API, so it asserted a number
+                    the platform never published — and it contradicted
+                    `PlatformMetricsSection` directly below, which correctly
+                    withholds its rating when the read fails. The verified badge
+                    above stays: it describes this photograph's subject honestly. */}
                 <div className="absolute bottom-4 start-4 inline-flex items-center gap-2 rounded-xl bg-navy-950/85 px-3.5 py-2 text-xs font-medium text-white shadow-lg backdrop-blur-sm ring-1 ring-white/15">
-                  <div className="flex -space-x-0.5 rtl:space-x-reverse text-yellow-400">
-                    <Star className="size-3.5 fill-current" aria-hidden="true" />
-                    <Star className="size-3.5 fill-current" aria-hidden="true" />
-                    <Star className="size-3.5 fill-current" aria-hidden="true" />
-                    <Star className="size-3.5 fill-current" aria-hidden="true" />
-                    <Star className="size-3.5 fill-current" aria-hidden="true" />
-                  </div>
-                  <span className="font-bold text-white">4.9/5</span>
-                  <span className="text-slate-300 text-[11px]">• {locale === 'ur' ? 'لاہور میں تصدیق شدہ' : 'Verified in Lahore'}</span>
+                  <BadgeCheck className="size-4 text-yellow-400" aria-hidden="true" />
+                  <span className="text-slate-200 text-[11px]">{locale === "ur" ? "لاہور میں تصدیق شدہ پیشہ کار" : "Verified professionals in Lahore"}</span>
                 </div>
               </div>
             </figure>

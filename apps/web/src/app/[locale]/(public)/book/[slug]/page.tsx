@@ -63,6 +63,7 @@ export default async function BookingPage({
         providerId={one(query.provider)}
         date={one(query.date)}
         start={one(query.start)}
+        end={one(query.end)}
       />
     </RequireSession>
   );

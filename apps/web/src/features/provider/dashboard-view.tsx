@@ -2,7 +2,7 @@
 
 import { AlertTriangle, ArrowRight, BriefcaseBusiness, CalendarClock, CheckCircle2, CircleDollarSign, FileWarning, Gavel, Inbox, Star, Wallet } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Card, PageHeader, StatCard, StatusBadge } from '@/components/ui';
 import { useMyBookings } from '@/features/booking/queries';
 import type { Booking, BookingStatus } from '@/features/booking/api';
@@ -10,6 +10,7 @@ import { useAllServices } from '@/features/catalogue/queries';
 import { ratingOf } from '@/features/search/location';
 import { useConduct, useEarnings, useProviderDocuments, useProviderOffers, useProviderProfile, useProviderRatings, useWallet } from '@/features/provider/queries';
 import type { ProviderStatus } from '@/features/provider/api';
+import { useNow } from '@/features/provider/offers-view';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDateTime, formatMoney, formatNumber, localizedPath, type Locale } from '@/lib/utils';
 
@@ -90,8 +91,14 @@ export function ProviderDashboardScreen({ locale, dict }: { locale: Locale; dict
    * render body: reading the wall clock during render is impure, and the offers
    * page already keeps a ticking `useNow` for the same reason. A minute is enough
    * granularity for an hour-long threshold and costs no visible re-render churn.
+   *
+   * This was `const [now] = useState(() => Date.now())` with no interval — the
+   * comment described a ticker that was never implemented, so `now` was frozen at
+   * first paint. An offer expiring ten minutes later never appeared in
+   * `pressingOffers`, never counted towards `needsAttention`, and never lit the
+   * amber "expiring" pill. It uses the same `useNow` as the offers page.
    */
-  const [now] = useState(() => Date.now());
+  const now = useNow(60_000);
   const pressingOffers = liveOffers.filter((offer) => new Date(offer.expiresAt).getTime() - now < 60 * 60 * 1000);
 
   const needsAttention =

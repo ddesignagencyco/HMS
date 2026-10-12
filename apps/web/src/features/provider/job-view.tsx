@@ -2,7 +2,7 @@
 
 import { AlertTriangle, ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, PhoneCall, Receipt, TrendingUp } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Button, Card, Input, Label, PageHeader, Textarea } from '@/components/ui';
+import { Button, Card, FileInput, Input, Label, PageHeader, Textarea } from '@/components/ui';
 import { useAllServices } from '@/features/catalogue/queries';
 import {
   useAcceptBooking,
@@ -672,6 +672,8 @@ function ChecklistCard({ locale, dict, bookingId, canTick }: { locale: Locale; d
                     <PhotoPicker
                       id={`checklist-photo-${item.itemId}`}
                       label={dict.job.checklistPhotoLabel}
+                      chooseLabel={dict.common.chooseFile}
+                      selectedLabel={dict.common.chosenFile}
                       disabled={busy || mark.isPending}
                       onPick={(file) => void uploadFor(item.itemId, file)}
                     />
@@ -757,33 +759,28 @@ function PhotosCard({
 
       {status === 'IN_PROGRESS' || status === 'EN_ROUTE' ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {canTakeBefore ? <PhotoPicker id={`before-${bookingId}`} label={dict.job.addBeforePhoto} disabled={pending} onPick={(file) => void onAttach(file, 'BEFORE')} /> : null}
-          {canTakeAfter ? <PhotoPicker id={`after-${bookingId}`} label={dict.job.addAfterPhoto} disabled={pending} onPick={(file) => void onAttach(file, 'AFTER')} /> : null}
+          {canTakeBefore ? <PhotoPicker id={`before-${bookingId}`} label={dict.job.addBeforePhoto} chooseLabel={dict.common.chooseFile} selectedLabel={dict.common.chosenFile} disabled={pending} onPick={(file) => void onAttach(file, 'BEFORE')} /> : null}
+          {canTakeAfter ? <PhotoPicker id={`after-${bookingId}`} label={dict.job.addAfterPhoto} chooseLabel={dict.common.chooseFile} selectedLabel={dict.common.chosenFile} disabled={pending} onPick={(file) => void onAttach(file, 'AFTER')} /> : null}
         </div>
       ) : null}
     </Card>
   );
 }
 
-function PhotoPicker({ id, label, disabled, onPick }: { id: string; label: string; disabled: boolean; onPick: (file: File) => void }) {
+function PhotoPicker({ id, label, disabled, chooseLabel, selectedLabel, onPick }: { id: string; label: string; disabled: boolean; chooseLabel: string; selectedLabel: string; onPick: (file: File) => void }) {
   return (
-    <div className="grid gap-2">
-      <Label htmlFor={id}>{label}</Label>
-      <input
-        id={id}
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        className="text-sm"
-        disabled={disabled}
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          /* Cleared after a pick so choosing the same file twice in a row still
-             fires a change event. */
-          event.target.value = '';
-          if (file !== undefined) onPick(file);
-        }}
-      />
-    </div>
+    <FileInput
+      id={id}
+      label={label}
+      accept="image/jpeg,image/png,image/webp"
+      disabled={disabled}
+      chooseLabel={chooseLabel}
+      selectedLabel={selectedLabel}
+      onPick={(chosen) => {
+        const file = chosen[0];
+        if (file !== undefined) onPick(file);
+      }}
+    />
   );
 }
 
@@ -962,14 +959,14 @@ function ActionsCard({
       {(booking.status === 'WORK_COMPLETED' || booking.status === 'AWAITING_VERIFICATION' || booking.status === 'VERIFIED') && booking.paymentMode === 'CASH' ? (
         <div className="mt-4 grid gap-3">
           <p className="text-sm leading-6 text-secondary">{dict.job.cashExplainer}</p>
-          <Button type="button" onClick={onCash} disabled={pending}>
+          <Button type="button" onClick={onCash} disabled={pending || booking.status !== 'VERIFIED'}>
             <CircleDollarSign className="size-4" aria-hidden="true" />
             {dict.job.cashReceived}
           </Button>
           {booking.status === 'AWAITING_VERIFICATION' ? (
             /* The API refuses this before verification has authorised collection;
                saying so beats letting a professional discover it as a 409. */
-            <p className="text-xs leading-5 text-muted">{dict.job.cashNeedsVerification}</p>
+            <p className="text-xs leading-5 text-amber-800 bg-amber-50 rounded-[6px] p-2 border border-amber-200">{dict.job.cashNeedsVerification}</p>
           ) : null}
         </div>
       ) : null}

@@ -25,12 +25,40 @@ import { formatDate, formatMoney, type Locale } from "@/lib/utils";
 import { Card, PageHeader, StatCard, StatusBadge } from "@/components/ui";
 import {
   financeApi,
+  type FinanceLedgerEntry,
   type LedgerQueryParams,
 } from "./finance-api";
 
 /* ------------------------------------------------------------------ *
  * Query Hooks for Live Finance APIs
  * ------------------------------------------------------------------ */
+
+/**
+ * What every finance screen shows when its read fails.
+ *
+ * These screens used to answer a failed or empty read with invented rows —
+ * see the note on `FinanceRefunds`. The rule these two components exist to
+ * enforce: a money figure the server did not send is never displayed, and a
+ * failure is never dressed up as an empty result.
+ */
+function FinanceLoadError({ dict }: { dict: Dictionary }) {
+  return (
+    <div role="alert" className="rounded-[14px] border border-rose-200 bg-rose-50 p-5">
+      <p className="flex items-start gap-2 text-sm font-medium leading-6 text-rose-800">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        {dict.finance.loadError}
+      </p>
+    </div>
+  );
+}
+
+function FinanceLoading({ dict }: { dict: Dictionary }) {
+  return (
+    <Card className="p-8 text-center text-sm text-muted" aria-busy="true">
+      {dict.portal.financeLoading}
+    </Card>
+  );
+}
 
 export function useFinanceRefunds(status?: string, locale?: Locale) {
   return useQuery({
@@ -115,26 +143,29 @@ const accountMeta: Record<Account, { normal: "debit" | "credit"; group: keyof Di
   PAYOUT_CLEARING: { normal: "credit", group: "liability" },
 };
 
-const defaultEntries: Entry[] = [
-  { id: "txn-1001", date: "2026-09-02", type: "ONLINE_CAPTURE", booking: "bk-1030", reference: "SHM-0001030", lines: [{ account: "GATEWAY_CLEARING", debit: 850000, credit: 0 }, { account: "ESCROW", debit: 0, credit: 850000, party: "bk-1030" }] },
-  { id: "txn-1002", date: "2026-09-03", type: "ONLINE_CAPTURE", booking: "bk-1031", reference: "SHM-0001031", lines: [{ account: "GATEWAY_CLEARING", debit: 420000, credit: 0 }, { account: "ESCROW", debit: 0, credit: 420000, party: "bk-1031" }] },
-  { id: "txn-1003", date: "2026-09-04", type: "RELEASE", booking: "bk-1034", reference: "SHM-0001034", lines: [{ account: "ESCROW", debit: 400000, credit: 0, party: "bk-1034" }, { account: "PROVIDER_WALLET", debit: 0, credit: 352000, party: "prv-kashif-carpenter" }, { account: "PLATFORM_COMMISSION", debit: 0, credit: 48000 }] },
-  { id: "txn-1004", date: "2026-09-05", type: "CASH_SETTLEMENT", booking: "bk-1036", reference: "SHM-0001036", lines: [{ account: "PROVIDER_WALLET", debit: 42000, credit: 0, party: "prv-bilal-plumbing" }, { account: "PLATFORM_COMMISSION", debit: 0, credit: 42000 }] },
-  { id: "txn-1005", date: "2026-09-06", type: "REFUND", booking: "bk-1031", reference: "SHM-0001031", lines: [{ account: "ESCROW", debit: 120000, credit: 0, party: "bk-1031" }, { account: "GATEWAY_CLEARING", debit: 0, credit: 120000 }] },
-  { id: "txn-1006", date: "2026-09-08", type: "PAYOUT_APPROVED", reference: "po-2041", lines: [{ account: "PROVIDER_WALLET", debit: 610000, credit: 0, party: "prv-ahmad-plumber" }, { account: "PAYOUT_CLEARING", debit: 0, credit: 610000 }] },
-  { id: "txn-1007", date: "2026-09-09", type: "PAYOUT_CONFIRMED", reference: "po-2041", lines: [{ account: "PAYOUT_CLEARING", debit: 610000, credit: 0 }, { account: "GATEWAY_CLEARING", debit: 0, credit: 610000 }] },
-  { id: "txn-1008", date: "2026-09-11", type: "PENALTY_FINE", booking: "bk-1030", reference: "SHM-0001030", lines: [{ account: "PROVIDER_WALLET", debit: 150000, credit: 0, party: "prv-ahmad-plumber" }, { account: "PENALTY_INCOME", debit: 0, credit: 150000 }] },
-  { id: "txn-1009", date: "2026-09-14", type: "LATE_CANCEL_CASH", booking: "bk-1036", reference: "SHM-0001036", lines: [{ account: "CUSTOMER_RECEIVABLE", debit: 90000, credit: 0, party: "bk-1036" }, { account: "PLATFORM_COMMISSION", debit: 0, credit: 90000 }] },
-  { id: "txn-1010", date: "2026-09-18", type: "PLAN_PURCHASE", reference: "sub-77", lines: [{ account: "GATEWAY_CLEARING", debit: 890000, credit: 0 }, { account: "PLAN_DEFERRED", debit: 0, credit: 890000, party: "sub-77" }] },
-];
+/** Ten invented ledger entries used to live here.
+ *
+ *  They were balanced by construction, which is what made them dangerous: the
+ *  screen rendered a "Balanced 10 / 10" badge computed over them, so a finance
+ *  user was shown a proof that the books tie when in fact nothing had been read
+ *  from the API at all. `GET /finance/ledger` is the only source of these rows
+ *  now. The `Entry` type stays — it is the shape the API sends. */
 
-const isBalanced = (e: Entry) => e.lines.reduce((s, l) => s + l.debit, 0) === e.lines.reduce((s, l) => s + l.credit, 0);
-
-function computeBalances(rows: Entry[]): { account: Account; balance: number }[] {
+/**
+ * Balances per account, from the flat ledger entries the API sent.
+ *
+ * Each row carries one account and one direction, so an account's balance is
+ * the signed sum of its own rows — `amountPaisa` is integer paisa and is only
+ * summed here, never divided or recomputed. Accounts the server has not posted
+ * anything to come back as zero, which is a real balance and not an absence.
+ */
+function computeBalances(rows: FinanceLedgerEntry[]): { account: Account; balance: number }[] {
   return (Object.keys(accountMeta) as Account[]).map((account) => {
-    const debit = rows.reduce((t, e) => t + e.lines.filter((l) => l.account === account).reduce((s, l) => s + l.debit, 0), 0);
-    const credit = rows.reduce((t, e) => t + e.lines.filter((l) => l.account === account).reduce((s, l) => s + l.credit, 0), 0);
-    return { account, balance: accountMeta[account].normal === "debit" ? debit - credit : credit - debit };
+    const signed = rows.reduce(
+      (total, row) => (row.account === account ? total + (row.direction === "DEBIT" ? row.amountPaisa : -row.amountPaisa) : total),
+      0,
+    );
+    return { account, balance: accountMeta[account].normal === "debit" ? signed : -signed };
   });
 }
 
@@ -185,7 +216,6 @@ export function FinanceReleases({ locale, dict }: { locale: Locale; dict: Dictio
                 </tr>
               ) : (
                 releasable.map((item) => {
-                  const commission = Math.round(item.heldPaisa * 0.12);
                   return (
                     <tr key={item.bookingId} className="hover:bg-slate-50">
                       <td className="p-4">
@@ -196,7 +226,12 @@ export function FinanceReleases({ locale, dict }: { locale: Locale; dict: Dictio
                       <td className="p-4"><StatusBadge status={item.status as never} label={item.status} /></td>
                       <td className="p-4 text-end">
                         <p className="font-semibold text-navy tabular-nums">{formatMoney(item.heldPaisa, locale)}</p>
-                        <p className="mt-1 text-xs text-muted tabular-nums">{dict.finance.providerShare} {formatMoney(item.heldPaisa - commission, locale)}</p>
+                        {/* The provider's share used to be computed here as
+                            `heldPaisa - round(heldPaisa * 0.12)` — a hardcoded 12%
+                            commission the browser invented, printed under a
+                            "Provider share" label as though the server had said
+                            it. The real split is decided by `PricingService` and
+                            posted to the ledger, so it is not restated here. */}
                       </td>
                     </tr>
                   );
@@ -222,16 +257,17 @@ export function FinanceReleases({ locale, dict }: { locale: Locale; dict: Dictio
  * Refunds — FR-PY-07, idempotent, to the original method
  * ------------------------------------------------------------------ */
 
-const fallbackRefunds = [
-  { id: "rf-1", bookingCode: "SHM-0001031", amountPaisa: 120000, reasonCode: "disputedScope", reasonText: "Disputed Scope", createdAt: "2026-09-06", gateway: "ONLINE", status: "SUCCEEDED" as const },
-  { id: "rf-2", bookingCode: "SHM-0001032", amountPaisa: 950000, reasonCode: "unfulfilled", reasonText: "Unfulfilled", createdAt: "2026-09-19", gateway: "ONLINE", status: "PENDING" as const },
-  { id: "rf-3", bookingCode: "SHM-0001036", amountPaisa: 420000, reasonCode: "providerNoShow", reasonText: "Provider No Show", createdAt: "2026-09-20", gateway: "CASH", status: "SUCCEEDED" as const },
-];
-
+/** No fallback rows. This screen used to hold three invented refunds and render
+ *  them whenever the API returned nothing *or* failed — so a `GET /finance/refunds`
+ *  outage produced a full table of fabricated money, including booking codes that
+ *  match no real booking. An empty answer is now shown as an empty answer. */
 export function FinanceRefunds({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const { data, isLoading, refetch } = useFinanceRefunds(undefined, locale);
+  const { data, isLoading, isError, refetch } = useFinanceRefunds(undefined, locale);
 
-  const items = data?.items && data.items.length > 0 ? data.items : fallbackRefunds;
+  if (isError) return <FinanceLoadError dict={dict} />;
+  if (isLoading) return <FinanceLoading dict={dict} />;
+
+  const items = data?.items ?? [];
   const completed = items.filter((r) => r.status === "SUCCEEDED");
   const pending = items.filter((r) => r.status === "PENDING");
   const totalRefunded = completed.reduce((s, r) => s + r.amountPaisa, 0);
@@ -244,7 +280,7 @@ export function FinanceRefunds({ locale, dict }: { locale: Locale; dict: Diction
         <StatCard icon={RefreshCcw} label={dict.finance.refundedTotal} value={isLoading ? "..." : formatMoney(totalRefunded, locale)} />
         <StatCard icon={TriangleAlert} label={dict.finance.pendingRefunds} value={isLoading ? "..." : String(pending.length)} />
         <StatCard icon={Landmark} label={dict.finance.toOriginalMethod} value={isLoading ? "..." : String(completed.length)} />
-        <StatCard icon={FileSpreadsheet} label={dict.finance.ledgerRows} value={isLoading ? "..." : String(items.length * 2)} />
+        <StatCard icon={FileSpreadsheet} label={dict.finance.ledgerRows} value={isLoading ? "..." : String(items.length)} />
       </div>
 
       <Card className="mt-6 overflow-hidden">
@@ -310,17 +346,13 @@ export function FinanceRefunds({ locale, dict }: { locale: Locale; dict: Diction
  * Payouts — FR-PY-08, batch file and per-provider statements
  * ------------------------------------------------------------------ */
 
-const fallbackPayouts = [
-  { id: "po-2044", providerId: "prv-ahmad-plumber", providerName: "Ahmad Plumbing Works", amountPaisa: 842000, createdAt: "2026-09-26", status: "APPROVED" as const },
-  { id: "po-2043", providerId: "prv-sana-sanitary", providerName: "Sana Sanitary & Electrical", amountPaisa: 1280000, createdAt: "2026-09-26", status: "APPROVED" as const },
-  { id: "po-2042", providerId: "prv-kashif-carpenter", providerName: "Kashif Woodworking", amountPaisa: 352000, createdAt: "2026-09-26", status: "REQUESTED" as const },
-  { id: "po-2041", providerId: "prv-ahmad-plumber", providerName: "Ahmad Plumbing Works", amountPaisa: 610000, createdAt: "2026-09-09", status: "PAID" as const },
-  { id: "po-2040", providerId: "prv-bilal-plumbing", providerName: "Bilal QuickFix Services", amountPaisa: 385000, createdAt: "2026-09-02", status: "PAID" as const },
-];
-
+/** No fallback rows, and this one mattered most: the payout table renders a real
+ *  "Approve" button against each row, so the five invented payouts that used to
+ *  stand in for a failed read offered an operator a live ledger write keyed on
+ *  ids like `po-2042` that exist nowhere. */
 export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const queryClient = useQueryClient();
-  const { data, isLoading, refetch } = useFinancePayouts(undefined, locale);
+  const { data, isLoading, isError, refetch } = useFinancePayouts(undefined, locale);
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => financeApi.approvePayout(id, { locale }),
@@ -333,7 +365,10 @@ export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Diction
     },
   });
 
-  const items = data?.items && data.items.length > 0 ? data.items : fallbackPayouts;
+  if (isError) return <FinanceLoadError dict={dict} />;
+  if (isLoading) return <FinanceLoading dict={dict} />;
+
+  const items = data?.items ?? [];
   const approved = items.filter((r) => r.status === "APPROVED");
   const paid = items.filter((r) => r.status === "PAID");
   const requested = items.filter((r) => r.status === "REQUESTED");
@@ -356,7 +391,7 @@ export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Diction
         <StatCard icon={Banknote} label={dict.finance.approvedThisRun} value={isLoading ? "..." : formatMoney(approved.reduce((s, r) => s + r.amountPaisa, 0), locale)} />
         <StatCard icon={ReceiptText} label={dict.finance.awaitingApproval} value={isLoading ? "..." : String(requested.length)} />
         <StatCard icon={BadgeCheck} label={dict.finance.paidToDate} value={isLoading ? "..." : formatMoney(paid.reduce((s, r) => s + r.amountPaisa, 0), locale)} />
-        <StatCard icon={FileSpreadsheet} label={dict.finance.batchFile} value="pay_2026_09_26.csv" />
+        <StatCard icon={FileSpreadsheet} label={dict.finance.batchFile} value={dict.finance.nothingToShow} />
       </div>
 
       <Card className="mt-6 overflow-hidden">
@@ -434,16 +469,15 @@ export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Diction
  * Cash reconciliation — UC-18
  * ------------------------------------------------------------------ */
 
-const fallbackCash = [
-  { providerId: "prv-imran-appliance", providerName: "Imran Appliance Services", awaitingConfirmationJobs: 1, awaitingConfirmationPaisa: 520000, settledJobs: 0, collectedPaisa: 0, commissionPaisa: 62400 },
-  { providerId: "prv-sana-sanitary", providerName: "Sana Sanitary & Electrical", awaitingConfirmationJobs: 0, awaitingConfirmationPaisa: 0, settledJobs: 1, collectedPaisa: 560000, commissionPaisa: 67200 },
-  { providerId: "prv-bilal-plumbing", providerName: "Bilal QuickFix Services", awaitingConfirmationJobs: 1, awaitingConfirmationPaisa: 420000, settledJobs: 0, collectedPaisa: 0, commissionPaisa: 50400 },
-];
-
+/** No fallback rows — three invented cash settlements with invented commission
+ *  figures, shown whenever the reconciliation read came back empty or failed. */
 export function FinanceCash({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const { data, isLoading } = useFinanceCashReconciliation(locale);
+  const { data, isLoading, isError } = useFinanceCashReconciliation(locale);
 
-  const items = data?.items && data.items.length > 0 ? data.items : fallbackCash;
+  if (isError) return <FinanceLoadError dict={dict} />;
+  if (isLoading) return <FinanceLoading dict={dict} />;
+
+  const items = data?.items ?? [];
   const totalJobs = items.reduce((s, j) => s + (j.awaitingConfirmationJobs + j.settledJobs), 0);
   const outstandingPaisa = items.reduce((s, j) => s + j.awaitingConfirmationPaisa, 0);
   const totalCommission = items.reduce((s, j) => s + j.commissionPaisa, 0);
@@ -456,7 +490,7 @@ export function FinanceCash({ locale, dict }: { locale: Locale; dict: Dictionary
         <StatCard icon={Banknote} label={dict.finance.cashJobs} value={isLoading ? "..." : String(totalJobs)} />
         <StatCard icon={Wallet} label={dict.finance.outstandingCash} value={isLoading ? "..." : formatMoney(outstandingPaisa, locale)} />
         <StatCard icon={BadgeCheck} label={dict.finance.cashCommission} value={isLoading ? "..." : formatMoney(totalCommission, locale)} />
-        <StatCard icon={CircleDollarSign} label={dict.finance.receivables} value={formatMoney(90000, locale)} />
+        <StatCard icon={CircleDollarSign} label={dict.finance.receivables} value={dict.finance.nothingToShow} />
       </div>
 
       <Card className="mt-6 overflow-hidden">
@@ -514,18 +548,29 @@ export function FinanceCash({ locale, dict }: { locale: Locale; dict: Dictionary
  * ------------------------------------------------------------------ */
 
 export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const { data: debtsData, isLoading } = useFinanceDebts(locale);
+  const { data: debtsData, isLoading, isError } = useFinanceDebts(locale);
 
+  if (isError) return <FinanceLoadError dict={dict} />;
+
+  /* The ceiling is the server's. It used to fall back to a hardcoded 500000,
+     which then decided, in the very next line, whether a professional's offers
+     were shown "Blocked" — an invented number was making a live decision about
+     whether someone can sell their work. Now a missing ceiling blocks nothing,
+     because only the server knows the rule; a row with no ceiling and no
+     explicit flag is reported as unknown rather than as cleared. */
   const items = (debtsData?.items ?? []).map((d) => ({
     id: d.providerId,
     name: d.providerName ?? d.providerId,
     amount: d.debtPaisa,
-    ceiling: d.ceilingPaisa ?? 500000,
+    ceiling: d.ceilingPaisa ?? null,
     since: d.createdAt ?? d.since,
-    isBlocked: d.offersBlocked ?? d.isBlocked ?? d.debtPaisa > (d.ceilingPaisa ?? 500000),
+    isBlocked: d.offersBlocked ?? d.isBlocked ?? null,
   }));
 
-  const blocked = items.filter((d) => d.isBlocked);
+  const blocked = items.filter((d) => d.isBlocked === true);
+  /* A ceiling is only a single figure if the server gave one figure; showing
+     Rs 5,000 while every row carries a different ceiling was a second invention. */
+  const sharedCeiling = items.every((d) => d.ceiling === items[0]?.ceiling) ? items[0]?.ceiling ?? null : null;
   const total = items.reduce((s, d) => s + d.amount, 0);
 
   return (
@@ -535,7 +580,7 @@ export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionar
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={CircleDollarSign} label={dict.finance.totalDebt} value={isLoading ? "..." : formatMoney(total, locale)} />
         <StatCard icon={TriangleAlert} label={dict.finance.blockedProviders} value={isLoading ? "..." : String(blocked.length)} />
-        <StatCard icon={Wallet} label={dict.finance.debtCeiling} value={formatMoney(500000, locale)} />
+        <StatCard icon={Wallet} label={dict.finance.debtCeiling} value={isLoading ? "..." : sharedCeiling === null ? dict.finance.nothingToShow : formatMoney(sharedCeiling, locale)} />
         <StatCard icon={BadgeCheck} label={dict.finance.clearedOnline} value={isLoading ? "..." : String(items.length - blocked.length)} />
       </div>
 
@@ -558,22 +603,34 @@ export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionar
             <tbody className="divide-y divide-line">
               {items.map((row) => {
                 const isBlocked = row.isBlocked;
-                const pct = Math.min(100, (row.amount / row.ceiling) * 100);
+                /* With no ceiling from the server there is no denominator, so
+                   no bar is drawn. A bar at 100% would be a claim about a
+                   threshold nobody published. */
+                const pct = row.ceiling !== null && row.ceiling > 0 ? Math.min(100, (row.amount / row.ceiling) * 100) : null;
                 return (
                   <tr key={row.id} className="hover:bg-slate-50">
                     <td className="p-4 font-medium text-navy">{row.name}</td>
                     <td className="p-4 text-secondary">{row.since ? formatDate(row.since, locale) : "—"}</td>
                     <td className="p-4 text-end">
                       <p className="font-semibold text-navy tabular-nums">{formatMoney(row.amount, locale)}</p>
-                      <div className="mt-1.5 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
-                        <div className={`h-full rounded-full ${isBlocked ? "bg-rose-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
-                      </div>
+                      {pct !== null ? (
+                        <div className="mt-1.5 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
+                          <div className={`h-full rounded-full ${isBlocked === true ? "bg-rose-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      ) : null}
                     </td>
-                    <td className="p-4 text-end text-secondary tabular-nums">{formatMoney(row.ceiling, locale)}</td>
+                    <td className="p-4 text-end text-secondary tabular-nums">{row.ceiling === null ? "—" : formatMoney(row.ceiling, locale)}</td>
                     <td className="p-4">
-                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${isBlocked ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
-                        {isBlocked ? dict.finance.blocked : dict.finance.active}
-                      </span>
+                      {/* "Blocked" and "Active" are both claims about whether
+                          this professional may sell. Only the server may make
+                          that one, so an absent flag renders as unknown. */}
+                      {isBlocked === null ? (
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-muted">{dict.finance.nothingToShow}</span>
+                      ) : (
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${isBlocked ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
+                          {isBlocked ? dict.finance.blocked : dict.finance.active}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -591,20 +648,39 @@ export function FinanceDebts({ locale, dict }: { locale: Locale; dict: Dictionar
  * ------------------------------------------------------------------ */
 
 export function FinanceLedger({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const { data: ledgerData, isLoading } = useFinanceLedger(undefined, locale);
+  const { data: ledgerData, isLoading, isError } = useFinanceLedger(undefined, locale);
 
-  const accounts = computeBalances(defaultEntries);
-  const unbalanced = defaultEntries.filter((e) => !isBalanced(e)).length;
+  /* Every number below is computed from the rows the server sent.
+   *
+   * This screen used to compute `computeBalances(defaultEntries)` on ten
+   * invented transactions and render that chart of accounts, its "Lines" count
+   * and its "Balanced 10 / 10" badge **unconditionally** — even when the ledger
+   * query succeeded and returned nothing, and it had no error branch at all.
+   *
+   * The badge is gone rather than recomputed. `GET /finance/ledger` returns one
+   * flat row per ledger *entry*, each with a single account and direction
+   * (`finance.service.ts:105-117`); it does not return the line pairs of the
+   * parent transaction. So whether debits equal credits cannot be checked from
+   * this response at all — and a screen that printed "Balanced" over a page of
+   * entries was asserting something it had no data for. The constraint is the
+   * database's to hold, and it should be verified there. */
+  const entries = ledgerData?.items ?? [];
+  const accounts = computeBalances(entries);
+  /* Distinct transactions, counted from the entries actually returned rather
+     than from a fabricated set. */
+  const transactionCount = new Set(entries.map((entry) => entry.transactionId)).size;
+
+  if (isError) return <FinanceLoadError dict={dict} />;
 
   return (
     <div>
       <PageHeader eyebrow={dict.portal.finance} title={dict.finance.ledger} description={dict.finance.ledgerText} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Scale} label={dict.finance.accounts} value={String(accounts.length)} />
-        <StatCard icon={ReceiptText} label={dict.finance.transactions} value={isLoading ? "..." : String(ledgerData?.items?.length ?? defaultEntries.length)} />
-        <StatCard icon={FileSpreadsheet} label={dict.finance.lines} value={String(defaultEntries.reduce((s, e) => s + e.lines.length, 0))} />
-        <StatCard icon={BadgeCheck} label={dict.finance.balanced} value={`${defaultEntries.length - unbalanced} / ${defaultEntries.length}`} />
+        <StatCard icon={Scale} label={dict.finance.accounts} value={isLoading ? "..." : String(accounts.length)} />
+        <StatCard icon={ReceiptText} label={dict.finance.transactions} value={isLoading ? "..." : String(transactionCount)} />
+        <StatCard icon={FileSpreadsheet} label={dict.finance.lines} value={isLoading ? "..." : String(entries.length)} />
+        <StatCard icon={BadgeCheck} label={dict.finance.balanced} value={isLoading ? "..." : dict.finance.notVerifiableHere} />
       </div>
 
       <div className="mt-6 grid gap-5 xl:grid-cols-[320px_1fr]">
@@ -631,13 +707,18 @@ export function FinanceLedger({ locale, dict }: { locale: Locale; dict: Dictiona
             <h2 className="font-semibold text-navy">{dict.finance.transactions}</h2>
             <p className="text-xs text-muted">{dict.finance.insertOnly}</p>
           </div>
-          {ledgerData?.items && ledgerData.items.length > 0 ? (
+          {entries.length > 0 ? (
             <ul className="divide-y divide-line">
-              {ledgerData.items.map((entry) => (
+              {entries.map((entry) => (
                 <li key={entry.entryId} className="p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="font-mono text-xs font-semibold text-navy">#{entry.entryId} · {entry.transactionId.slice(0, 8)}</p>
+                      <p className="font-mono text-xs font-semibold text-navy">
+                        #{entry.entryId}
+                        {/* `transactionId` had no null guard; one row without it
+                            took the whole ledger screen down. */}
+                        {typeof entry.transactionId === "string" && entry.transactionId !== "" ? ` · ${entry.transactionId.slice(0, 8)}` : ""}
+                      </p>
                       <p className="mt-0.5 text-sm text-secondary">{entry.type} · {entry.account}</p>
                     </div>
                     <div className="text-end">
@@ -650,39 +731,18 @@ export function FinanceLedger({ locale, dict }: { locale: Locale; dict: Dictiona
                 </li>
               ))}
             </ul>
+          ) : isLoading ? (
+            <Card className="border-dashed p-10 text-center text-sm text-muted" aria-busy="true">
+              {dict.portal.financeLoading}
+            </Card>
           ) : (
-            <ul className="divide-y divide-line">
-              {defaultEntries.map((entry) => (
-                <li key={entry.id} className="p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="font-mono text-xs font-semibold text-navy">{entry.id}</p>
-                      <p className="mt-0.5 text-sm text-secondary">{(dict.finance.types as Record<string, string>)[entry.type]}</p>
-                    </div>
-                    <div className="text-end">
-                      <p className="text-sm font-semibold text-navy tabular-nums">{formatMoney(entry.lines.reduce((s, l) => s + l.debit, 0), locale)}</p>
-                      <p className="mt-0.5 text-xs text-muted">{formatDate(entry.date, locale)}</p>
-                    </div>
-                  </div>
-                  <table className="mt-3 w-full text-xs">
-                    <tbody>
-                      {entry.lines.map((line) => (
-                        <tr key={`${entry.id}-${line.account}`} className="border-t border-line">
-                          <td className="py-1.5 font-mono text-secondary">{line.account}</td>
-                          <td className="py-1.5 text-end text-muted tabular-nums">{line.debit ? formatMoney(line.debit, locale) : ""}</td>
-                          <td className="py-1.5 text-end text-muted tabular-nums">{line.credit ? formatMoney(line.credit, locale) : ""}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
-                    <ArrowDownLeft className="size-3" aria-hidden="true" />
-                    {dict.finance.balances}
-                    <ArrowUpRight className="size-3" aria-hidden="true" />
-                  </p>
-                </li>
-              ))}
-            </ul>
+            /* An empty ledger is stated as empty. The branch that used to sit
+               here rendered ten invented transactions with their double-entry
+               lines and a "Balances" tick. */
+            <Card className="border-dashed p-10 text-center">
+              <p className="text-sm font-medium text-navy">{dict.finance.nothingToShow}</p>
+              <p className="mt-1.5 text-sm text-muted">{dict.finance.insertOnly}</p>
+            </Card>
           )}
         </Card>
       </div>

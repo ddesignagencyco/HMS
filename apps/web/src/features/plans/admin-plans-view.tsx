@@ -50,9 +50,24 @@ import { useAdminPlans, useCreatePlan, useDeactivatePlan, useUpdatePlan } from '
 import type { AdminPlan, CreatePlanInput } from '@/features/plans/api';
 
 /** One row of the create form's service editor. */
-type ServiceDraft = { serviceId: string; visitsIncluded: string; intervalDays: string };
+/** `rowKey` is stable for the life of the row and is what React keys on.
+ *
+ *  These rows are keyed by array index and are removed from the middle of the
+ *  list. React reuses the DOM node of row 2 for row 3, and because all three
+ *  controls are controlled, the caret and the typed value jump to the wrong
+ *  service. It also made every row's three fields answer to the same accessible
+ *  name — "Service", "Visits", "Interval days" — with nothing distinguishing one
+ *  row from the next, so a screen-reader user could not tell which service a
+ *  field belonged to. */
+type ServiceDraft = { rowKey: string; serviceId: string; visitsIncluded: string; intervalDays: string };
 
-const emptyDraft = (firstServiceId: string): ServiceDraft => ({ serviceId: firstServiceId, visitsIncluded: '2', intervalDays: '180' });
+let nextRowKey = 0;
+const newRowKey = (): string => {
+  nextRowKey += 1;
+  return `plan-service-${nextRowKey}`;
+};
+
+const emptyDraft = (firstServiceId: string): ServiceDraft => ({ rowKey: newRowKey(), serviceId: firstServiceId, visitsIncluded: '2', intervalDays: '180' });
 
 /* The form's own state. Kept as strings because an `<input type=number>`
  * holds text, and coercing mid-keystroke is how "1." becomes 1 and the
@@ -102,7 +117,8 @@ function CreateForm({ services, dict, onDone }: { services: CatalogueService[]; 
   const pool = eligible.length > 0 ? eligible : services;
 
   const patch = (next: Partial<FormState>) => setState((current) => ({ ...current, ...next }));
-  const patchService = (index: number, next: Partial<ServiceDraft>) => setState((current) => ({ ...current, services: current.services.map((row, i) => (i === index ? { ...row, ...next } : row)) }));
+  const patchService = (rowKey: string, next: Partial<ServiceDraft>) =>
+    setState((current) => ({ ...current, services: current.services.map((row) => (row.rowKey === rowKey ? { ...row, ...next } : row)) }));
 
   const price = Number(state.pricePaisa);
   const months = Number(state.durationMonths);
@@ -183,9 +199,16 @@ function CreateForm({ services, dict, onDone }: { services: CatalogueService[]; 
 
       <h3 className="mt-6 text-sm font-semibold text-navy">{dict.admin.plansServices}</h3>
       <div className="mt-2 grid gap-2">
-        {state.services.map((row, index) => (
-          <div key={index} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_9rem_auto]">
-            <select value={row.serviceId} onChange={(e) => patchService(index, { serviceId: e.target.value })} className={fieldClass} aria-label={dict.admin.plansService}>
+        {state.services.map((row) => (
+          <div key={row.rowKey} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_9rem_auto]">
+            {/* The row number is folded into each control's name so the three
+                fields of one service are distinguishable from the next row's. */}
+            <select
+              value={row.serviceId}
+              onChange={(e) => patchService(row.rowKey, { serviceId: e.target.value })}
+              className={fieldClass}
+              aria-label={`${dict.admin.plansService} ${state.services.indexOf(row) + 1}`}
+            >
               <option value="">{dict.admin.plansService}</option>
               {pool.map((service) => (
                 <option key={service.id} value={service.id}>
@@ -196,20 +219,26 @@ function CreateForm({ services, dict, onDone }: { services: CatalogueService[]; 
             <input
               inputMode="numeric"
               value={row.visitsIncluded}
-              onChange={(e) => patchService(index, { visitsIncluded: e.target.value })}
+              onChange={(e) => patchService(row.rowKey, { visitsIncluded: e.target.value })}
               className={fieldClass}
-              aria-label={dict.admin.plansVisits}
+              aria-label={`${dict.admin.plansVisits} ${state.services.indexOf(row) + 1}`}
               placeholder={dict.admin.plansVisits}
             />
             <input
               inputMode="numeric"
               value={row.intervalDays}
-              onChange={(e) => patchService(index, { intervalDays: e.target.value })}
+              onChange={(e) => patchService(row.rowKey, { intervalDays: e.target.value })}
               className={fieldClass}
-              aria-label={dict.admin.plansIntervalDays}
+              aria-label={`${dict.admin.plansIntervalDays} ${state.services.indexOf(row) + 1}`}
               placeholder={dict.admin.plansIntervalDays}
             />
-            <Button variant="secondary" size="sm" disabled={state.services.length === 1} onClick={() => setState((c) => ({ ...c, services: c.services.filter((_, i) => i !== index) }))}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={state.services.length === 1}
+              aria-label={`${dict.admin.plansRemoveService} ${state.services.indexOf(row) + 1}`}
+              onClick={() => setState((c) => ({ ...c, services: c.services.filter((candidate) => candidate.rowKey !== row.rowKey) }))}
+            >
               {dict.admin.plansRemoveService}
             </Button>
           </div>

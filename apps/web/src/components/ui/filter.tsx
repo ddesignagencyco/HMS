@@ -149,9 +149,19 @@ export function FilterDrawer({
 
   return (
     <div className="fixed inset-0 z-50 lg:hidden">
+      {/* The overlay is a second way to dismiss the drawer, and it was given the
+          same `aria-label` as the ✕ button beside the title — two controls,
+          both visible at once, both answering to "Close". A screen reader heard
+          "Close" twice with nothing to tell them apart, and
+          `getByRole("button", { name: "Close" })` matched whichever came first.
+          The overlay is decorative as far as the tree is concerned: it carries
+          the visible scrim and the click target, and the ✕ is the control that
+          names the action. Marked `aria-hidden` so it is not announced at all,
+          which also removes the duplicate. */}
       <button
         type="button"
-        aria-label={labels.close}
+        tabIndex={-1}
+        aria-hidden="true"
         onClick={onClose}
         className="absolute inset-0 bg-navy/60 backdrop-blur-xs"
       />

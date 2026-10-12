@@ -6,6 +6,27 @@ import { Container, Section, SectionHeader, TextLink, buttonStyles } from '@/com
 import { CategoryCard, PopularServiceCard } from '@/components/cards';
 import { Reveal } from '@/components/reveal';
 import { useAllServices, useCategories } from '@/features/catalogue/queries';
+import { presentPrice } from '@/features/catalogue/pricing';
+
+/**
+ * What a headline price figure is, in words.
+ *
+ * A FLAT price is a price, a TIME_BASED price is a rate, and INSPECTION_FIRST
+ * means the number is not the whole cost. `pricing.ts` computes exactly this and
+ * `catalogue-explorer.tsx` renders it; the popular-services strip on the home
+ * page captioned every card "From" regardless, which understated a fixed price
+ * and overstated an estimate. It asks the module that already knows.
+ */
+const priceSuffixFor = (service: Parameters<typeof presentPrice>[0], dict: Dictionary): string => {
+  const price = presentPrice(service, 'en');
+  return price.basis === 'flat'
+    ? dict.catalogue.priceFlat
+    : price.basis === 'rate'
+      ? price.perUnit === undefined
+        ? dict.catalogue.priceRate
+        : `${dict.catalogue.priceRate} ${dict.catalogue[price.perUnit]}`
+      : dict.catalogue.priceEstimate;
+};
 
 /* The two catalogue-reading sections of the home page.
 
@@ -149,6 +170,12 @@ export function PopularServicesSection({ locale, dict }: { locale: Locale; dict:
                     warranty={dict.common.warranty.replace('{days}', formatNumber(service.warrantyDays, locale))}
                     priceFrom={dict.common.from}
                     price={formatMoney(service.basePricePaisa, locale)}
+                    /* Was a bare `dict.common.from` on every card, whatever the
+                       pricing model. `pricing.ts` says in as many words that
+                       "from" understates a flat price and overstates an
+                       inspection-first one, and it already computes the right
+                       caption — this card just never asked it. */
+                    priceSuffix={priceSuffixFor(service, dict)}
                     emergency={service.isEmergencyEligible}
                     emergencyLabel={dict.common.emergency}
                     actionLabel={dict.home.browseServices}

@@ -26,6 +26,7 @@ export function BookService({
   providerId,
   date,
   start,
+  end = null,
 }: {
   locale: Locale;
   dict: Dictionary;
@@ -33,6 +34,7 @@ export function BookService({
   providerId: string | null;
   date: string | null;
   start: string | null;
+  end?: string | null;
 }) {
   const service = useService(slug, locale);
   const { status: sessionStatus } = useSession();
@@ -44,6 +46,7 @@ export function BookService({
 
   const carriedDate = useMemo(() => (date !== null && DATE_PATTERN.test(date) ? date : null), [date]);
   const carriedStart = useMemo(() => (start !== null && !Number.isNaN(Date.parse(start)) ? start : null), [start]);
+  const carriedEnd = useMemo(() => (end !== null && !Number.isNaN(Date.parse(end)) ? end : null), [end]);
 
   if (service.isPending) {
     return (
@@ -119,6 +122,7 @@ export function BookService({
       initialProviderId={carriedProviderId}
       initialDate={carriedDate}
       initialStart={carriedStart}
+      initialEnd={carriedEnd}
     />
   );
 }

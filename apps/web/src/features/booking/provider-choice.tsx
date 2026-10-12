@@ -133,12 +133,13 @@ export function ProviderChoiceStep({
       <h2 className="text-xl font-semibold text-navy">{dict.booking.providerTitle}</h2>
       <p className="mt-1 text-sm text-secondary">{dict.booking.providerText}</p>
 
+      {/* "Let us choose" option commented out for now as requested
       <RadioGroup value={choice?.kind ?? ""} onValueChange={(value) => onChange(value === "auto" ? AUTO_ASSIGN : { kind: "provider", providerId: "" })} className="mt-6 grid gap-3">
         {canAuto ? (
           <label
             className={cn(
-              "flex cursor-pointer items-start gap-4 rounded-[12px] border p-4 transition",
-              choice?.kind === "auto" ? "border-primary bg-blue-50" : "border-line hover:border-slate-300",
+              "flex cursor-pointer items-start gap-4 rounded-[12px] border-2 bg-white p-4 transition-colors duration-150",
+              choice?.kind === "auto" ? "border-primary bg-blue-50/60" : "border-line hover:bg-slate-50",
             )}
           >
             <RadioGroupItem value="auto" className="mt-1" />
@@ -153,6 +154,7 @@ export function ProviderChoiceStep({
           </label>
         ) : null}
       </RadioGroup>
+      */}
 
       {providers.length > 0 ? (
         <div className="mt-6">
@@ -172,8 +174,12 @@ export function ProviderChoiceStep({
                 <label
                   key={provider.providerId}
                   className={cn(
-                    "flex cursor-pointer items-start gap-4 rounded-[12px] border p-4 transition",
-                    selected ? "border-primary bg-blue-50" : "border-line hover:border-slate-300",
+                    /* Same card treatment as the auto-assign option above it and
+                       as the payment step: 2px border in both states, hover as a
+                       background wash. These three lists are the same control
+                       three times over, so they look the same three times over. */
+                    "flex cursor-pointer items-start gap-4 rounded-[12px] border-2 bg-white p-4 transition-colors duration-150",
+                    selected ? "border-primary bg-blue-50/60" : "border-line hover:bg-slate-50",
                   )}
                 >
                   {/* Relative, because the stretched link inside needs an anchor —

@@ -73,6 +73,7 @@ export function BookingFlow({
   initialProviderId,
   initialDate,
   initialStart,
+  initialEnd = null,
 }: {
   locale: Locale;
   dict: Dictionary;
@@ -81,6 +82,7 @@ export function BookingFlow({
   initialProviderId: string | null;
   initialDate: string | null;
   initialStart: string | null;
+  initialEnd?: string | null;
 }) {
   const [step, setStep] = useState(0);
   /* A professional carried in from a provider profile is preselected, but the
@@ -132,8 +134,13 @@ export function BookingFlow({
   const carriedSlot = useMemo(() => {
     if (initialProviderId === null || initialStart === null) return null;
     if (chosenProviderId !== initialProviderId) return null;
-    return slots.data?.items.find((slot) => slot.start === initialStart) ?? null;
-  }, [chosenProviderId, initialProviderId, initialStart, slots.data]);
+    const match = slots.data?.items.find(
+      (slot) => slot.start === initialStart || (!Number.isNaN(Date.parse(slot.start)) && Date.parse(slot.start) === Date.parse(initialStart))
+    );
+    if (match) return match;
+    if (initialEnd) return { start: initialStart, end: initialEnd };
+    return null;
+  }, [chosenProviderId, initialEnd, initialProviderId, initialStart, slots.data]);
 
   /* What the flow actually holds. The carried slot applies only while the
      customer has not chosen or changed a time themselves — after that it is
@@ -173,7 +180,7 @@ export function BookingFlow({
     }
   };
 
-  const scheduled = basket.slot ?? basket.request;
+  const scheduled = effectiveSlot ?? basket.request;
   const emergencyAllowed = service.isEmergencyEligible;
   /* The mutation's data is `Quote | undefined`; every render below deals in
      `Quote | null`, so an absent quote is one shape rather than two. */
@@ -412,6 +419,7 @@ export function BookingFlow({
                   dict={dict}
                   service={service}
                   basket={basket}
+                  scheduled={scheduled}
                   /* The public search row publishes no name (§2.2 of the
                      handoff), so the review step names the choice by its
                      qualification rather than inventing a person's name. */
@@ -431,8 +439,8 @@ export function BookingFlow({
                   <h2 className="text-xl font-semibold text-navy">{dict.booking.paymentTitle}</h2>
                   <p className="mt-1 text-sm text-secondary">{dict.booking.paymentText}</p>
                   <RadioGroup
-                    value={basket.paymentMode ?? ""}
-                    onValueChange={(value) => update({ paymentMode: value === "online" ? "ONLINE" : "cash" === value ? "CASH" : null })}
+                    value={basket.paymentMode?.toLowerCase() ?? ""}
+                    onValueChange={(value) => update({ paymentMode: value === "online" ? "ONLINE" : value === "cash" ? "CASH" : null })}
                     className="mt-6 grid gap-3"
                   >
                     {(
@@ -443,19 +451,47 @@ export function BookingFlow({
                     ).map((option) => (
                       <label
                         key={option.value}
+                        htmlFor={`payment-opt-${option.value}`}
+                        onClick={() => update({ paymentMode: option.value === "online" ? "ONLINE" : "CASH" })}
                         className={cn(
-                          "flex cursor-pointer items-start gap-3 rounded-[12px] border p-4 transition",
-                          basket.paymentMode?.toLowerCase() === option.value ? "border-primary bg-blue-50" : "border-line hover:border-slate-300",
+                          "flex cursor-pointer items-start gap-3.5 rounded-[12px] border-2 bg-white p-4 transition-colors duration-150",
+                          basket.paymentMode?.toLowerCase() === option.value
+                            ? "border-primary bg-blue-50/60 shadow-xs"
+                            : "border-line hover:bg-slate-50",
                         )}
                       >
-                        <RadioGroupItem value={option.value} className="mt-1" />
-                        <span>
+                        <RadioGroupItem id={`payment-opt-${option.value}`} value={option.value} className="mt-1" />
+                        <span className="flex-1">
                           <span className="block font-semibold text-navy">{option.title}</span>
                           <span className="mt-1 block text-sm leading-6 text-secondary">{option.body}</span>
                         </span>
                       </label>
                     ))}
                   </RadioGroup>
+                  {/* What actually happens next, once a choice is made.
+                   *
+                   * The two option blurbs each explained the *end* of the
+                   * journey ("only after verification") and so read as two
+                   * versions of the same promise. What a customer is really
+                   * deciding is the next few steps, and those differ sharply:
+                   * one path shows a payment page before anything is booked,
+                   * the other books immediately and defers payment to the visit.
+                   * This states the consequence of the choice just made, in one
+                   * line, so the decision does not have to be inferred from two
+                   * paragraphs that share a clause.
+
+                   * It only appears once something is chosen, because before
+                   * that there is no consequence to describe. */}
+                  {basket.paymentMode !== null ? (
+                    <p
+                      role="status"
+                      className="mt-4 rounded-[9px] bg-surface-2 p-3.5 text-sm leading-6 text-secondary"
+                    >
+                      {basket.paymentMode === "ONLINE"
+                        ? dict.booking.onlineNext
+                        : dict.booking.cashNext}
+                    </p>
+                  ) : null}
                   {currentQuote !== null && currentQuote.outstandingReceivablePaisa > 0 ? (
                     <p className="mt-4 rounded-[9px] border border-amber-200 bg-amber-50 p-3.5 text-sm leading-6 text-amber-900">
                       {dict.booking.outstandingWarning} · {money(currentQuote.outstandingReceivablePaisa, locale)}
@@ -580,14 +616,14 @@ function ProblemStep({
     if (chosen.length === 0) return;
 
     if (photos.length + chosen.length > 5) {
-      setPhotoError(locale === "ur" ? "زیادہ سے زیادہ 5 تصاویر منتخب کی جا سکتی ہیں۔" : "You can attach up to 5 photos in total.");
+      setPhotoError(dict.booking.photosStepTooMany);
       return;
     }
 
     const validFiles: File[] = [];
     for (const f of chosen) {
       if (f.size > 5 * 1024 * 1024) {
-        setPhotoError(locale === "ur" ? "تصویر کا سائز 5MB سے کم ہونا چاہیے۔" : `${f.name} exceeds the 5 MB limit.`);
+        setPhotoError(dict.booking.photosStepTooLarge.replace("{name}", f.name));
         return;
       }
       validFiles.push(f);
@@ -656,12 +692,10 @@ function ProblemStep({
           <div>
             <Label htmlFor="booking-photos-input" className="flex items-center gap-2 font-semibold text-navy">
               <Camera className="size-4 text-primary" aria-hidden="true" />
-              {locale === "ur" ? "مسئلے کی تصاویر (اختیاری)" : "Photos of the problem (optional)"}
+              {dict.booking.photosStepTitle}
             </Label>
             <p className="mt-1 text-xs text-muted">
-              {locale === "ur"
-                ? "5 تک تصاویر منتخب کریں۔ یہ بکنگ مکمل ہونے پر خودکار منسلک ہو جائیں گی۔"
-                : "Attach up to 5 photos (JPEG, PNG, WebP up to 5MB). They will be uploaded with your booking."}
+              {dict.booking.photosStepHint}
             </p>
           </div>
           <label
@@ -673,7 +707,7 @@ function ProblemStep({
             )}
           >
             <Upload className="size-3.5" aria-hidden="true" />
-            {locale === "ur" ? "تصویر شامل کریں" : "Attach Photos"}
+            {dict.booking.photosStepAttach}
           </label>
           <input
             id="booking-photos-input"
@@ -706,7 +740,7 @@ function ProblemStep({
                   type="button"
                   onClick={() => removePhoto(idx)}
                   className="absolute end-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-slate-900/80 text-white transition-opacity hover:bg-rose-600 focus:outline-none"
-                  aria-label={locale === "ur" ? "تصویر ہٹائیں" : "Remove photo"}
+                  aria-label={dict.booking.photosStepRemove}
                 >
                   <X className="size-3.5" aria-hidden="true" />
                 </button>
@@ -858,6 +892,7 @@ function ReviewStep({
   dict,
   service,
   basket,
+  scheduled,
   chosenProviderName,
   quote,
   loading,
@@ -869,6 +904,7 @@ function ReviewStep({
   dict: Dictionary;
   service: CatalogueService;
   basket: Basket;
+  scheduled: ScheduleRequest | { start: string; end: string } | null;
   chosenProviderName: string | null;
   quote: Quote | null;
   loading: boolean;
@@ -877,7 +913,6 @@ function ReviewStep({
   onAgree: (value: boolean) => void;
 }) {
   const autoAssign = isAutoAssign(basket.choice);
-  const scheduled = basket.slot ?? basket.request;
   /* The fault's own words, not its id. Reading it back off the options query is
      what keeps the review honest: an id would be a number the customer cannot
      check, and a locally retyped label would be a second source of truth. */
@@ -903,7 +938,7 @@ function ReviewStep({
         <div className="flex justify-between gap-4 py-3">
           <dt className="text-muted">{dict.booking.slot}</dt>
           <dd className="text-end font-medium text-navy tabular-nums">
-            {describeSchedule(scheduled, locale)}
+            {describeSchedule(scheduled, locale, dict.booking.photosStepNotChosen)}
           </dd>
         </div>
         {issueLabel !== null ? (
@@ -979,6 +1014,8 @@ function ReviewStep({
     </div>
   );
 }
+
+const PAYMENT_URL_STORAGE_KEY = 'booking:paymentUrl';
 
 function BookingConfirmed({
   locale,
@@ -1057,6 +1094,18 @@ function BookingConfirmed({
 
             {booking.payment !== undefined ? (
               <div className="mt-6">
+                {(() => {
+                  /* Store the redirect URL so the booking detail page can offer
+                     a "Pay" button even if the customer navigates away and returns
+                     later. The key is scoped to this booking id. */
+                  const key = `${PAYMENT_URL_STORAGE_KEY}:${booking.id}`;
+                  try {
+                    sessionStorage.setItem(key, booking.payment.redirectUrl);
+                  } catch {
+                    /* Ignore quota/private mode failures. */
+                  }
+                  return null;
+                })()}
                 <a
                   /* Same-origin: the gateway URL is the mock provider's own page
                      behind the same rewrite, so the httpOnly refresh cookie
@@ -1105,8 +1154,8 @@ const isSlotTaken = (error: unknown): boolean =>
  * it. Formatting in the browser's zone would show the wrong day to anybody
  * outside Pakistan — midnight local is 19:00Z the previous day.
  */
-function describeSchedule(scheduled: ScheduleRequest | { start: string; end: string } | null, locale: Locale): string {
-  if (scheduled === null) return locale === "ur" ? "منتخب نہیں" : "Not chosen yet";
+function describeSchedule(scheduled: ScheduleRequest | { start: string; end: string } | null, locale: Locale, notChosen: string): string {
+  if (scheduled === null) return notChosen;
   const tag = locale === "ur" ? "ur-PK" : "en-PK";
   if ("date" in scheduled) return `${formatDay(scheduled.date, locale)}, ${formatSlotTime(scheduled.start, tag)}`;
   return new Intl.DateTimeFormat(tag, { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Karachi" }).format(

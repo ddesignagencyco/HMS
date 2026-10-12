@@ -106,25 +106,30 @@ export function NotificationBell({ locale = "en", dark = false, className }: Not
             : "Notifications"
         }
         className={cn(
-          "relative grid size-10 place-items-center rounded-[9px] transition-colors focus:outline-none focus:ring-2 focus:ring-primary",
-          dark
-            ? "border border-white/10 text-white/85 hover:bg-white/10 hover:text-white"
-            : "border border-line text-navy hover:bg-slate-50"
+          "relative grid size-11 place-items-center rounded-[9px] transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100",
+          dark ? "text-white/85 hover:bg-white/10 hover:text-white" : "text-navy hover:bg-slate-50",
         )}
       >
         <Bell className="size-4" aria-hidden="true" />
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white shadow-xs">
+          <span className="absolute end-0 top-0 flex size-5 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white shadow-xs">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
+        /* No border, matching the language and account panels: it is a floating
+           white surface over a white header, and the outline read as a box drawn
+           on the page rather than a layer above it.
+
+           `end-0` rather than `right-0`, so the panel hugs the bell on the correct
+           side in Urdu. With `right-0` an RTL page anchored the panel to the
+           physical right and pushed it away from the button it belongs to. */
         <div
           role="dialog"
           aria-label="Notification Center"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-80 sm:w-96 rounded-[14px] border border-line bg-white shadow-lifted"
+          className="absolute end-0 top-[calc(100%+0.5rem)] z-50 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-[14px] bg-white shadow-lifted"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
@@ -145,20 +150,22 @@ export function NotificationBell({ locale = "en", dark = false, className }: Not
                   type="button"
                   disabled={markAllReadMutation.isPending}
                   onClick={() => markAllReadMutation.mutate()}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-primary-strong hover:underline disabled:opacity-50"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-[8px] px-2 text-xs font-semibold text-primary-strong transition-colors hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:opacity-50"
                   title="Mark all as read"
                 >
-                  <CheckCheck className="size-3.5" />
+                  <CheckCheck className="size-3.5" aria-hidden="true" />
                   <span>{locale === "ur" ? "سب پڑھا ہوا نشان زد کریں" : "Mark all read"}</span>
                 </button>
               )}
+              {/* 44px minimum on mobile. `p-1` around a 16px icon was a 24px
+                  target. */}
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded p-1 text-muted hover:bg-slate-100 hover:text-navy"
+                className="grid size-11 shrink-0 place-items-center rounded-[9px] text-muted transition-colors hover:bg-slate-100 hover:text-navy focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
                 aria-label="Close notifications"
               >
-                <X className="size-4" />
+                <X className="size-4" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -167,7 +174,7 @@ export function NotificationBell({ locale = "en", dark = false, className }: Not
           <div className="max-h-[380px] overflow-y-auto divide-y divide-line">
             {isLoading ? (
               <div className="flex items-center justify-center p-8 text-xs text-muted">
-                <Loader2 className="mr-2 size-4 animate-spin text-primary" />
+                <Loader2 className="ms-2 size-4 animate-spin text-primary" aria-hidden="true" />
                 {locale === "ur" ? "اطلاعات لوڈ ہو رہی ہیں..." : "Loading notifications..."}
               </div>
             ) : isError ? (
@@ -243,10 +250,14 @@ export function NotificationBell({ locale = "en", dark = false, className }: Not
                         type="button"
                         disabled={markReadMutation.isPending}
                         onClick={() => markReadMutation.mutate(item.id)}
-                        className="shrink-0 rounded p-1 text-muted hover:bg-white hover:text-navy"
+                        /* 44px tap target. Was `p-1` around a 14px tick, which is
+                           about 22px — below the minimum on every device. The
+                           extra size is negative margin so the row does not grow. */
+                        className="-m-2 grid size-11 shrink-0 place-items-center rounded-[9px] text-muted transition-colors hover:bg-white hover:text-navy focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:opacity-50"
+                        aria-label={locale === "ur" ? "پڑھا ہوا نشان لگائیں" : "Mark as read"}
                         title={locale === "ur" ? "پڑھا ہوا نشان لگائیں" : "Mark as read"}
                       >
-                        <Check className="size-3.5 text-primary" />
+                        <Check className="size-3.5 text-primary" aria-hidden="true" />
                       </button>
                     )}
                   </div>

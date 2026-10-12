@@ -24,13 +24,31 @@ import { signInPath } from "@/features/auth/routing";
    here. What the API *does* support is the signed-in customer listing their own
    bookings, so this screen does that and says plainly why sign-in is needed. */
 
+/** The happy path only. `flow` is not the full status enum, so a booking in any
+ *  other state is *off this track* — see `onTrack` below. */
 const flow = ["REQUESTED", "ACCEPTED", "SCHEDULED", "EN_ROUTE", "IN_PROGRESS", "WORK_COMPLETED", "AWAITING_VERIFICATION", "VERIFIED"] as const;
 
 type FlowStatus = (typeof flow)[number];
 
-function moneyState(paymentStatus: string, label: string) {
-  if (paymentStatus === "RELEASED") return { tone: "done" as const, label };
+/**
+ * Where the customer's money actually is.
+ *
+ * The enum is `NONE | PENDING | HELD | RELEASED | PARTIALLY_REFUNDED | REFUNDED
+ * | CASH_DUE | CASH_SETTLED` (`booking-state.ts:11`). This used to treat
+ * everything that was not `RELEASED` or a refund as "Held in escrow until a
+ * passing outcome", so a `CASH_SETTLED` booking — where the customer has already
+ * paid the professional in cash and it is settled — was reported as money the
+ * platform was still holding. `CASH_DUE` and `NONE` were wrong in the same way.
+ * `isHeldPayment` in `features/booking/status.ts` already knows which two mean
+ * "the platform is holding it"; it is used here rather than a second copy.
+ */
+function moneyState(paymentStatus: string, releasedLabel: string) {
+  if (paymentStatus === "RELEASED") return { tone: "done" as const, label: releasedLabel };
   if (paymentStatus === "REFUNDED" || paymentStatus === "PARTIALLY_REFUNDED") return { tone: "warn" as const, label: "Refunded to the original method" };
+  if (paymentStatus === "CASH_DUE") return { tone: "warn" as const, label: "Payable to the professional in cash" };
+  if (paymentStatus === "CASH_SETTLED") return { tone: "done" as const, label: "Settled in cash with the professional" };
+  /* No money has moved and none is owed to us. */
+  if (paymentStatus === "NONE") return { tone: "held" as const, label: "No payment has been taken" };
   return { tone: "held" as const, label: "Held in escrow until a passing outcome" };
 }
 
@@ -136,7 +154,20 @@ export function TrackBooking({ locale, dict }: { locale: Locale; dict: Dictionar
 
 function Result({ locale, dict, booking }: { locale: Locale; dict: Dictionary; booking: Booking }) {
   const reachedIndex = flow.indexOf(booking.status as FlowStatus);
-  const offTrack = booking.status === "CANCELLED_CUSTOMER" || booking.status === "CANCELLED_PROVIDER" || booking.status === "ABANDONED" || booking.status === "UNFULFILLED";
+  /* `onTrack`, not a hand-listed set of four "bad" statuses.
+   *
+   * The old check named CANCELLED_CUSTOMER, CANCELLED_PROVIDER, ABANDONED and
+   * UNFULFILLED and treated everything else as on the happy path. But `flow`
+   * omits eleven real statuses — PENDING_PAYMENT, QUOTE_REVISION,
+   * REWORK_REQUIRED, DISPUTED, NO_SHOW, AUTO_RELEASED, PAYMENT_RELEASED,
+   * PARTIALLY_REFUNDED, REFUNDED, CLOSED and VERIFIED-with-money-released. For
+   * any of those `reachedIndex` was -1 and *no step was marked done*, so a
+   * completed, released and paid job rendered a tracker whose first step,
+   * "Requested", was not ticked. A disputed job did the same.
+   *
+   * `booking-detail-view.tsx` already gets this right with a plain
+   * `indexOf(...) >= 0` guard and a status line for the rest; this now matches. */
+  const onTrack = reachedIndex >= 0;
   const money = moneyState(booking.paymentStatus, "Released to the professional");
 
   return (
@@ -158,13 +189,13 @@ function Result({ locale, dict, booking }: { locale: Locale; dict: Dictionary; b
       </div>
 
       <ol className="mt-7 grid gap-0">
-        {offTrack ? (
+        {onTrack ? null : (
           <li className="flex items-start gap-3 rounded-[9px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             {dict.bookingStatus[booking.status as BookingStatus] ?? booking.status}
           </li>
-        ) : null}
-        {flow.map((status, index) => {
-          const done = reachedIndex >= 0 && index <= reachedIndex;
+        )}
+        {onTrack ? flow.map((status, index) => {
+          const done = index <= reachedIndex;
           return (
             <li key={status} className="relative flex gap-4 pb-6 last:pb-0">
               {index < flow.length - 1 ? <span aria-hidden="true" className={`absolute start-[15px] top-8 h-full w-px ${done ? "bg-primary" : "bg-line"}`} /> : null}
@@ -176,7 +207,7 @@ function Result({ locale, dict, booking }: { locale: Locale; dict: Dictionary; b
               </span>
             </li>
           );
-        })}
+        }) : null}
       </ol>
 
       <div className="mt-6 grid gap-6 sm:grid-cols-2">

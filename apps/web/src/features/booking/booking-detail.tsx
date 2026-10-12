@@ -1,11 +1,11 @@
 'use client';
 
-import { AlertTriangle, CalendarDays, CheckCircle2, Image as ImageIcon, Info, ShieldCheck, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle2, CreditCard, Image as ImageIcon, Info, ShieldCheck, XCircle } from 'lucide-react';
 import { EvidenceImage } from '@/components/evidence-image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDateTime, localizedPath, type Locale } from '@/lib/utils';
-import { Button, ButtonLink, Card, Label, PageHeader, Textarea } from '@/components/ui';
+import { Button, ButtonLink, Card, FileInput, Label, PageHeader, Textarea, buttonStyles } from '@/components/ui';
 import { money } from '@/features/catalogue/pricing';
 import { InlineError, NotFoundState } from '@/features/discovery/states';
 import { bookingTotalPaisa, canCancel, canReschedule, hasPendingRevision, isAwaitingProvider, isHeldPayment, rescheduleBlockReason } from '@/features/booking/status';
@@ -24,6 +24,8 @@ import {
 import { useServiceNames } from '@/features/booking/service-names';
 import type { Booking, BookingDetail } from '@/features/booking/api';
 import { BookingChat } from '@/features/booking/booking-chat';
+import { StartCodeCard } from '@/features/booking/start-code-card';
+import { RevisionCard } from '@/features/booking/revision-card';
 import { isNotFoundError } from '@/lib/api/keys';
 import { useProviderSlots } from '@/features/search/queries';
 import { formatSlotTime } from '@/features/search/location';
@@ -94,6 +96,7 @@ export function BookingDetail({ locale, dict, bookingId }: { locale: Locale; dic
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-6">
           <StageTimeline dict={dict} booking={record} />
+          <StartCodeCard locale={locale} dict={dict} booking={record} />
           {hasPendingRevision(record) ? <RevisionCard locale={locale} dict={dict} booking={record} /> : null}
           <ActionsCard locale={locale} dict={dict} booking={record} />
           <BookingChat locale={locale} dict={dict} booking={record} />
@@ -261,7 +264,36 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
   const rescheduleReason = rescheduleBlockReason(booking);
   const rescheduleAllowed = canReschedule(booking);
   const noShowAllowed = booking.status === 'EN_ROUTE';
-  const nothingToDo = !cancelAllowed && !rescheduleAllowed && !hasPendingRevision(booking) && !noShowAllowed;
+  const payAllowed = booking.status === 'PENDING_PAYMENT' && booking.paymentMode === 'ONLINE';
+  const nothingToDo = !cancelAllowed && !rescheduleAllowed && !hasPendingRevision(booking) && !noShowAllowed && !payAllowed;
+
+  /* Storage key for the payment redirect URL, scoped to this booking id. */
+  const payStorageKey = `booking:paymentUrl:${booking.id}`;
+
+  const getPaymentUrl = (): string | null => {
+    try {
+      return sessionStorage.getItem(`booking:paymentUrl:${booking.id}`);
+    } catch {
+      return null;
+    }
+  };
+  const paymentUrl = payAllowed ? getPaymentUrl() : null;
+  const clearPaymentUrl = () => {
+    try {
+      sessionStorage.removeItem(payStorageKey);
+    } catch {
+      /* Ignore. */
+    }
+  };
+
+  /* Clear the stored payment URL when the booking is no longer
+     PENDING_PAYMENT — the payment has been completed or the booking
+     has moved to another state, so the redirect URL is stale. */
+  useEffect(() => {
+    if (!payAllowed) {
+      clearPaymentUrl();
+    }
+  }, [payAllowed, clearPaymentUrl]);
 
   const errorText = (cancel.isError ? dict.booking.actionFailed : null) ?? (reschedule.isError ? dict.booking.actionFailed : null) ?? (noShow.isError ? dict.booking.actionFailed : null);
 
@@ -273,6 +305,21 @@ function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
         <p className="mt-3 text-sm leading-6 text-secondary">{dict.booking.noActionsAvailable}</p>
       ) : (
         <div className="mt-4 grid gap-4">
+          {/* Pay button for PENDING_PAYMENT bookings — shown first since it's the
+              primary action to complete the booking. */}
+          {payAllowed && paymentUrl ? (
+            <a
+              href={paymentUrl}
+              className={cn(
+                buttonStyles({ className: "w-full" }),
+                "flex items-center justify-center gap-2",
+              )}
+            >
+              <CreditCard className="size-4" aria-hidden="true" />
+              {dict.booking.payNow}
+            </a>
+          ) : null}
+
           {cancelAllowed ? (
             <div className="rounded-[10px] border border-line p-4">
               <p className="text-sm font-semibold text-navy">{dict.booking.cancelTitle}</p>
@@ -453,34 +500,6 @@ function ReschedulePanel({ locale, dict, booking, reschedule }: { locale: Locale
   );
 }
 
-function RevisionCard({ locale, dict, booking }: { locale: Locale; dict: Dictionary; booking: Booking }) {
-  const approve = useApproveRevision(locale);
-  const reject = useRejectRevision(locale);
-  const failed = approve.isError || reject.isError;
-
-  return (
-    <Card className="border-amber-300 bg-amber-50 p-5">
-      <h2 className="flex items-center gap-2 font-semibold text-navy">
-        <Info className="size-4 text-amber-600" aria-hidden="true" />
-        {dict.booking.revisionTitle}
-      </h2>
-      <p className="mt-2 text-sm leading-6 text-amber-900">{dict.booking.revisionText}</p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button type="button" size="sm" disabled={approve.isPending || reject.isPending} onClick={() => void approve.mutateAsync(booking.id).catch(reportFailure)}>
-          {dict.booking.revisionApprove}
-        </Button>
-        <Button type="button" variant="secondary" size="sm" disabled={approve.isPending || reject.isPending} onClick={() => void reject.mutateAsync(booking.id).catch(reportFailure)}>
-          {dict.booking.revisionReject}
-        </Button>
-      </div>
-      {failed ? (
-        <p role="alert" className="mt-3 text-sm text-rose-700">
-          {dict.booking.actionFailed}
-        </p>
-      ) : null}
-    </Card>
-  );
-}
 
 /**
  * FR-EX-07, seen from the customer side: a paid job can be reopened as rework
@@ -653,15 +672,15 @@ export function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: 
       ) : (
         <>
           <div className="mt-3 grid gap-2">
-            <Label htmlFor="problem-photos">{dict.booking.photosChoose}</Label>
-        <input
+        <FileInput
           id="problem-photos"
-          type="file"
+          label={dict.booking.photosChoose}
           accept="image/jpeg,image/png,image/webp"
           multiple
-          className="text-sm text-secondary"
-          onChange={(event) => {
-            const chosen = Array.from(event.target.files ?? []).slice(0, MAX_PROBLEM_PHOTOS);
+          chooseLabel={dict.common.chooseFile}
+          selectedLabel={dict.common.chosenFile}
+          onPick={(picked) => {
+            const chosen = picked.slice(0, MAX_PROBLEM_PHOTOS);
             /* Mint the intent key here, at selection time, so every later attempt
                at the same file reuses it. */
             setIntent((previous) => {

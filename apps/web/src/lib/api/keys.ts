@@ -130,7 +130,11 @@ export const adminKeys = {
   /* A finance route, read by an admin. Keyed under `admin` because that is the
      surface it is displayed on and so that an admin-wide invalidation refreshes
      it alongside the rest of the admin numbers. */
-  escrow: () => ['admin', 'escrow'] as const
+  escrow: () => ['admin', 'escrow'] as const,
+  /* `GET /admin/plans`. Keyed under `admin` for the same reason, and kept as
+     its own key rather than folded into `all` so a plan write invalidates the
+     list an operator is editing without discarding every other admin read. */
+  plans: ['admin', 'plans'] as const
 } as const;
 
 export const bookingKeys = {

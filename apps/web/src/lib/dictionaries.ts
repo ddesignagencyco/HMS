@@ -12,12 +12,26 @@ const en = {
     myAccount: 'My account',
     bookService: 'Book a Service',
     menu: 'Open navigation menu',
+    /* The mobile drawer's dialog. It used to be `nav.menu`, the same string as
+       the `<nav>` inside it and the toggle button — a dialog and a navigation
+       landmark in one subtree with one name. */
+    mobileMenu: 'Navigation menu',
     close: 'Close menu',
     home: 'Home',
     search: 'Search',
+    /* The navbar item pointed at `/providers` but read "Search", which names an
+       action rather than the page it opens. The page is a browsable directory of
+       professionals, and it now has an "All categories" view. */
+    providersShort: 'Professionals',
     bookings: 'Bookings',
     plansShort: 'Plans',
     servicesShort: 'Services',
+    /* Two more destinations that existed as routes but had no navbar entry, so a
+       visitor had to find them by guessing the URL or via a footer. Every one of
+       these is a real page: `app/[locale]/(public)/how-verification-works` and
+       `.../track` both exist. */
+    verificationShort: 'Verification',
+    trackShort: 'Track',
     /* The brand wordmark lives in the logo tile, not beside it. Kept as a
        dictionary key because the mark is decorative and the header still needs a
        real accessible name and a `title` for it. */
@@ -41,7 +55,7 @@ const en = {
     rating: 'Rating',
     verified: 'Verified',
     fixed: 'fixed range',
-    emergency: 'Same-day eligible',
+    emergency: 'Emergency eligible',
     warranty: '{days}-day warranty',
     servicesCount: '{count} services',
     empty: 'There is no information in this view.',
@@ -62,6 +76,12 @@ const en = {
     yes: 'Yes',
     no: 'No',
     edit: 'Edit',
+    /* The file picker's button and its "chosen" prefix. The native control says
+       "Choose File" in a system font with no locale of its own; this is the
+       button text and the word in front of the chosen filename. */
+    chooseFile: 'Choose file',
+    chosenFile: 'Chosen:',
+    filesChosen: 'files chosen',
     durationLabel: 'Duration',
     total: 'Total',
     /* Shared list furniture. Every register, catalogue and explorer in the
@@ -192,7 +212,7 @@ const en = {
     sortDurationLong: 'Duration: longest first',
     sortWarrantyLong: 'Warranty: longest first',
     sortNameAZ: 'Name: A to Z',
-    emergencyOnly: 'Same-day eligible only',
+    emergencyOnly: 'Emergency eligible only',
     planOnly: 'Maintenance plan eligible',
     noVisitFee: 'No visit fee',
     priceRange: 'Price range',
@@ -611,13 +631,33 @@ const en = {
     reviewTitle: 'Review before you confirm',
     reviewText: 'Confirm the service, visit, professional, estimate and cancellation terms.',
     paymentTitle: 'Choose how to pay',
-    paymentText: 'Your card is charged only when the professional accepts the visit. Nothing is captured before then.',
+    /* These three strings were rewritten because the old ones were wrong, not
+       merely unclear.
+
+       `paymentText` claimed "Your card is charged only when the professional
+       accepts the visit. Nothing is captured before then." `POST /bookings`
+       does the opposite: for `ONLINE` it inserts the booking as
+       `PENDING_PAYMENT` with `payment_status = 'PENDING'` and returns a
+       `redirectUrl` (`booking.service.ts:141`, and its own controller
+       description). The booking only becomes `REQUESTED` — the state a
+       professional can accept — once the gateway's signed webhook captures.
+       So the card is charged *before* anyone accepts, and payment is the
+       precondition for the booking existing at all. Stated the other way round
+       in the one place a customer decides how to pay.
+
+       `cashText`/`onlineText` both mentioned "after verification", so the two
+       options read as the same choice. The real difference is *when money
+       moves*, and that is what these now say. */
+    paymentText: 'Your money is protected either way. What differs is when you pay.',
     paymentMode: 'Payment method',
     slot: 'Time slot',
     cash: 'Cash after verification',
-    cashText: 'The professional is authorised to collect only after verification.',
+    cashText: 'You pay nothing now. The booking goes live straight away, and you pay the professional in cash once the job has passed verification.',
     online: 'Online payment',
-    onlineText: 'Payment is held securely and released only after a passing outcome.',
+    onlineText: 'You pay by card now. The amount is held safely and only passed to the professional after the job has passed verification.',
+    /* The consequence of the choice just made, shown once something is picked. */
+    onlineNext: 'Next: you will be taken to a secure payment page. The booking is only confirmed once that payment succeeds.',
+    cashNext: 'Next: your booking is confirmed straight away and a professional is matched to it. You pay them in cash at the visit.',
     estimate: 'Estimated service total',
     visitFee: 'Inspection / visit fee',
     total: 'Total',
@@ -646,8 +686,8 @@ const en = {
     requiredPayment: 'Choose a payment method.',
     requiredAgreement: 'Accept the estimate and the cancellation terms to continue.',
     costBreakdown: 'Cost breakdown',
-    emergencySurcharge: 'Same-day surcharge (25%)',
-    emergencySurchargeNote: 'Book this for today. A 25% surcharge is added to the estimate.',
+    emergencySurcharge: 'Emergency surcharge (25%)',
+    emergencySurchargeNote: 'Book this for urgent emergency. A 25% surcharge is added to the estimate.',
     outstandingFees: 'Outstanding from a previous cancellation',
     cancellationPolicy: 'Free cancellation up to 4 hours before the slot. Inside 4 hours a Rs 500 fee applies, taken from escrow for online payments and billed to your account for cash.',
     agreeTerms: 'I have read the itemised price, any outstanding amount and the cancellation terms.',
@@ -792,6 +832,16 @@ const en = {
     photosText: 'Up to five photos help the professional diagnose correctly. They can be added until the visit begins.',
     photosChoose: 'Choose photos',
     photosCount: 'Up to five, JPEG, PNG or WebP.',
+    /* The step-three photo block. These four strings were inline
+       `locale === "ur" ? "…" : "…"` ternaries in booking-flow.tsx, which is the
+       one place all copy is required to come from here instead. */
+    photosStepTitle: 'Photos of the problem (optional)',
+    photosStepHint: 'Attach up to 5 photos (JPEG, PNG, WebP up to 5MB). They will be uploaded with your booking.',
+    photosStepAttach: 'Attach Photos',
+    photosStepRemove: 'Remove photo',
+    photosStepTooMany: 'You can attach up to 5 photos in total.',
+    photosStepTooLarge: '{name} exceeds the 5 MB limit.',
+    photosStepNotChosen: 'Not chosen yet',
     photosUpload: 'Upload photos',
     photoFailed: 'A photo could not be uploaded. Nothing else was affected.',
     photosClosed: 'These are the photos already sent with this booking. No more can be added now that the visit has begun.',
@@ -806,7 +856,21 @@ const en = {
     chatInputLabel: 'Write a message',
     chatPlaceholder: 'Ask about access, timing or anything else…',
     chatSend: 'Send',
-    chatSendFailed: 'That message was not sent. It is still in the box.'
+    chatSendFailed: 'That message was not sent. It is still in the box.',
+    startCodeTitle: 'Start code',
+    startCodeDescription: 'Give this code to your provider when they arrive.',
+    startCodeShowButton: 'Show code',
+    startCodeRefreshButton: 'Get new code',
+    startCodeResendSmsButton: 'Send me an SMS',
+    startCodeExpiresIn: 'Valid for {minutes} min',
+    startCodeCountdown: 'Expires in {time}',
+    startCodeExpired: 'This code has expired. Tap to get a new code.',
+    startCodeInvalidationWarning: 'Getting a new code immediately invalidates any code previously issued.',
+    startCodeStarted: 'This job has already been started.',
+    startCodeFailed: 'Could not generate start code. Please try again.',
+    startCodeCopy: 'Copy code',
+    startCodeCopied: 'Copied!',
+    startCodeSmsSent: 'A new code has been generated and texted to your phone.'
   },
   auth: {
     signInTitle: 'Welcome back',
@@ -980,14 +1044,19 @@ const en = {
     title: 'Every service we book',
     intro: 'Browse the categories we operate in, then open one to see the services and what each one costs.',
     categoriesHeading: 'Categories',
+    /* The first option of the category filter, and the default selection on both
+       `/services` and `/providers`. It means "no category chosen", so the list
+       below shows everything — it is a real value in the control, not a
+       placeholder. */
+    allCategories: 'All categories',
     servicesHeading: 'Services',
     servicesInCategory: 'in {category}',
     warranty: '{days}-day warranty',
     noWarranty: 'No warranty recorded',
     duration: 'Typical time on site',
     visitFee: 'Visit fee',
-    emergencyEligible: 'Same-day eligible',
-    emergencyNote: 'Can be booked for the same day.',
+    emergencyEligible: 'Emergency eligible',
+    emergencyNote: 'Available for urgent emergency booking.',
     planEligible: 'Included in maintenance plans',
     planNote: 'Can be paid for from a maintenance plan.',
     highRisk: 'High-risk work — assessed on site',
@@ -1259,6 +1328,7 @@ const en = {
     plansLoadError: 'We could not load your plans. Please try again.',
     plansCatalogueError: 'We could not load the available plans. Please try again.',
     plansLoading: 'Loading plans…',
+    financeLoading: 'Loading figures…',
     plansSubscribed: 'Checkout started',
     plansSubscribedText: 'Your plan is not active until the payment completes. Finish at checkout.',
     todayJobs: 'Today',
@@ -1749,6 +1819,12 @@ const en = {
     contactSupport: 'Contact support'
   },
   finance: {
+    /* Stated once for every finance screen. A failed ledger read has to say so:
+       these screens previously filled the space with invented rows, which is
+       the one thing a money screen must never do. */
+    loadError: 'We could not load these figures. Nothing is shown, because a guessed total is worse than no total.',
+    nothingToShow: 'Nothing to show',
+    notVerifiableHere: 'Checked by the ledger',
     releases: 'Escrow releases',
     releasesText: 'Held customer money and the release that moves it to the professional. Nothing releases without a passing verification outcome.',
     commissionEarned: 'Commission earned',
@@ -2185,6 +2261,7 @@ const en = {
     plansEmpty: 'No plans exist yet. Publish one and it appears on the public catalogue straight away.',
     plansLoadError: 'We could not load the plans. Please try again.',
     plansLoading: 'Loading plans…',
+    financeLoading: 'Loading figures…',
     plansSaved: 'Plan saved',
     plansCreated: 'Plan published',
     plansDeactivated: 'Plan deactivated',
@@ -2530,12 +2607,18 @@ const ur: typeof en = {
     myAccount: 'میرا اکاؤنٹ',
     bookService: 'بکنگ کریں',
     menu: 'نیویگیشن کھولیں',
+    mobileMenu: 'نیویگیشن مینو',
     close: 'مینو بند کریں',
     home: 'ہوم',
     search: 'تلاش',
+    /* needs review */
+    providersShort: 'پیشہ کار',
     bookings: 'بکنگز',
     plansShort: 'پلان',
     servicesShort: 'خدمات',
+    /* needs review */
+    verificationShort: 'تصدیق',
+    trackShort: 'ٹریک',
     brandLabel: 'سمارٹ ہوم مینٹیننس',
     support: 'مدد',
     phoneLabel: 'کال کریں',
@@ -2550,7 +2633,7 @@ const ur: typeof en = {
     rating: 'درجہ بندی',
     verified: 'تصدیق شدہ',
     fixed: 'مقررہ حد',
-    emergency: 'اُسی دن کے لیے مستحق',
+    emergency: 'ایمرجنسی سروس',
     warranty: '{days} دن ضمانت',
     servicesCount: '{count} خدمات',
     empty: 'اس ویو میں معلومات موجود نہیں۔',
@@ -2571,6 +2654,9 @@ const ur: typeof en = {
     yes: 'ہاں',
     no: 'نہیں',
     edit: 'بدلیں',
+    chooseFile: 'فائل منتخب کریں',
+    chosenFile: 'منتخب:',
+    filesChosen: 'فائلیں منتخب',
     durationLabel: 'دورانیہ',
     total: 'کل',
     filters: 'فلٹرز',
@@ -2695,7 +2781,7 @@ const ur: typeof en = {
     sortPriceLowHigh: 'قیمت: کم سے زیادہ',
     sortPriceHighLow: 'قیمت: زیادہ سے کم',
     sortDurationShort: 'دورانیہ: پہلے کم',
-    emergencyOnly: 'صرف اُسی دن کے لیے',
+    emergencyOnly: 'صرف ایمرجنسی خدمات',
     planOnly: 'مینٹیننس پلان میں دستیاب',
     sortDurationLong: 'دورانیہ: پہلے زیادہ',
     sortWarrantyLong: 'ضمانت: پہلے زیادہ',
@@ -3095,13 +3181,21 @@ const ur: typeof en = {
     reviewTitle: 'تصدیق سے پہلے جائزہ لیں',
     reviewText: 'خدمت، ویزٹ، پیشہ کار اور تخمینہ تصدیق کریں۔',
     paymentTitle: 'ادائیگی کا طریقہ منتخب کریں',
-    paymentText: 'پیشہ کار کی منظوری کے بعد ہی کارڈ سے رقم کٹی جاتی ہے۔',
+    /* needs review — machine translation of a corrected claim. The old Urdu said
+       the card is charged only after the professional accepts, which the English
+       above also wrongly said and which `POST /bookings` contradicts. */
+    paymentText: 'آپ کی رقم دونوں صورتوں میں محفوظ ہے۔ فرق یہ ہے کہ ادائیگی کب کرنی ہوتی ہے۔',
     paymentMode: 'ادائیگی کا طریقہ',
     slot: 'وقت کا وقفہ',
     cash: 'تصدیق کے بعد نقد',
-    cashText: 'پیشہ کار صرف تصدیق کے بعد رقم لے سکتا ہے۔',
+    /* needs review */
+    cashText: 'ابھی آپ کچھ ادا نہیں کرتے۔ بکنگ فوراً فعال ہو جاتی ہے، اور کام کی کامیاب تصدیق کے بعد آپ پیشہ کار کو نقد ادائیگی کرتے ہیں۔',
     online: 'آن لائن ادائیگی',
-    onlineText: 'رقم محفوظ رہتی ہے اور کامیاب تصدیق کے بعد جاری ہوتی ہے۔',
+    /* needs review */
+    onlineText: 'آپ ابھی کارڈ سے ادائیگی کرتے ہیں۔ رقم محفوظ رہتی ہے اور کام کی کامیاب تصدیق کے بعد ہی پیشہ کار کو دی جاتی ہے۔',
+    /* needs review */
+    onlineNext: 'اگلا مرحلہ: آپ کو محفوظ ادائیگی کے صفحے پر لے جایا جائے گا۔ ادائیگی کی کامیابی کے بعد ہی بکنگ کی تصدیق ہوگی۔',
+    cashNext: 'اگلا مرحلہ: آپ کی بکنگ فوراً تصدیق ہو جائے گی اور اس کے لیے پیشہ کار تلاش کیا جائے گا۔ آپ وزٹ کے وقت پیشہ کار کو نقد ادائیگی کریں گے۔',
     estimate: 'تخمینی خدمت کی رقم',
     visitFee: 'معائنہ / ویزٹ فیس',
     total: 'کل',
@@ -3127,8 +3221,8 @@ const ur: typeof en = {
     requiredPayment: 'ادائیگی کا طریقہ منتخب کریں۔',
     requiredAgreement: 'آگے بڑھنے کے لیے تخمینہ اور منسوخی شرائط قبول کریں۔',
     costBreakdown: 'لاگت کی تفصیل',
-    emergencySurcharge: 'اُسی دن کا اضافی 25%',
-    emergencySurchargeNote: 'آج کے لیے بکنگ۔ تخمینے میں 25% اضافی شامل ہوگا۔',
+    emergencySurcharge: 'ایمرجنسی اضافی 25%',
+    emergencySurchargeNote: 'فوری ایمرجنسی بکنگ۔ تخمینے میں 25% اضافی شامل ہوگا۔',
     outstandingFees: 'پچھلی منسوخی سے باقی رقم',
     cancellationPolicy: 'اسلاٹ سے 4 گھنٹے پہلے تک مفت منسوخی۔ 4 گھنٹے کے اندر Rs 500 فیس لاگو ہوگی، آن لائن میں ایسکرو سے اور نقد میں آپ کے اکاؤنٹ سے۔',
     agreeTerms: 'میں تفصیلی قیمت، باقی رقم اور منسوخی شرائط پڑھ لی ہیں۔',
@@ -3270,6 +3364,13 @@ const ur: typeof en = {
     photosText: 'پانچ تصاویر تک پیشہ کار کی تشخیص میں مدد کرتی ہیں۔ وزٹ شروع ہونے تک شامل کی جا سکتی ہیں۔',
     photosChoose: 'تصاویر منتخب کریں',
     photosCount: 'پانچ تک، JPEG، PNG یا WebP۔',
+    photosStepTitle: 'مسئلے کی تصاویر (اختیاری)',
+    photosStepHint: '5 تک تصاویر منتخب کریں۔ یہ بکنگ مکمل ہونے پر خودکار منسلک ہو جائیں گی۔',
+    photosStepAttach: 'تصویر شامل کریں',
+    photosStepRemove: 'تصویر ہٹائیں',
+    photosStepTooMany: 'زیادہ سے زیادہ 5 تصاویر منتخب کی جا سکتی ہیں۔',
+    photosStepTooLarge: '{name} 5 MB کی حد سے زیادہ ہے۔',
+    photosStepNotChosen: 'منتخب نہیں',
     photosUpload: 'تصاویر اپ لوڈ کریں',
     photosClosed: 'یہ وہ تصاویر ہیں جو اس بکنگ کے ساتھ بھیجی جا چکی ہیں۔ وزٹ شروع ہونے کے بعد مزید تصاویر نہیں بھیجی جا سکتیں۔',
     photoFailed: 'تصویر اپ لوڈ نہیں ہو سکی۔ اس سے کوئی اثر نہیں پڑا۔',
@@ -3284,7 +3385,21 @@ const ur: typeof en = {
     chatInputLabel: 'پیغام لکھیں',
     chatPlaceholder: 'رسائی، وقت یا کسی اور بات کے بارے میں پوچھیں…',
     chatSend: 'بھیجیں',
-    chatSendFailed: 'یہ پیغام نہیں بھیجا جا سکا۔ یہ ابھی بھی باکس میں موجود ہے۔'
+    chatSendFailed: 'یہ پیغام نہیں بھیجا جا سکا۔ یہ ابھی بھی باکس میں موجود ہے۔',
+    startCodeTitle: 'اسٹارٹ کوڈ',
+    startCodeDescription: 'جب پیشہ ور آپ کے ہاں پہنچے تو یہ کوڈ بتائیں۔',
+    startCodeShowButton: 'کوڈ دیکھیں',
+    startCodeRefreshButton: 'نیا کوڈ حاصل کریں',
+    startCodeResendSmsButton: 'مجھے ایس ایم ایس بھیجیں',
+    startCodeExpiresIn: '{minutes} منٹ کے لیے کارآمد',
+    startCodeCountdown: 'ختم ہونے میں وقت: {time}',
+    startCodeExpired: 'اس کوڈ کی مدت ختم ہو چکی ہے۔ نیا کوڈ لینے کے لیے ٹیپ کریں۔',
+    startCodeInvalidationWarning: 'نیا کوڈ حاصل کرنے سے پہلے والا کوڈ فوری طور پر منسوخ ہو جائے گا۔',
+    startCodeStarted: 'یہ کام پہلے ہی شروع ہو چکا ہے۔',
+    startCodeFailed: 'اسٹارٹ کوڈ حاصل نہیں ہو سکا۔ دوبارہ کوشش کریں۔',
+    startCodeCopy: 'کوڈ کاپی کریں',
+    startCodeCopied: 'کاپی ہو گیا!',
+    startCodeSmsSent: 'نیا کوڈ تیار کر کے آپ کے فون پر بذریعہ ایس ایم ایس بھیج دیا گیا ہے۔'
   },
   auth: {
     signInTitle: 'خوش آمدید',
@@ -3457,14 +3572,16 @@ const ur: typeof en = {
     title: 'ہر وہ خدمت جس کی ہم بکنگ کرتے ہیں',
     intro: 'ہمارے زمرے دیکھیں، پھر کوئی زمرہ کھول کر اس کی خدمتیں اور ان کی قیمتیں دیکھیں۔',
     categoriesHeading: 'زمرے',
+    /* needs review */
+    allCategories: 'تمام زمرے',
     servicesHeading: 'خدمات',
     servicesInCategory: '{category} میں',
     warranty: '{days} دن کی ضمانت',
     noWarranty: 'کوئی ضمانت درج نہیں',
     duration: 'عموماً کام کا وقت',
     visitFee: 'ویزٹ فیس',
-    emergencyEligible: 'اُنی فی قسم',
-    emergencyNote: 'اسی دن کی بکنگ کی جا سکتی ہے۔',
+    emergencyEligible: 'ایمرجنسی سروس',
+    emergencyNote: 'فوری ایمرجنسی بکنگ کے لیے دستیاب۔',
     planEligible: 'مینٹیننس پلان میں شامل',
     planNote: 'مینٹیننس پلان سے ادائیگی کی جا سکتی ہے۔',
     highRisk: 'زیادہ خطرے والا کام — جگہ پر جائزہ ہوتا ہے',
@@ -3728,6 +3845,7 @@ const ur: typeof en = {
     plansLoadError: 'آپ کے پلان لوڈ نہیں ہو سکے۔ دوبارہ کوشش کریں۔',
     plansCatalogueError: 'دستیاب پلان لوڈ نہیں ہو سکے۔ دوبارہ کوشش کریں۔',
     plansLoading: 'پلان لوڈ ہو رہے ہیں…',
+    financeLoading: 'اعداد و شمار لوڈ ہو رہے ہیں…',
     plansSubscribed: 'چیک آؤٹ شروع ہو گئی',
     plansSubscribedText: 'ادائیگی مکمل ہونے تک آپ کا پلان فعال نہیں ہوگا۔ چیک آؤٹ مکمل کریں۔',
     todayJobs: 'آج',
@@ -4200,6 +4318,9 @@ const ur: typeof en = {
     contactSupport: 'سپورٹ سے رابطہ'
   },
   finance: {
+    loadError: 'یہ اعداد و شمار لوڈ نہیں ہو سکے۔ کچھ نہیں دکھایا جا رہا، کیونکہ اندازاً کل سے خالی کل بہتر ہے۔',
+    nothingToShow: 'دکھانے کے لیے کچھ نہیں',
+    notVerifiableHere: 'لیجر خود جانچتا ہے',
     releases: 'ایسکرو جاری کرنا',
     releasesText: 'روکی ہوئی صارف رقم اور وہ جاری کرنے جو پیشہ کار تک پہنچتی ہے۔ کامیاب تصدیق کے بغیر کچھ جاری نہیں ہوتا۔',
     commissionEarned: 'حاصل کمیشن',
@@ -4635,6 +4756,7 @@ const ur: typeof en = {
     plansEmpty: 'ابھی کوئی پلان موجود نہیں۔ ایک شائع کریں، یہ فوراً عوامی کیٹلاگ میں آ جائے گا۔',
     plansLoadError: 'پلان لوڈ نہیں ہو سکے۔ دوبارہ کوشش کریں۔',
     plansLoading: 'پلان لوڈ ہو رہے ہیں…',
+    financeLoading: 'اعداد و شمار لوڈ ہو رہے ہیں…',
     plansSaved: 'پلان محفوظ ہو گیا',
     plansCreated: 'پلان شائع ہو گیا',
     plansDeactivated: 'پلان غیر فعال ہو گیا',

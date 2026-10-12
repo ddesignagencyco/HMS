@@ -6,6 +6,7 @@ export { Section, SectionHeader, Eyebrow } from "./section";
 export { PageBanner } from "./page-banner";
 export { Container, Rating, VerifiedMark, CategoryIcon, EmptyState, StatCard } from "./primitives";
 export { Input } from "./input";
+export { FileInput } from "./file-input";
 export { Textarea } from "./textarea";
 export { Label } from "./label";
 export { Checkbox } from "./checkbox";

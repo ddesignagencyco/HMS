@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Noto_Nastaliq_Urdu } from "next/font/google";
 import { notFound } from "next/navigation";
 import "../globals.css";
+import "leaflet/dist/leaflet.css";
 import { getDictionary } from "@/lib/dictionaries";
 import { SITE_URL } from "@/lib/seo";
 import { isLocale, locales } from "@/lib/utils";

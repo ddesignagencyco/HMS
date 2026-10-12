@@ -45,13 +45,21 @@ export function ReputationSection({
         {dict.profile.reputationHeading}
       </h2>
 
-      {value === undefined ? (
+      {/* The error branch has to come *before* the skeleton.
+       *
+       * These were in the other order, so a failed
+       * `GET /search/providers/:id/reputation` with no `reputation` prop left
+       * `value === undefined`, matched the skeleton arm, and the error was never
+       * rendered — the skeleton spun forever. The error arm required
+       * `value !== undefined`, so on a cold load it was unreachable. A failure
+       * is now checked first, and the skeleton means "still asking". */}
+      {query.isError && !query.isPending ? (
+        <InlineError className="mt-4" title={dict.search.loadError} actionLabel={dict.catalogue.retry} onRetry={() => void query.refetch()} />
+      ) : value === undefined ? (
         <div className="mt-4 grid gap-3">
           <LoadingSkeleton className="h-6 w-40" />
           <LoadingSkeleton className="h-3 w-full" />
         </div>
-      ) : query.isError && !query.isPending ? (
-        <InlineError className="mt-4" title={dict.search.loadError} actionLabel={dict.catalogue.retry} onRetry={() => void query.refetch()} />
       ) : ratingOf(value.score).rated === false ? (
         <p className="mt-3 text-sm text-secondary">{dict.profile.noRatingsYet}</p>
       ) : (

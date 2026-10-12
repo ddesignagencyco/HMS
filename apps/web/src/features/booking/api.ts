@@ -235,6 +235,11 @@ export type CreateBookingInput = {
 
 export type RescheduleInput = { scheduledStart: string; scheduledEnd: string };
 
+export type StartCodeResponse = {
+  code: string;
+  expiresInSeconds: number;
+};
+
 /**
  * One step of the service's checklist, for this booking's visit.
  *
@@ -474,6 +479,22 @@ export const bookingApi = {
     call<{ contact: { name: string; phone: string; revealed: boolean } | null }>(
       `/bookings/${encodeURIComponent(bookingId)}/on-behalf-contact`,
       {},
+      options,
+    ),
+
+  /**
+   * Generates and returns a fresh 6-digit start code for this booking so the
+   * customer can read it out to the provider at the door.
+   *
+   * Customer only. Calling it issues a NEW code and invalidates any previous one,
+   * and re-sends the SMS as it always did.
+   * Send no body. 404 if the booking is not yours or does not exist, 409 CONFLICT
+   * once the job has been started.
+   */
+  startCode: (bookingId: string, options?: BookingOptions) =>
+    call<StartCodeResponse>(
+      `/bookings/${encodeURIComponent(bookingId)}/start-code`,
+      { method: "POST" },
       options,
     ),
 

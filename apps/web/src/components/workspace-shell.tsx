@@ -325,7 +325,11 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
             <div
               role="dialog"
               aria-modal="true"
-              aria-label={dict.portal[role]}
+              /* Not `dict.portal[role]`. The desktop rail and the `<nav>` below
+                 both use that string, so the drawer dialog was a third element
+                 answering to the same name as the navigation landmark inside
+                 it. */
+              aria-label={dict.nav.mobileMenu}
               className="absolute inset-y-0 start-0 flex w-[85%] max-w-[320px] flex-col bg-navy-950 text-white shadow-lifted"
             >
               <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4">

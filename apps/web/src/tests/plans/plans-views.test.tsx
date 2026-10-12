@@ -105,7 +105,11 @@ const subscription = (over: Record<string, unknown> = {}) => ({
   addressLabel: 'Home',
   addressLine1: '12 Street 7, Gulberg',
   preferredProviderId: null,
-  totalVisits: 3,
+  /* `visitCount`, matching what `GET /me/subscriptions` actually sends. This
+     fixture used to say `totalVisits`, which the server never returns — so the
+     suite passed while the customer's own screen rendered "NaN". A fixture that
+     invents a field name is worse than no fixture: it agrees with the bug. */
+  visitCount: 3,
   pendingVisits: 2,
   bookedVisits: 0,
   consumedVisits: 1,
@@ -175,7 +179,7 @@ describe('plan helpers', () => {
   it('counts remaining visits as pending + booked, excluding consumed and refunded', () => {
     expect(subscriptionRemainingVisits(subscription() as never)).toBe(2);
     /* A refunded visit is gone money, so it is not "remaining". */
-    expect(subscriptionRemainingVisits(subscription({ pendingVisits: 1, bookedVisits: 1, consumedVisits: 1, refundedVisits: 1, totalVisits: 4 }) as never)).toBe(2);
+    expect(subscriptionRemainingVisits(subscription({ pendingVisits: 1, bookedVisits: 1, consumedVisits: 1, refundedVisits: 1, visitCount: 4 }) as never)).toBe(2);
   });
 });
 
@@ -234,7 +238,7 @@ describe('the customer plan screen', () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/plans')) return json({ items: [plan()] });
-      if (url.includes('/me/subscriptions')) return json({ items: [subscription({ pendingVisits: 1, bookedVisits: 1, consumedVisits: 1, refundedVisits: 1, totalVisits: 4 })] });
+      if (url.includes('/me/subscriptions')) return json({ items: [subscription({ pendingVisits: 1, bookedVisits: 1, consumedVisits: 1, refundedVisits: 1, visitCount: 4 })] });
       if (url.includes('/customer/addresses')) return json({ items: [address()] });
       return json({ items: [] });
     });
@@ -245,6 +249,30 @@ describe('the customer plan screen', () => {
       expect(screen.getByText(label)).toBeTruthy();
     }
     expect(screen.getByText('4')).toBeTruthy();
+  });
+
+  it('renders the server\'s visitCount, not NaN', async () => {
+    /* `GET /me/subscriptions` names the total `visitCount`. An earlier version of
+     * the type called it `totalVisits`, a field the server never sends, and
+     * `formatNumber(undefined)` renders the literal string "NaN" — on the
+     * customer's own plan, in the total-visits line and the remaining-visits
+     * line. Nothing caught it: the type was an assertion the runtime never
+     * checked, and the fixture used here agreed with the bug rather than the
+     * server. This asserts the absence of NaN, which is what a customer would
+     * actually have seen. */
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/plans')) return json({ items: [plan()] });
+      if (url.includes('/me/subscriptions')) return json({ items: [subscription({ visitCount: 7 })] });
+      if (url.includes('/customer/addresses')) return json({ items: [address()] });
+      return json({ items: [] });
+    });
+    render(<CustomerPlansScreen locale={locale} dict={dict} />, { wrapper: wrap });
+
+    await screen.findByText(dict.portal.plansActiveTitle);
+    expect(screen.queryByText(/NaN/)).toBeNull();
+    /* The figure the server sent has to be the figure on screen. */
+    expect(screen.getAllByText('7').length).toBeGreaterThan(0);
   });
 
   it('refuses to subscribe without an address, because the schema requires one the caller owns', async () => {
@@ -303,7 +331,7 @@ describe('the customer plan screen', () => {
       const url = String(input);
       if (url.includes('/cancel')) {
         expect(init?.method).toBe('POST');
-        return json({ id: SUB_UUID, status: 'CANCELLED', refundedVisitsCount: 2, refundPaisa: 245000 });
+        return json({ subscriptionId: SUB_UUID, status: 'CANCELLED', refundedVisitsCount: 2, refundPaisa: 245000 });
       }
       if (url.includes('/plans')) return json({ items: [plan()] });
       if (url.includes('/me/subscriptions')) return json({ items: [subscription()] });

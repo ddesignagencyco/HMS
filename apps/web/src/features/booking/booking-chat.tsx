@@ -29,7 +29,15 @@ import type { Booking } from "@/features/booking/api";
 
 const POLL_MS = 15_000;
 
-export function BookingChat({ locale, dict, booking }: { locale: Locale; dict: Dictionary; booking: Booking }) {
+export function BookingChat({
+  locale,
+  dict,
+  booking,
+}: {
+  locale: Locale;
+  dict: Dictionary;
+  booking: Booking;
+}) {
   const enabled = canMessage(booking.status);
   const thread = useBookingMessages(booking.id, locale, enabled);
   const send = useSendMessage(locale);
@@ -95,6 +103,7 @@ export function BookingChat({ locale, dict, booking }: { locale: Locale; dict: D
         </h2>
         <p className="text-xs text-muted">{dict.booking.chatMaskedNote}</p>
       </div>
+
 
       <div className="mt-4 max-h-80 space-y-3 overflow-y-auto rounded-[10px] bg-surface-2 p-3">
         {thread.isPending ? (

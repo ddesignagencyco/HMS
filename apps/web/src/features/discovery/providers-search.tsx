@@ -8,10 +8,10 @@ import { cn, formatNumber, localizedPath, type Locale } from "@/lib/utils";
 import { Button, Input, buttonStyles } from "@/components/ui";
 import { FilterDrawer, filterLabels } from "@/components/ui/filter";
 import { SelectField } from "@/components/select-field";
-import { useCategories, useCategoryServices } from "@/features/catalogue/queries";
+import { useAllServices, useCategories, useCategoryServices } from "@/features/catalogue/queries";
 import { useCities, useCityAreas } from "@/features/places/queries";
 import { useProviderSearch } from "@/features/search/queries";
-import { areaCentroid, cityCentre, requestDeviceLocation } from "@/features/search/location";
+import { areaCentroid, cityCentre, ratingOf, requestDeviceLocation } from "@/features/search/location";
 import {
   buildSearchParams,
   EMPTY_SEARCH,
@@ -22,6 +22,7 @@ import {
 } from "@/features/search/types";
 import { ProviderCard, ProviderCardSkeleton } from "./provider-card";
 import { EmptyState, InlineError, RefreshingNote } from "./states";
+import { LocationMap } from "@/components/location-map";
 
 /* Provider search, backed by `GET /search/providers`.
 
@@ -42,6 +43,7 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   const router = useRouter();
   const searchParams = useSearchParams();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [showMap, setShowMap] = useState(false);
   const [locating, setLocating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -60,19 +62,40 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
      list. Which category is being browsed is temporary UI state; the chosen
      *service* is what belongs in the URL, so only that is persisted. */
   const categories = useCategories(locale);
-  const firstCategory = categories.data?.items[0]?.slug ?? null;
-  const [browseCategory, setBrowseCategory] = useState<string | null>(null);
-  const listingSlug = browseCategory ?? firstCategory;
+  /* "All categories" is the default view, mirroring `/services`, where the
+     catalogue opens showing everything.
+   *
+   * It used to default to `categories.items[0]`, so the first category was
+   * silently pre-selected before anyone touched anything — the service list
+   * showed one trade's worth of services and looked like that was the whole
+   * marketplace. `ALL` is a real state here, not a placeholder, and the picker
+   * is labelled as such. */
+  const [browseCategory, setBrowseCategory] = useState<string>("ALL");
+  const ALL_CATEGORIES = "ALL";
+  /* `null` disables the query; `useCategoryServices` is enabled on a non-empty
+     slug, and ALL has no slug. */
+  const listingSlug = browseCategory === ALL_CATEGORIES ? null : browseCategory;
   const listed = useCategoryServices(listingSlug, locale);
+  /* The whole catalogue, used for the "All categories" service list so the
+     customer can pick any trade without first choosing a category. */
+  const everything = useAllServices(locale);
 
   const serviceOptions = useMemo<ServiceOption[]>(() => {
+    if (listingSlug === ALL_CATEGORIES || listingSlug === null) {
+      if (everything.data === undefined) return [];
+      return everything.data.items.map((service) => ({
+        value: service.slug,
+        label: locale === "ur" ? service.nameUr : service.nameEn,
+        group: locale === "ur" ? service.categoryNameUr : service.categoryNameEn,
+      }));
+    }
     if (listed.data === undefined) return [];
     return listed.data.items.map((service) => ({
       value: service.slug,
       label: locale === "ur" ? service.nameUr : service.nameEn,
       group: categories.data?.items.find((item) => item.slug === listingSlug)?.nameEn ?? "",
     }));
-  }, [categories.data, listed.data, listingSlug, locale]);
+  }, [categories.data, everything.data, listed.data, listingSlug, locale]);
 
   const serviceName = useMemo(() => {
     const match = serviceOptions.find((option) => option.value === state.serviceSlug);
@@ -172,7 +195,23 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
         items.sort((a, b) => a.distanceM - b.distanceM);
         break;
       case "rating":
-        items.sort((a, b) => (b.ratingScore ?? 0) - (a.ratingScore ?? 0));
+        /* Unrated professionals go last, and the sort is stable among them.
+         *
+         * `(b.ratingScore ?? 0) - (a.ratingScore ?? 0)` ranked every unrated
+         * professional as if the API had published `0.0` — so under "Highest
+         * Rated" a provider nobody had rated competed on an equal footing with
+         * the worst rated one, and ordering between them was arbitrary. Every
+         * other render path in the app goes through `ratingOf`, whose comment
+         * says a null score "is not a rating" and that `0.0` "would be a claim
+         * the API did not make". Unrated is not zero; it sorts last. */
+        items.sort((a, b) => {
+          const left = ratingOf(a.ratingScore);
+          const right = ratingOf(b.ratingScore);
+          if (!left.rated && !right.rated) return 0;
+          if (!left.rated) return 1;
+          if (!right.rated) return -1;
+          return right.score - left.score;
+        });
         break;
       case "price_asc":
         items.sort((a, b) => a.pricePaisa - b.pricePaisa);
@@ -221,6 +260,10 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   ];
 
   const serviceValue = state.serviceSlug === "" ? "" : state.serviceSlug;
+  /* Either query can be in flight: one while a category is chosen, the other
+     while "All categories" is. Without this the list showed an empty
+     placeholder for the request that had not come back yet. */
+  const servicePending = listingSlug === null ? everything.isPending : listed.isPending;
   const cityValue = state.cityId === null ? "" : String(state.cityId);
   const areaValue = state.areaId === null ? "" : String(state.areaId);
 
@@ -231,20 +274,27 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
 
   const filterBody = (
     <div className="grid gap-4">
-      {categories.data !== undefined && categories.data.items.length > 1 ? (
+      {categories.data !== undefined && categories.data.items.length > 0 ? (
         <div className="grid gap-2">
           <label htmlFor="search-category" className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
             {dict.catalogue.categoriesHeading}
           </label>
           <SelectField
             id="search-category"
-            value={listingSlug ?? ""}
+            value={browseCategory}
             onChange={(val) => setBrowseCategory(val)}
-            options={categories.data.items.map((category) => ({
-              value: category.slug,
-              label: locale === "ur" ? category.nameUr : category.nameEn,
-            }))}
-            placeholder={dict.catalogue.categoriesHeading}
+            /* "All categories" first, exactly as `/services` opens on the whole
+               catalogue. Selecting it swaps the service list below to every
+               service in the catalogue rather than leaving the previous
+               category's list on screen. */
+            options={[
+              { value: ALL_CATEGORIES, label: dict.catalogue.allCategories },
+              ...categories.data.items.map((category) => ({
+                value: category.slug,
+                label: locale === "ur" ? category.nameUr : category.nameEn,
+              })),
+            ]}
+            placeholder={dict.catalogue.allCategories}
           />
         </div>
       ) : null}
@@ -258,12 +308,15 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
           value={serviceValue}
           onChange={setService}
           options={[
-            { value: "", label: listed.isPending ? "…" : dict.search.servicePlaceholder },
+            { value: "", label: servicePending ? "…" : dict.search.servicePlaceholder },
             ...serviceOptions.map((option) => ({ value: option.value, label: option.label })),
           ]}
           placeholder={dict.search.servicePlaceholder}
         />
-        {listed.data !== undefined && listed.data.items.length === 0 ? (
+        {/* "No services" is only meaningful for a real category. With "All
+            categories" selected an empty list means the catalogue itself is
+            empty, which the page states differently. */}
+        {listingSlug !== null && listed.data !== undefined && listed.data.items.length === 0 ? (
           <p className="text-xs text-muted">{dict.catalogue.noServices}</p>
         ) : null}
       </div>
@@ -319,6 +372,17 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
             {notice}
           </p>
         ) : null}
+        <div className="mt-2">
+          <LocationMap
+            center={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : (city?.lat != null && city?.lng != null ? { lat: city.lat, lng: city.lng } : undefined)}
+            selectedLocation={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : null}
+            onSelectLocation={(pt) => {
+              push({ ...state, lat: pt.lat, lng: pt.lng, source: "device" });
+            }}
+            height="180px"
+            hint={locale === "ur" ? "نقشے پر پن لگائیں" : "Pin location to search"}
+          />
+        </div>
       </div>
 
       <Button type="button" variant="ghost" size="sm" onClick={reset} className="w-full">
@@ -336,6 +400,46 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
       </aside>
 
       <div className="min-w-0">
+        {/* Category chips, mirroring `/services`: "All categories" first, then
+            each one, with the count of professionals each holds. On `/services`
+            these chips sit above the fold as the primary way in; here they were
+            buried in the filter sidebar behind a dropdown, so the page opened
+            with no way to see what trades existed at all.
+
+            The count is `serviceOptions.length` for the chosen view rather than a
+            number of professionals: `GET /search/providers` is scoped to one
+            service and one point, so a per-category *provider* count is not a
+            figure this page can know. Labelled accordingly — the chip count says
+            how many services, not how many people. */}
+        {categories.data !== undefined && categories.data.items.length > 0 ? (
+          <div className="mb-6 flex items-center gap-2 overflow-x-auto border-b border-slate-100 pb-3 pt-1 no-scrollbar">
+            {[{ slug: ALL_CATEGORIES, nameEn: dict.catalogue.allCategories, nameUr: dict.catalogue.allCategories }, ...categories.data.items].map(
+              (cat) => {
+                const isActive = browseCategory === cat.slug;
+                const label = locale === "ur" && cat.slug !== ALL_CATEGORIES ? cat.nameUr : cat.nameEn;
+                return (
+                  <button
+                    key={cat.slug}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => setBrowseCategory(cat.slug)}
+                    className={cn(
+                      /* 44px min target: these are the primary control on the
+                         page and were `py-1.5` chips — about 28px tall. */
+                      "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[10px] px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100",
+                      isActive
+                        ? "bg-navy text-white shadow-sm"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-navy",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              },
+            )}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-navy">
@@ -358,6 +462,18 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
 
           <div className="flex items-center gap-2">
             {results.isFetching && !results.isPending ? <RefreshingNote dict={dict} /> : null}
+            <Button
+              type="button"
+              variant={showMap ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setShowMap(!showMap)}
+              className="gap-1.5"
+            >
+              <MapPin className="size-3.5" aria-hidden="true" />
+              {showMap
+                ? (locale === "ur" ? "نقشہ چھپائیں" : "Hide Map")
+                : (locale === "ur" ? "نقشہ دیکھیں" : "Map View")}
+            </Button>
             <Button
               type="button"
               variant="secondary"
@@ -389,6 +505,29 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
           </FilterDrawer>
         ) : null}
 
+        {showMap ? (
+          <div className="my-5 overflow-hidden rounded-[14px] border border-line bg-white p-3 shadow-xs">
+            <div className="mb-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-navy">
+                <MapPin className="size-4 text-primary" />
+                <span>{locale === "ur" ? "انٹرایکٹو تلاش کا نقشہ" : "Interactive Search Map"}</span>
+              </div>
+              <span className="text-xs text-muted">
+                {locale === "ur" ? "مقام تبدیل کرنے کے لیے نقشے پر کلک کریں" : "Click or drag pin to adjust search location"}
+              </span>
+            </div>
+            <LocationMap
+              center={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : (city?.lat != null && city?.lng != null ? { lat: city.lat, lng: city.lng } : undefined)}
+              selectedLocation={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : null}
+              onSelectLocation={(pt) => {
+                push({ ...state, lat: pt.lat, lng: pt.lng, source: "device" });
+              }}
+              height="320px"
+              hint={locale === "ur" ? "نئے مقام کے لیے نقشے پر کلک کریں" : "Click or drag pin to update your search area"}
+            />
+          </div>
+        ) : null}
+
         <div className="mt-6">
           {state.serviceSlug === "" ? (
             <EmptyState
@@ -404,16 +543,32 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
           ) : !isSearchable(state) ? (
             /* The service is chosen but the API still needs a point, so this is
                a different ask from "choose a service" and gets its own copy. */
-            <EmptyState
-              title={dict.search.needsLocationTitle}
-              body={dict.search.needsLocationText}
-              icon={<MapPin className="size-8" aria-hidden="true" />}
-              action={
-                <Button type="button" onClick={() => void applyDeviceLocation()} disabled={locating}>
-                  {locating ? dict.search.locating : dict.search.useMyLocation}
-                </Button>
-              }
-            />
+            <div className="space-y-4">
+              <EmptyState
+                title={dict.search.needsLocationTitle}
+                body={dict.search.needsLocationText}
+                icon={<MapPin className="size-8" aria-hidden="true" />}
+                action={
+                  <Button type="button" onClick={() => void applyDeviceLocation()} disabled={locating}>
+                    {locating ? dict.search.locating : dict.search.useMyLocation}
+                  </Button>
+                }
+              />
+              <div className="mx-auto max-w-xl rounded-[14px] border border-line bg-white p-4 shadow-xs">
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-navy">
+                  <MapPin className="size-3.5 text-primary" />
+                  <span>{locale === "ur" ? "یا نقشے پر مقام چنیں" : "Or pick location directly on map"}</span>
+                </div>
+                <LocationMap
+                  center={city?.lat != null && city?.lng != null ? { lat: city.lat, lng: city.lng } : undefined}
+                  onSelectLocation={(pt) => {
+                    push({ ...state, lat: pt.lat, lng: pt.lng, source: "device" });
+                  }}
+                  height="260px"
+                  hint={locale === "ur" ? "تلاش شروع کرنے کے لیے نقشے پر کلک کریں" : "Click anywhere on map to set your search location"}
+                />
+              </div>
+            </div>
           ) : results.isPending ? (
             <div className="grid gap-4 sm:grid-cols-2">
               {Array.from({ length: 4 }, (_, index) => (
@@ -444,7 +599,15 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="relative flex-1 min-w-[200px]">
                     <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                    {/* Placeholder is not an accessible name, so this box had
+                        none. `catalogue-explorer.tsx` supplies an `sr-only`
+                        label for its identical search field; this one now
+                        matches. */}
+                    <label htmlFor="provider-keyword" className="sr-only">
+                      {locale === "ur" ? "مہارت یا تفصیل میں تلاش کریں" : "Filter by skill or keyword"}
+                    </label>
                     <Input
+                      id="provider-keyword"
                       type="text"
                       placeholder={locale === "ur" ? "مہارت یا تفصیل میں تلاش کریں..." : "Filter by skill or keyword…"}
                       value={query}

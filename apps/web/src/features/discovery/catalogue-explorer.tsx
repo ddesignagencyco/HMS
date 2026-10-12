@@ -190,7 +190,16 @@ export function CatalogueExplorer({
   }, [allServices]);
 
   const isLoading = categoriesQuery.isPending || servicesQuery.isPending;
-  const isError = categoriesQuery.isError && servicesQuery.isError;
+  /* `||`, not `&&`.
+   *
+   * This was `categoriesQuery.isError && servicesQuery.isError`, which is only
+   * true when *both* reads fail. If the category list loaded but the
+   * `/catalogue/services` fan-out failed, `isError` was false and the screen
+   * fell through to `filteredServices.length === 0` — rendering "No results
+   * found" for an outage. `home-catalogue.tsx` guards this exact case, and
+   * `catalogue-api-honesty.test.ts` pins the rule at the API layer; neither
+   * reaches the component. Any failed read is now an error. */
+  const isError = categoriesQuery.isError || servicesQuery.isError;
 
   return (
     <div className="relative">
@@ -280,7 +289,12 @@ export function CatalogueExplorer({
                 : "bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-navy",
             )}
           >
-            <span>{locale === "ur" ? "تمام زمرے" : "All Categories"}</span>
+            {/* From the dictionary, not inline. This was a `locale === "ur" ? … : …`
+                ternary, which is the one place all copy is required to come from
+                `dictionaries.ts`, and it now shares `dict.catalogue.allCategories`
+                with the `/providers` category filter so the two pages cannot
+                drift apart. */}
+            <span>{dict.catalogue.allCategories}</span>
             <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] tabular-nums", effectiveCategory === "" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
               {allServices.length}
             </span>
@@ -606,7 +620,7 @@ export function CatalogueExplorer({
                 )}
                 {emergencyOnly && (
                   <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
-                    <span>{locale === "ur" ? "فوری سروس" : "Same-day"}</span>
+                    <span>{locale === "ur" ? "ایمرجنسی" : "Emergency"}</span>
                     <button type="button" onClick={() => setEmergencyOnly(false)} aria-label="Remove emergency filter">
                       <X className="size-3" />
                     </button>
@@ -763,8 +777,8 @@ export function ServiceCard({
 
           <div className="flex flex-wrap items-center gap-1.5">
             {service.isEmergencyEligible && (
-              <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                {locale === "ur" ? "فوری سروس" : "Same-day"}
+              <span className="inline-flex items-center rounded-md border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                {locale === "ur" ? "ایمرجنسی" : "Emergency"}
               </span>
             )}
             {service.isPlanEligible && (

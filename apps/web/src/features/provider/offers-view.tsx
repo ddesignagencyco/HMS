@@ -15,7 +15,9 @@ import { formatDateTime, formatMoney, type Locale } from '@/lib/utils';
    offer moves until a mutation actually succeeds; before that, "accept" is a
    request, not a fact. */
 
-function useNow(intervalMs: number): number {
+/** A clock that actually ticks. Exported because `dashboard-view.tsx` needs the
+ *  same thing and had hand-rolled a frozen version. */
+export function useNow(intervalMs: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), intervalMs);

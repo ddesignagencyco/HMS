@@ -14,7 +14,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { Dictionary } from "@/lib/dictionaries";
-import { heroImage } from "@/lib/data";
+import { heroImage } from "@/lib/brand-images";
 import { cn, getText, localizedPath, type Locale } from "@/lib/utils";
 
 export type AuthVisual = { src: string; focus: string };

@@ -76,7 +76,7 @@ export function AdminOps({ locale, dict }: { locale: Locale; dict: Dictionary })
           <p className="text-sm font-semibold text-rose-900">Administrator session required</p>
           <p className="mt-1 text-xs text-rose-700">Please sign in with an administrator account to view the operations control room.</p>
           <Link
-            href={localizedPath(locale, "/auth/login")}
+            href={localizedPath(locale, "/auth/sign-in")}
             className="mt-3 inline-flex items-center gap-2 rounded-[8px] bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-rose-700"
           >
             {dict.nav.signIn}

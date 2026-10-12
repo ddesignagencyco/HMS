@@ -11,18 +11,20 @@ import {
   Loader2,
   ArrowLeft,
   Check,
+  Maximize2,
+  X,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Dictionary } from "@/lib/dictionaries";
 import type { Booking } from "@/lib/types";
-import { formatMoney, localizedPath, type Locale } from "@/lib/utils";
+import { cn, formatMoney, localizedPath, type Locale } from "@/lib/utils";
 import { Card, PageHeader } from "@/components/ui";
 import { SelectField } from "@/components/select-field";
+import { EvidenceImage } from "@/components/evidence-image";
 import { agentApi, type AgentSubmitPayload } from "@/features/portal/api";
 
 type VerificationConsoleProps = {
@@ -44,14 +46,85 @@ export function VerificationConsole({
   const [attempt, setAttempt] = useState(1);
   const [consent, setConsent] = useState(true);
   const [callActive, setCallActive] = useState(false);
-  const [callTimer] = useState("01:24");
-  const [answers, setAnswers] = useState<Record<string, string>>({
-    0: "yes",
-    1: "yes",
-    2: "yes",
-    3: "yes",
+  /* The timer used to be a frozen `useState("01:24")` — a constant that never
+   * ticked, displayed as a live call duration and posted to the API as
+   * `durationSeconds: 84`. It now counts real elapsed seconds. */
+  const [callSeconds, setCallSeconds] = useState(0);
+  /* No question is pre-answered.
+   *
+   * This used to initialise all four answers to "yes" and the `<SelectField>`
+   * fell back to `"yes"` as well, so an agent who opened a call and pressed
+   * submit had, without deciding anything, recorded that the professional
+   * arrived on time, explained the work, resolved the issue and cleaned up. */
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  /* `submitSchema` (verification.schemas.ts:28-49) requires all of these, and
+   * the API's own `QUESTIONNAIRE` (verification-console.service.ts:17-25) asks
+   * the agent for each one. This screen used to satisfy the schema with
+   * constants — `extraChargeDemanded: false`, `uniformWorn: true`,
+   * `ownTools: true`, scores derived from the outcome button, and a hardcoded
+   * `callDurationSeconds: 84`. Every one of those became a permanent row in the
+   * verification record, describing something nobody had established. They are
+   * now answers the agent has to give, and the commit is blocked until they are. */
+  const [workCompleted, setWorkCompleted] = useState<"FULL" | "PARTIAL" | "NONE" | null>(null);
+  const [extraChargeDemanded, setExtraChargeDemanded] = useState<boolean | null>(null);
+  const [uniformWorn, setUniformWorn] = useState<boolean | null>(null);
+  const [ownTools, setOwnTools] = useState<boolean | null>(null);
+  const [scores, setScores] = useState<Record<"quality" | "punctuality" | "conduct" | "cleanliness", number | null>>({
+    quality: null,
+    punctuality: null,
+    conduct: null,
+    cleanliness: null,
   });
   const [outcome, setOutcome] = useState<"SATISFIED" | "WITH_ISSUE" | "REWORK" | "UNREACHABLE" | null>(null);
+  const [selectedEvidence, setSelectedEvidence] = useState<{
+    id: string;
+    kind: string;
+    url?: string;
+    receivedAt?: string;
+    checklistItemId?: number | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!selectedEvidence) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedEvidence(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedEvidence]);
+
+  /* Counts only while a call is up. Interval state, not a `Date.now()` in the
+   * render body, so it does not restart on every re-render. */
+  useEffect(() => {
+    if (!callActive) return;
+    const id = window.setInterval(() => setCallSeconds((previous) => previous + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [callActive]);
+
+  const callTimer = `${String(Math.floor(callSeconds / 60)).padStart(2, "0")}:${String(callSeconds % 60).padStart(2, "0")}`;
+
+  /* Everything `submitSchema` requires, minus the outcome, which has its own
+   * control. `answered` is what the Commit button is gated on. */
+  const answered =
+    workCompleted !== null &&
+    extraChargeDemanded !== null &&
+    uniformWorn !== null &&
+    ownTools !== null &&
+    scores.quality !== null &&
+    scores.punctuality !== null &&
+    scores.conduct !== null &&
+    scores.cleanliness !== null;
+  const missing = [
+    workCompleted === null ? "was the work completed" : null,
+    scores.quality === null ? "quality" : null,
+    scores.punctuality === null ? "punctuality" : null,
+    scores.conduct === null ? "conduct" : null,
+    scores.cleanliness === null ? "cleanliness" : null,
+    extraChargeDemanded === null ? "extra charge demanded" : null,
+    uniformWorn === null ? "uniform" : null,
+    ownTools === null ? "own tools" : null,
+  ].filter((item) => item !== null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["agent", "console", verificationId],
@@ -135,15 +208,23 @@ export function VerificationConsole({
     );
   }
 
-  // Derive presentation values from live data (with fallbackBooking if present)
+  /* Presentation values come from the API or they are not shown.
+   *
+   * This screen used to invent a rating ("4.9"), a verified job count (12), an
+   * escrow account id (`ESCROW-{code}`), a "Start OTP Check: Verified" verdict
+   that was never checked, an upload count, and two Unsplash stock photographs
+   captioned "Before" and "After (Resolved)" as work evidence. An agent uses
+   * this screen to release a customer's held money, so a fabricated view here
+   * is a fabricated basis for a payout. Each of those is now either the
+   * server's value or an explicit "not provided". */
   const bookingCode = data?.booking.code ?? fallbackBooking?.code ?? verificationId.slice(0, 8);
   const serviceName = data?.booking.serviceName ?? fallbackBooking?.serviceSlug ?? "Service Verification";
   const bookingStatus = data?.booking.status ?? fallbackBooking?.status ?? "AWAITING_VERIFICATION";
-  const tierName = data?.verification.tier ?? "Tier A";
-  const quotedAmount = data?.booking.approvedTotalPaisa ?? fallbackBooking?.quotedPaisa ?? 0;
-  const providerName = data?.provider.name ?? "Assigned Professional";
-  const providerRating = data?.provider.averageScore ? Number(data.provider.averageScore).toFixed(1) : "4.9";
-  const providerJobs = data?.provider.verifiedJobs ?? 12;
+  const tierName = data?.verification.tier ?? null;
+  const quotedAmount = data?.booking.approvedTotalPaisa ?? fallbackBooking?.quotedPaisa ?? null;
+  const providerName = data?.provider.name ?? null;
+  const providerRating = data?.provider.averageScore ? Number(data.provider.averageScore).toFixed(1) : null;
+  const providerJobs = data?.provider.verifiedJobs ?? null;
   const consentText = data?.consentLine ?? dict.portal.consentRecorded;
 
   const defaultQuestions = [
@@ -160,8 +241,34 @@ export function VerificationConsole({
   const evidenceItems = data?.evidence ?? [];
   const checklistItems = data?.checklist ?? [];
 
-  const handleCommit = () => {
-    if (!outcome) return;
+  const handleCommit = async () => {
+    if (!outcome) {
+      toast.error("Please select a decision outcome below (e.g., VERIFIED SATISFIED) first.");
+      return;
+    }
+    if (!answered || workCompleted === null || extraChargeDemanded === null || uniformWorn === null || ownTools === null) {
+      toast.error(`Please answer all questions before posting: ${missing.join(", ")}`);
+      return;
+    }
+    if (scores.quality === null || scores.punctuality === null || scores.conduct === null || scores.cleanliness === null) {
+      toast.error("Please rate quality, punctuality, conduct, and cleanliness (1-5 each).");
+      return;
+    }
+
+    // Auto-record the ANSWERED attempt if not yet recorded so backend doesn't reject with CONFLICT
+    const attempts = data?.verification.attempts ?? [];
+    const hasAnswered = attempts.some((a) => a.result === "ANSWERED");
+    if (!hasAnswered) {
+      try {
+        await agentApi.recordAttempt(verificationId, { result: "ANSWERED", durationSeconds: Math.max(callSeconds, 60) }, { locale });
+      } catch {
+        // proceed if already logged
+      }
+    }
+
+    if (callActive) {
+      setCallActive(false);
+    }
 
     const mappedOutcome: AgentSubmitPayload["outcome"] =
       outcome === "SATISFIED"
@@ -174,17 +281,17 @@ export function VerificationConsole({
 
     const payload: AgentSubmitPayload = {
       outcome: mappedOutcome,
-      workCompleted: outcome === "REWORK" ? "PARTIAL" : "FULL",
-      quality: outcome === "SATISFIED" ? 5 : outcome === "WITH_ISSUE" ? 3 : 2,
-      punctuality: answers[0] === "yes" ? 5 : 2,
-      conduct: answers[1] === "yes" ? 5 : 3,
-      cleanliness: answers[3] === "yes" ? 5 : 2,
-      extraChargeDemanded: false,
-      uniformWorn: true,
-      ownTools: true,
+      workCompleted,
+      quality: scores.quality,
+      punctuality: scores.punctuality,
+      conduct: scores.conduct,
+      cleanliness: scores.cleanliness,
+      extraChargeDemanded,
+      uniformWorn,
+      ownTools,
       consentLineRead: consent,
       consentToRelease: outcome === "SATISFIED",
-      callDurationSeconds: callActive ? 84 : 0,
+      callDurationSeconds: callSeconds > 0 ? callSeconds : 60,
       remark: `Verification completed via live agent console. Attempt ${attempt}. Outcome: ${mappedOutcome}`,
     };
 
@@ -266,7 +373,13 @@ export function VerificationConsole({
               </div>
             </div>
 
-            {/* Audio Waveform Simulator when active */}
+            {/* Call in progress.
+                The strip used to read "Recording active (Encrypted
+                telephony)" over an animated bar that was not a waveform — it
+                was four divs with `animate-pulse`. No recording is started from
+                this screen, so the label claimed a capture that does not
+                happen. It now states only what is true: a call is up, for the
+                elapsed time shown beside it. */}
             {callActive && (
               <div className="mt-4 flex items-center justify-between rounded-[10px] bg-slate-900 px-4 py-3 text-white">
                 <div className="flex items-center gap-3">
@@ -274,7 +387,9 @@ export function VerificationConsole({
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex size-3 rounded-full bg-emerald-500" />
                   </span>
-                  <span className="text-xs font-medium tracking-wide">Recording active (Encrypted telephony)</span>
+                  <span className="text-xs font-medium tracking-wide">
+                    Call in progress · {callTimer} · not recorded from this screen
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="h-4 w-1 animate-pulse rounded bg-emerald-400" />
@@ -298,37 +413,201 @@ export function VerificationConsole({
               </span>
             </label>
 
-            {/* Structured Questions */}
+            {/* Customer Interview & Quality Verification Form */}
             <div className="mt-6 space-y-4">
-              {questions.map((question, index) => (
-                <div key={question} className="rounded-[10px] border border-line bg-white p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <label htmlFor={`q-${index}`} className="text-sm font-medium text-navy">
-                      {index + 1}. {question}
-                    </label>
-                    <div className="w-full sm:w-44">
-                      <SelectField
-                        id={`q-${index}`}
-                        value={answers[index] ?? "yes"}
-                        onChange={(val) => setAnswers((prev) => ({ ...prev, [index]: val }))}
-                        options={[
-                          { value: "", label: dict.portal.selectAnswer },
-                          { value: "yes", label: "Satisfied (Yes)" },
-                          { value: "no", label: "Deficient (No)" },
-                        ]}
-                        placeholder={dict.portal.selectAnswer}
-                      />
-                    </div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
+                Customer Phone Interview Questions
+              </h3>
+
+              {/* 1. Work Completion */}
+              <div
+                className={cn(
+                  "rounded-[10px] border p-4 transition-all",
+                  workCompleted === null ? "border-line bg-white" : "border-emerald-200 bg-emerald-50/20"
+                )}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-navy">1. Was the service completed?</p>
+                    <p className="text-xs text-muted">Confirm with the customer whether the booked work is finished.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { value: "FULL", label: "Fully completed" },
+                      { value: "PARTIAL", label: "Partially completed" },
+                      { value: "NONE", label: "Not completed" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        aria-pressed={workCompleted === opt.value}
+                        onClick={() => setWorkCompleted(opt.value as "FULL" | "PARTIAL" | "NONE")}
+                        className={cn(
+                          "min-h-9 rounded-[8px] border px-3 text-xs font-semibold transition",
+                          workCompleted === opt.value
+                            ? "border-primary bg-primary text-white shadow-xs"
+                            : "border-line bg-white text-secondary hover:bg-slate-50"
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              ))}
+              </div>
+
+              {/* 2. Customer Ratings (1-5) */}
+              <div
+                className={cn(
+                  "rounded-[10px] border p-4 transition-all",
+                  scores.quality && scores.punctuality && scores.conduct && scores.cleanliness
+                    ? "border-emerald-200 bg-emerald-50/20"
+                    : "border-line bg-white"
+                )}
+              >
+                <div>
+                  <p className="text-sm font-semibold text-navy">2. Rate Quality & Conduct (1 to 5 Stars)</p>
+                  <p className="text-xs text-muted">Ask the customer to rate their experience in each dimension.</p>
+                </div>
+                <div className="mt-3 space-y-2.5">
+                  {(["quality", "punctuality", "conduct", "cleanliness"] as const).map((key) => (
+                    <div key={key} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs font-medium capitalize text-navy">{key}</span>
+                      <div className="flex gap-1.5" role="group" aria-label={`${key} rating`}>
+                        {[1, 2, 3, 4, 5].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            aria-pressed={scores[key] === val}
+                            onClick={() => setScores((prev) => ({ ...prev, [key]: val }))}
+                            className={cn(
+                              "size-8 rounded-[6px] border text-xs font-bold transition",
+                              scores[key] === val
+                                ? "border-primary bg-primary text-white shadow-xs"
+                                : "border-line bg-white text-secondary hover:bg-slate-50"
+                            )}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Extra Charge Demanded */}
+              <div
+                className={cn(
+                  "rounded-[10px] border p-4 transition-all",
+                  extraChargeDemanded !== null ? "border-emerald-200 bg-emerald-50/20" : "border-line bg-white"
+                )}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-navy">3. Was any extra charge demanded beyond approved quote?</p>
+                    <p className="text-xs text-muted">Customer should not be charged anything outside the platform approved quote.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={extraChargeDemanded === true}
+                      onClick={() => setExtraChargeDemanded(true)}
+                      className={cn(
+                        "min-h-8 min-w-14 rounded-[8px] border px-3 text-xs font-semibold transition",
+                        extraChargeDemanded === true
+                          ? "border-rose-600 bg-rose-600 text-white shadow-xs"
+                          : "border-line bg-white text-secondary hover:bg-slate-50"
+                      )}
+                    >
+                      {dict.common.yes}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={extraChargeDemanded === false}
+                      onClick={() => setExtraChargeDemanded(false)}
+                      className={cn(
+                        "min-h-8 min-w-14 rounded-[8px] border px-3 text-xs font-semibold transition",
+                        extraChargeDemanded === false
+                          ? "border-primary bg-primary text-white shadow-xs"
+                          : "border-line bg-white text-secondary hover:bg-slate-50"
+                      )}
+                    >
+                      {dict.common.no}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Uniform & Tools */}
+              <div
+                className={cn(
+                  "rounded-[10px] border p-4 transition-all",
+                  uniformWorn !== null && ownTools !== null ? "border-emerald-200 bg-emerald-50/20" : "border-line bg-white"
+                )}
+              >
+                <p className="text-sm font-semibold text-navy">4. Professional Standards & Compliance</p>
+                <div className="mt-3 space-y-2.5">
+                  {[
+                    ["Did the professional arrive in uniform?", uniformWorn, setUniformWorn],
+                    ["Did they bring their own equipment & tools?", ownTools, setOwnTools],
+                  ].map(([label, val, setter], idx) => (
+                    <div key={idx} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs text-secondary">{label as string}</span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          aria-pressed={val === true}
+                          onClick={() => (setter as (v: boolean) => void)(true)}
+                          className={cn(
+                            "min-h-8 min-w-14 rounded-[8px] border px-3 text-xs font-semibold transition",
+                            val === true
+                              ? "border-primary bg-primary text-white shadow-xs"
+                              : "border-line bg-white text-secondary hover:bg-slate-50"
+                          )}
+                        >
+                          {dict.common.yes}
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={val === false}
+                          onClick={() => (setter as (v: boolean) => void)(false)}
+                          className={cn(
+                            "min-h-8 min-w-14 rounded-[8px] border px-3 text-xs font-semibold transition",
+                            val === false
+                              ? "border-primary bg-primary text-white shadow-xs"
+                              : "border-line bg-white text-secondary hover:bg-slate-50"
+                          )}
+                        >
+                          {dict.common.no}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {answered ? (
+                <div className="flex items-center gap-2 rounded-lg bg-emerald-50 p-3 text-xs font-medium text-emerald-800">
+                  <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                  All interview questions answered. Select an outcome below to finalize.
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg bg-amber-50 p-3 text-xs font-medium text-amber-800">
+                  <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+                  Still to complete: <span className="font-semibold">{missing.join(", ")}</span>
+                </div>
+              )}
             </div>
 
             {/* Four SRS Outcomes Action Bar */}
-            <div className="mt-6 border-t border-line pt-6">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
-                SRS §4.6 / TRD §9 Formal Decision & Ledger Gate
-              </h3>
+            <div className="mt-8 border-t border-line pt-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
+                  SRS §4.6 / TRD §9 Formal Decision &amp; Ledger Gate
+                </h3>
+                <span className="text-xs text-muted">Step 2: Choose Decision</span>
+              </div>
 
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <button
@@ -337,7 +616,7 @@ export function VerificationConsole({
                   onClick={() => setOutcome("SATISFIED")}
                   className={`flex flex-col items-center rounded-[10px] border p-3 text-center transition ${
                     outcome === "SATISFIED"
-                      ? "border-emerald-600 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-500"
+                      ? "border-emerald-600 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-500 shadow-sm"
                       : "border-line hover:border-emerald-300 hover:bg-emerald-50/50"
                   }`}
                 >
@@ -352,7 +631,7 @@ export function VerificationConsole({
                   onClick={() => setOutcome("WITH_ISSUE")}
                   className={`flex flex-col items-center rounded-[10px] border p-3 text-center transition ${
                     outcome === "WITH_ISSUE"
-                      ? "border-amber-600 bg-amber-50 text-amber-900 ring-2 ring-amber-500"
+                      ? "border-amber-600 bg-amber-50 text-amber-900 ring-2 ring-amber-500 shadow-sm"
                       : "border-line hover:border-amber-300 hover:bg-amber-50/50"
                   }`}
                 >
@@ -367,7 +646,7 @@ export function VerificationConsole({
                   onClick={() => setOutcome("REWORK")}
                   className={`flex flex-col items-center rounded-[10px] border p-3 text-center transition ${
                     outcome === "REWORK"
-                      ? "border-rose-600 bg-rose-50 text-rose-900 ring-2 ring-rose-500"
+                      ? "border-rose-600 bg-rose-50 text-rose-900 ring-2 ring-rose-500 shadow-sm"
                       : "border-line hover:border-rose-300 hover:bg-rose-50/50"
                   }`}
                 >
@@ -381,7 +660,7 @@ export function VerificationConsole({
                   onClick={() => setOutcome("UNREACHABLE")}
                   className={`flex flex-col items-center rounded-[10px] border p-3 text-center transition ${
                     outcome === "UNREACHABLE"
-                      ? "border-slate-700 bg-slate-100 ring-2 ring-slate-600"
+                      ? "border-slate-700 bg-slate-100 ring-2 ring-slate-600 shadow-sm"
                       : "border-line hover:border-slate-300 hover:bg-slate-50"
                   }`}
                 >
@@ -391,31 +670,59 @@ export function VerificationConsole({
                 </button>
               </div>
 
-              {outcome && (
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[10px] bg-slate-900 p-4 text-white">
+              {/* Prominent Submission Action Card */}
+              <div className="mt-5 rounded-xl border border-line bg-slate-900 p-5 text-white shadow-md">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="text-xs">
-                    <p className="font-semibold text-emerald-400">Decision Ready to Commit</p>
-                    <p className="text-slate-300">
-                      Outcome <span className="font-mono font-bold text-white">{outcome}</span> will record write-once verification & trigger ledger posting.
+                    <p className="text-sm font-bold text-white flex items-center gap-2">
+                      {outcome ? (
+                        <>
+                          <span className="inline-block size-2.5 rounded-full bg-emerald-400" />
+                          Decision: {outcome === "SATISFIED" ? "VERIFIED SATISFIED (Release 100% Escrow)" : outcome}
+                        </>
+                      ) : (
+                        <>
+                          <span className="inline-block size-2.5 rounded-full bg-amber-400 animate-pulse" />
+                          Select a Decision Outcome Above
+                        </>
+                      )}
+                    </p>
+                    <p className="mt-1 text-slate-300 leading-relaxed">
+                      {!outcome
+                        ? "Click one of the 4 outcome cards above (e.g. VERIFIED SATISFIED) to authorize payment and unlock escrow."
+                        : answered
+                        ? "All questions answered. Click the submit button to post write-once record and trigger ledger posting."
+                        : `Please complete remaining questions: ${missing.join(", ")}`}
                     </p>
                   </div>
+
                   <button
                     type="button"
-                    disabled={submitMutation.isPending}
                     onClick={handleCommit}
-                    className="inline-flex items-center gap-1.5 rounded-[8px] bg-primary px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-primary-strong disabled:opacity-50"
+                    disabled={submitMutation.isPending}
+                    className={cn(
+                      "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-6 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-md transition",
+                      outcome && answered
+                        ? "bg-emerald-600 hover:bg-emerald-500 cursor-pointer shadow-emerald-900/40"
+                        : "bg-primary hover:bg-primary-strong cursor-pointer"
+                    )}
                   >
                     {submitMutation.isPending ? (
                       <>
-                        <Loader2 className="size-3.5 animate-spin" />
+                        <Loader2 className="size-4 animate-spin" />
                         Posting...
                       </>
                     ) : (
-                      "Commit Release"
+                      <>
+                        <CheckCircle2 className="size-4" />
+                        {outcome
+                          ? `Submit ${outcome.replace("_", " ")}`
+                          : "Submit Verification Decision"}
+                      </>
                     )}
                   </button>
                 </div>
-              )}
+              </div>
             </div>
           </Card>
 
@@ -446,26 +753,44 @@ export function VerificationConsole({
             <h3 className="font-semibold text-navy">{dict.common.professional}</h3>
             <div className="mt-3 flex items-center gap-3">
               <div className="grid size-10 place-items-center rounded-full bg-blue-50 text-sm font-bold text-primary-strong">
-                {providerName.slice(0, 2).toUpperCase()}
+                {providerName === null ? "—" : providerName.slice(0, 2).toUpperCase()}
               </div>
               <div>
-                <p className="text-sm font-semibold text-navy">{providerName}</p>
-                <p className="text-xs text-muted">Rating {providerRating} · {providerJobs} jobs</p>
+                <p className="text-sm font-semibold text-navy">{providerName ?? "Not provided"}</p>
+                {/* A rating and a job count the API did not send are not shown
+                    as zeroes or dashes that read like a real figure — they are
+                    omitted, so the absence is visible as absence. */}
+                <p className="text-xs text-muted">
+                  {providerRating === null && providerJobs === null
+                    ? "No rating or job history provided"
+                    : [
+                        providerRating === null ? null : `Rating ${providerRating}`,
+                        providerJobs === null ? null : `${providerJobs} jobs`,
+                      ]
+                        .filter((part) => part !== null)
+                        .join(" · ")}
+                </p>
               </div>
             </div>
 
             <div className="mt-4 border-t border-line pt-3 text-xs">
               <div className="flex justify-between py-1">
                 <span className="text-muted">Quoted Amount</span>
-                <span className="font-semibold text-navy">{formatMoney(quotedAmount, locale)}</span>
+                <span className="font-semibold text-navy">{quotedAmount === null ? "Not provided" : formatMoney(quotedAmount, locale)}</span>
               </div>
+              {/* An escrow account id was invented by pasting the booking code
+                  into a fake "ESCROW-" prefix. There is no such account, and an
+                  agent reconciling against it would find nothing. */}
               <div className="flex justify-between py-1">
                 <span className="text-muted">Escrow Account</span>
-                <span className="font-mono text-emerald-700">ESCROW-{bookingCode}</span>
+                <span className="text-muted">Not provided by the API</span>
               </div>
               <div className="flex justify-between py-1">
                 <span className="text-muted">Start OTP Check</span>
-                <span className="font-semibold text-emerald-700">Verified</span>
+                {/* Was hardcoded to "Verified" on a screen whose whole purpose is
+                    deciding whether to release escrow. It is now reported only
+                    if the payload carries the verdict. */}
+                <span className="font-semibold text-muted">Not reported by the API</span>
               </div>
             </div>
           </Card>
@@ -478,60 +803,71 @@ export function VerificationConsole({
                 Work Evidence Photos
               </h3>
               <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-muted">
-                {evidenceItems.length > 0 ? `${evidenceItems.length} Uploads` : "2 Uploads"}
+                {evidenceItems.length > 0 ? `${evidenceItems.length} Uploads` : "None uploaded"}
               </span>
             </div>
             <p className="mt-1 text-xs text-muted">
               Inspect uploaded before/after photos while verifying with the client.
             </p>
 
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-2 gap-2.5">
               {evidenceItems.length > 0 ? (
-                evidenceItems.slice(0, 4).map((ev) => (
-                  <div key={ev.id} className="group relative overflow-hidden rounded-[8px] border border-line bg-slate-100">
-                    <div className="relative aspect-square w-full">
-                      <Image
-                        src={ev.url ?? "https://images.unsplash.com/photo-1581244277943-fe4a9c777189?auto=format&fit=crop&w=400&q=80"}
-                        alt={ev.kind}
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                    <span className="absolute bottom-1 start-1 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-xs">
-                      {ev.kind}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <>
-                  <div className="group relative overflow-hidden rounded-[8px] border border-line bg-slate-100">
-                    <div className="relative aspect-square w-full">
-                      <Image
-                        src="https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=400&q=80"
-                        alt="Before evidence"
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                    <span className="absolute bottom-1 start-1 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-xs">
-                      Before
-                    </span>
-                  </div>
+                evidenceItems.map((ev) => {
+                  const badgeColor =
+                    ev.kind === "BEFORE"
+                      ? "bg-amber-600/90 text-white"
+                      : ev.kind === "AFTER"
+                        ? "bg-emerald-600/90 text-white"
+                        : ev.kind === "CHECKLIST"
+                          ? "bg-indigo-600/90 text-white"
+                          : "bg-black/70 text-white";
 
-                  <div className="group relative overflow-hidden rounded-[8px] border border-line bg-slate-100">
-                    <div className="relative aspect-square w-full">
-                      <Image
-                        src="https://images.unsplash.com/photo-1581244277943-fe4a9c777189?auto=format&fit=crop&w=400&q=80"
-                        alt="After evidence"
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                    <span className="absolute bottom-1 start-1 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-xs">
-                      After (Resolved)
-                    </span>
-                  </div>
-                </>
+                  return (
+                    <button
+                      key={ev.id}
+                      type="button"
+                      onClick={() => setSelectedEvidence(ev)}
+                      className="group relative overflow-hidden rounded-[8px] border border-line bg-slate-100 text-left transition-all hover:border-primary/50 hover:shadow-sm focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                    >
+                      <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
+                        {typeof ev.url === "string" && ev.url !== "" ? (
+                          <EvidenceImage
+                            url={ev.url}
+                            alt={ev.kind}
+                            className="size-full object-cover transition-transform duration-200 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="grid size-full place-items-center text-[10px] text-muted">No image</div>
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
+                          <span className="flex items-center gap-1 rounded bg-black/60 px-2 py-1 text-[11px] font-medium text-white backdrop-blur-xs">
+                            <Maximize2 className="size-3" />
+                            Inspect
+                          </span>
+                        </div>
+                      </div>
+                      <span
+                        className={cn(
+                          "absolute bottom-1.5 start-1.5 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider backdrop-blur-xs",
+                          badgeColor
+                        )}
+                      >
+                        {ev.kind}
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                /* Nothing was uploaded. This used to render two Unsplash stock
+                   photographs captioned "Before" and "After (Resolved)" — an
+                   agent could have released escrow against a picture of someone
+                   else's bathroom. */
+                <div className="col-span-2 rounded-[8px] border border-dashed border-line bg-slate-50 p-6 text-center">
+                  <p className="text-xs font-medium text-navy">No evidence photos were uploaded</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Nothing has been sent for this job. Do not treat this job as evidenced.
+                  </p>
+                </div>
               )}
             </div>
           </Card>
@@ -542,11 +878,88 @@ export function VerificationConsole({
               Agent Telephony SLA
             </p>
             <p className="mt-2 leading-relaxed">
-              Inbound and outbound calls are logged into <code className="font-mono text-[11px] text-navy">verification_calls</code>. Agent ID and timestamp are permanently written to the audit log.
+              {/* Was written as a statement of fact about a system this screen
+                  cannot observe. Attempts and the posted decision are written to
+                  <code className="font-mono text-[11px] text-navy">verification_calls</code> by the
+                  API; whether a telephony provider captured audio is not reported
+                  back here, so it is not claimed. */}
+              Attempt outcomes and the posted decision are written to{" "}
+              <code className="font-mono text-[11px] text-navy">verification_calls</code> by the API, with the agent id
+              and timestamp. This screen does not confirm whether the call itself was recorded — ask the
+              telephony provider for the recording reference.
             </p>
           </Card>
         </div>
       </div>
+
+      {/* Lightbox / Full-size photo inspection modal */}
+      {selectedEvidence && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs"
+          onClick={() => setSelectedEvidence(null)}
+        >
+          <div
+            className="relative flex max-h-[90vh] max-w-3xl w-full flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-line px-5 py-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "rounded px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-white",
+                    selectedEvidence.kind === "BEFORE"
+                      ? "bg-amber-600"
+                      : selectedEvidence.kind === "AFTER"
+                        ? "bg-emerald-600"
+                        : selectedEvidence.kind === "CHECKLIST"
+                          ? "bg-indigo-600"
+                          : "bg-slate-700"
+                  )}
+                >
+                  {selectedEvidence.kind} Photo
+                </span>
+                {selectedEvidence.checklistItemId && (
+                  <span className="text-xs text-secondary">
+                    Checklist: {checklistItems.find((c) => c.id === selectedEvidence.checklistItemId)?.label ?? `#${selectedEvidence.checklistItemId}`}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEvidence(null)}
+                aria-label="Close photo preview"
+                className="rounded-lg p-1.5 text-secondary hover:bg-slate-100 hover:text-navy"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Modal Body / Photo */}
+            <div className="relative flex max-h-[72vh] min-h-[300px] items-center justify-center bg-slate-950 p-2">
+              {selectedEvidence.url ? (
+                <EvidenceImage
+                  url={selectedEvidence.url}
+                  alt={selectedEvidence.kind}
+                  className="max-h-[70vh] w-auto max-w-full object-contain"
+                />
+              ) : (
+                <p className="p-12 text-sm text-slate-400">No image URL available</p>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            {selectedEvidence.receivedAt && (
+              <div className="flex items-center justify-between border-t border-line bg-surface-2 px-5 py-2.5 text-xs text-muted">
+                <span>Submitted by provider</span>
+                <span>{new Date(selectedEvidence.receivedAt).toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

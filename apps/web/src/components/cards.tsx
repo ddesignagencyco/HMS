@@ -76,6 +76,7 @@ export function PopularServiceCard({
   warranty,
   priceFrom,
   price,
+  priceSuffix,
   emergency,
   emergencyLabel,
   actionLabel
@@ -88,6 +89,10 @@ export function PopularServiceCard({
   warranty: string;
   priceFrom: string;
   price: string;
+  /** What the figure is — a flat price, a rate, or an estimate pending
+   *  inspection. Rendered as the caption in place of the bare "From", which
+   *  understated a flat price and overstated an estimate. */
+  priceSuffix?: string;
   emergency?: boolean;
   emergencyLabel: string;
   actionLabel: string;
@@ -127,8 +132,16 @@ export function PopularServiceCard({
             in the row and a single compact action beside it */}
         <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line pt-3 text-end sm:w-[104px] sm:flex-col sm:items-end sm:justify-center sm:border-t-0 sm:pt-0">
           <div className="sm:text-end">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted sm:text-[11px]">{priceFrom}</p>
+            {/* The caption states what the figure actually is. It used to be a
+                hardcoded "From" for every service, which understated a flat
+                price and overstated an inspection-first estimate — the exact
+                distinction `features/catalogue/pricing.ts` exists to draw, and
+                which this card was bypassing by not asking it. */}
+            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted sm:text-[11px]">
+              {priceSuffix ?? priceFrom}
+            </p>
             <p className="-mt-0.5 text-lg font-semibold leading-7 tracking-[-0.03em] text-navy tabular-nums sm:text-xl">{price}</p>
+            {priceSuffix !== undefined ? <span className="sr-only">{priceFrom}</span> : null}
           </div>
           <span className="grid size-9 shrink-0 place-items-center rounded-full bg-navy text-white transition-colors duration-200 group-hover:bg-primary-strong">
             <ArrowRight className="size-4 arrow-slide rtl:rotate-180" aria-hidden="true" />

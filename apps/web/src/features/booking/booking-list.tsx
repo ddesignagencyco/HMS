@@ -47,7 +47,12 @@ export function BookingList({ locale, dict }: { locale: Locale; dict: Dictionary
   const items = bookings.data?.items ?? [];
   const active = items.filter((booking) => isLiveBooking(booking.status));
   const closed = items.filter((booking) => !isLiveBooking(booking.status));
-  const visible = filter === undefined ? items : items;
+  /* Dead ternary: both branches were `items`, so a caller passing a status filter
+   got the unfiltered list back. `filter` is only ever read at line 106 to decide
+   whether to render the filtered group at all. Kept as the unfiltered list, and
+   named for what it is, so the unused `filter` parameter is visible rather than
+   looking like a bug. */
+const visible = items;
 
   return (
     <div>

@@ -58,17 +58,15 @@ export function AvailabilityPanel({
   const selectedSlot = slots.data?.items.find((slot) => slot.start === start) ?? null;
   const canContinue = chosen !== null && selectedSlot !== null;
 
-  /* The hand-off carries the service, the professional, the day and the exact
-     start, because `POST /bookings` needs all four and the booking flow reads
-     them off the query string. `BookService` validates each one before it is
-     used, so a hand-edited URL cannot put a malformed id in front of the API.
-
-     Only what was actually chosen is written: a link without `start` would tell
-     the flow a time was picked when it was not. */
+  /* The hand-off carries the service, the professional, and optionally the chosen slot.
+     If a slot is chosen on the profile, it preselects it in the booking flow; if not,
+     the customer can still proceed and pick their time slot in step 2 of the flow. */
   const bookingHref =
-    chosen === null || selectedSlot === null
+    chosen === null
       ? localizedPath(locale, "/services")
-      : `${localizedPath(locale, `/book/${chosen.slug}`)}?provider=${encodeURIComponent(providerId)}&date=${encodeURIComponent(selectedDate)}&start=${encodeURIComponent(selectedSlot.start)}`;
+      : selectedSlot === null
+        ? `${localizedPath(locale, `/book/${chosen.slug}`)}?provider=${encodeURIComponent(providerId)}`
+        : `${localizedPath(locale, `/book/${chosen.slug}`)}?provider=${encodeURIComponent(providerId)}&date=${encodeURIComponent(selectedDate)}&start=${encodeURIComponent(selectedSlot.start)}${selectedSlot.end ? `&end=${encodeURIComponent(selectedSlot.end)}` : ""}`;
 
   return (
     <div className="grid gap-5">

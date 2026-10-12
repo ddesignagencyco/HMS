@@ -1,4 +1,4 @@
-﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FRESHNESS, accountKeys, bookingKeys, isNotFoundError, publicRetry } from '@/lib/api/keys';
 import type { Locale } from '@/lib/utils';
 import { accountApi, type CreateAddressInput, type UpdateAddressInput } from '@/features/account/api';
@@ -299,3 +299,17 @@ export const useSendMessage = (locale: Locale) => {
     ...noRetry
   });
 };
+
+/**
+ * Issues a fresh start code for the customer to give the provider at the door.
+ *
+ * MUST be a mutation, never a background query or auto-polled query, because each
+ * call generates a NEW code and invalidates the previous one!
+ */
+export function useRequestStartCode(locale: Locale) {
+  return useMutation({
+    mutationFn: (bookingId: string) => bookingApi.startCode(bookingId, { locale }),
+    ...noRetry
+  });
+}
+

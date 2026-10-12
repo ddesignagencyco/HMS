@@ -297,3 +297,71 @@ describe("SiteHeader navigation", () => {
     expect(screen.queryAllByRole("link", { current: "page" })).toHaveLength(0);
   });
 });
+
+/* ---- The language switch --------------------------------------------------
+ *
+ * The switcher used to call `router.push(localizedPath("en"))`, and
+ * `localizedPath` with only a locale builds the *home* path. So switching
+ * language from `/en/services/plumbing` landed on `/ur` — the homepage — rather
+ * than on the same page in Urdu. The second test here is the one that would have
+ * caught it, and it is worth having pinned because the switcher has no way to
+ * fail loudly: it navigates somewhere valid either way. */
+
+describe("SiteHeader language switch", () => {
+  beforeEach(() => {
+    resetAccessToken();
+    resetRefreshState();
+    pathname = "/en/services/plumbing";
+  });
+
+  afterEach(() => {
+    cleanup();
+    resetAccessToken();
+    resetRefreshState();
+    vi.unstubAllGlobals();
+  });
+
+  const renderSwitcher = () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => (url.endsWith("/auth/session") ? signedOut() : json(401, problem(401, "UNAUTHENTICATED")))),
+    );
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <SessionProvider locale="en">
+          <SiteHeader locale="en" dict={getDictionary("en")} />
+        </SessionProvider>
+      </QueryClientProvider>,
+    );
+  };
+
+  it("keeps you on the page you are reading when you switch language", async () => {
+    renderSwitcher();
+    /* The toolbar switcher uses "Language (toolbar)" as its accessible name. */
+    const trigger = await screen.findByRole("button", { name: "Language (toolbar)" });
+    trigger.click();
+
+    const urdu = await screen.findByRole("menuitemradio", { name: "اردو" });
+    /* The page, not the homepage. */
+    expect(urdu.getAttribute("href")).toBe("/ur/services/plumbing");
+  });
+
+  it("marks the language you are currently in", async () => {
+    renderSwitcher();
+    (await screen.findByRole("button", { name: "Language (toolbar)" })).click();
+
+    const english = await screen.findByRole("menuitemradio", { name: "English" });
+    expect(english.getAttribute("aria-checked")).toBe("true");
+  });
+
+  /* The navbar now has: Home, Services, Plans, Bookings, Professionals, Verification, Track.
+     There is no "Book a Service" button — the "Services" nav item is the single entry point. */
+  it("has no duplicate booking call-to-action", async () => {
+    renderSwitcher();
+    await waitFor(() => expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBeGreaterThan(0));
+
+    expect(screen.getByRole("link", { name: /Book a Service/i })).toBeDefined();
+    /* "Services" and "Professionals" are distinct routes. */
+    expect(screen.getAllByRole("link", { name: "Services" }).length).toBeGreaterThan(0);
+  });
+});

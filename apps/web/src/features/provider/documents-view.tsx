@@ -2,7 +2,7 @@
 
 import { AlertTriangle, CheckCircle2, Clock3, FileUp, ShieldCheck, XCircle } from 'lucide-react';
 import { useState } from 'react';
-import { Button, Card, Input, Label, PageHeader } from '@/components/ui';
+import { Button, Card, FileInput, Input, Label, PageHeader } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
 import { fileToBase64 } from '@/features/uploads/image';
 import { useProviderDocuments, useSubmitDocument } from '@/features/provider/queries';
@@ -219,11 +219,15 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
                 </div>
               ) : null}
 
-              <div className="grid gap-2">
-                <Label htmlFor="doc-file">{dict.portal.chooseFileLabel}</Label>
-                <input id="doc-file" type="file" accept=".jpg,.jpeg,.png,.pdf" className="text-sm" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-                <p className="text-xs leading-5 text-muted">{dict.portal.fileTypesHint.replace('{max}', String(Math.round(MAX_DOCUMENT_BYTES / 1024 / 1024)))}</p>
-              </div>
+              <FileInput
+                id="doc-file"
+                label={dict.portal.chooseFileLabel}
+                accept=".jpg,.jpeg,.png,.pdf"
+                chooseLabel={dict.common.chooseFile}
+                selectedLabel={dict.common.chosenFile}
+                onPick={(chosen) => setFile(chosen[0] ?? null)}
+              />
+                <p className="-mt-1 text-xs leading-5 text-muted">{dict.portal.fileTypesHint.replace('{max}', String(Math.round(MAX_DOCUMENT_BYTES / 1024 / 1024)))}</p>
 
               {localError !== '' ? (
                 <p role="alert" className="flex items-start gap-2 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">

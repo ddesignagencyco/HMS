@@ -193,9 +193,17 @@ export type SubscribeResult = {
  * The visit counts are four separate `COUNT(pv.id) FILTER (WHERE
  * status = ...)` columns. They are counts of visits, never paisa, and
  * they come from one grouped query, so the four numbers always add up
- * to `totalVisits` — which is worth asserting in a test, because a
+ * to `visitCount` — which is worth asserting in a test, because a
  * screen that shows "3 of 4 remaining" is making an arithmetic claim
  * about money-adjacent quantities.
+ *
+ * **The total is `visitCount`, not `totalVisits`.** The SQL aliases it
+ * `totalVisits`, and then `plans.service.ts` destructures that alias away and
+ * republishes the number under a different name. The wire field is `visitCount`.
+ * This type previously said `totalVisits`, which the server never sends — so
+ * `formatNumber(undefined)` rendered the literal string "NaN" in two places on
+ * the customer's own plan screen. TypeScript could not catch it, because the
+ * response is only asserted, never parsed at runtime.
  */
 export type MySubscription = {
   id: string;
@@ -210,7 +218,8 @@ export type MySubscription = {
   addressLabel: string;
   addressLine1: string;
   preferredProviderId: string | null;
-  totalVisits: number;
+  /** Named `visitCount` by the API, not `totalVisits` — see the note above. */
+  visitCount: number;
   pendingVisits: number;
   bookedVisits: number;
   consumedVisits: number;
@@ -261,7 +270,8 @@ export type SubscriptionDetail = {
  * number it cannot know in advance.
  */
 export type CancelResult = {
-  id: string;
+  /** The API echoes the id back under `subscriptionId`, not `id`. */
+  subscriptionId: string;
   status: 'CANCELLED';
   refundedVisitsCount: number;
   refundPaisa: number;

@@ -47,13 +47,26 @@ export type FinanceDebtRow = {
   createdAt?: string;
 };
 
+/**
+ * One row of `GET /finance/ledger`.
+ *
+ * This is a **flat ledger entry, not a transaction.** The API joins
+ * `ledger_entries` and returns one row per entry, carrying that entry's single
+ * `account` and `direction` (`finance.service.ts:105-117`). It does not return
+ * the double-entry line pairs of the parent transaction, so a screen cannot
+ * check that debits equal credits from this response — only the server knows
+ * that, because the constraint lives in the database.
+ */
 export type FinanceLedgerEntry = {
   entryId: number;
   transactionId: string;
   type: string;
+  memo: string | null;
+  bookingCode: string | null;
+  account: string;
+  ownerId: string | null;
   direction: "DEBIT" | "CREDIT";
   amountPaisa: number;
-  account: string;
   createdAt: string;
 };
 

@@ -1,9 +1,9 @@
 "use client";
 
-import { ChevronDown, Globe2, LogOut, MapPin as MapPinIcon, Menu, Phone, Plus, ShieldCheck, UserRound, X } from "lucide-react";
+import { LogOut, MapPin as MapPinIcon, Menu, Phone, Plus, ShieldCheck, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, localizedPath, type Locale } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { useSession } from "@/features/auth/session";
 import { homePathForRoles } from "@/features/auth/routing";
 import { BrandMark } from "@/components/brand-mark";
 import { NotificationBell } from "@/components/notification-bell";
+import { LanguageSwitcher } from "@/components/language-switcher";
 
 export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const pathname = usePathname();
@@ -20,19 +21,20 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
   const [open, setOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const accountWrap = useRef<HTMLDivElement>(null);
 
-  /* A dropdown is a promise that there is a menu. Clicking away or pressing Escape
-     has to close it, and it must not survive a navigation. */
   useEffect(() => {
     if (!accountOpen) return;
-    const close = () => setAccountOpen(false);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
+    const onPointerDown = (event: MouseEvent) => {
+      if (accountWrap.current !== null && !accountWrap.current.contains(event.target as Node)) setAccountOpen(false);
     };
-    document.addEventListener("click", close);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAccountOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("click", close);
+      document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKey);
     };
   }, [accountOpen]);
@@ -44,44 +46,24 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  /* One word per item, and only routes that exist. A second word is a sentence
-     somebody has to finish, and the underline is what says where you are. */
   const homeHref = localizedPath(locale);
   const links = [
     { href: homeHref, label: dict.nav.home },
-    { href: localizedPath(locale, "/providers"), label: dict.nav.search },
     { href: localizedPath(locale, "/services"), label: dict.nav.servicesShort },
     { href: localizedPath(locale, "/plans"), label: dict.nav.plansShort },
+    { href: localizedPath(locale, "/providers"), label: dict.nav.providersShort },
   ];
 
-  /* Bookings is a portal route, so it only appears once there is an account to
-     look at them in. Offering it to a signed-out visitor would be a link to the
-     sign-in page wearing a different label. */
   const signedIn = status === "authenticated";
   const bookingsHref = localizedPath(locale, "/account/bookings");
-  const shownLinks = signedIn ? [...links, { href: bookingsHref, label: dict.nav.bookings }] : links;
+  const shownLinks = signedIn
+    ? [...links.slice(0, 3), { href: bookingsHref, label: dict.nav.bookings }, links[3]]
+    : links;
 
-  // const otherLocale: Locale = locale === "en" ? "ur" : "en";
-  /* The public contact number. A single place, so the strip and the footer can
-     never disagree; kept out of the dictionary because it is not translated. */
   const supportPhone = "+92 300 1234567";
-
-  /* Three states, not two: while the session question is in flight nobody yet
-     knows whether this browser has a session, so the header holds a placeholder
-     rather than offering sign-in to somebody who is already signed in — which is
-     the state every full page load renders before the answer arrives. */
   const sessionSettled = status !== "loading";
   const accountHref = homePathForRoles(roles, locale);
 
-  /**
-   * The underline means "you are here" and nothing else.
-   *
-   * A section counts as active on its own route and on everything nested under
-   * it, so `/account/bookings/123` still marks Bookings — comparing the whole
-   * path would make every item go inactive the moment a detail page opened. The
-   * boundary is a following slash, not `startsWith`, so `/services-archive` can
-   * never light up Services.
-   */
   const isActive = (href: string): boolean =>
     href === homeHref ? pathname === homeHref : pathname === href || pathname.startsWith(`${href}/`);
 
@@ -91,9 +73,6 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
     router.replace(localizedPath(locale));
   };
 
-  /* Hover is allowed to change colour. It is not allowed to draw the underline —
-     an underline that appears under the pointer says "this is where you are", and
-     two underlines at once is worse than none. */
   const navLink = (href: string, label: string) => {
     const active = isActive(href);
     return (
@@ -118,40 +97,6 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
     );
   };
 
-  const [langOpen, setLangOpen] = useState(false);
-  const [langOpenMobile, setLangOpenMobile] = useState(false);
-
-  useEffect(() => {
-    if (!langOpen) return;
-    const close = () => setLangOpen(false);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
-    document.addEventListener("click", close);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("click", close);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [langOpen]);
-
-  useEffect(() => {
-    if (!langOpenMobile) return;
-    const close = () => setLangOpenMobile(false);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
-    document.addEventListener("click", close);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("click", close);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [langOpenMobile]);
-
-  const otherLocale: Locale = locale === "en" ? "ur" : "en";
-  const localeHref = pathname.replace(/^\/(en|ur)/, `/${otherLocale}`);
-
   return (
     <header
       className={cn(
@@ -174,58 +119,11 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
             </Link>
           </div>
 
-          <div className="relative">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                setLangOpen((was) => !was);
-              }}
-              aria-expanded={langOpen}
-              aria-label={dict.nav.languageMenu}
-              className="flex items-center gap-1.5 rounded-md border border-line bg-navy px-2.5 py-1.5 text-sm text-white/85 transition-colors hover:bg-navy/30"
-            >
-              <Globe2 className="size-3.5" aria-hidden="true" />
-              <span>{otherLocale === "ur" ? "اردو" : "English"}</span>
-              <ChevronDown className="size-3" />
-            </button>
-
-            {langOpen ? (
-              <div role="menu" className="absolute left-0 top-[calc(100%+0.5rem)] z-10 w-32 rounded-[12px] bg-white p-1.5 shadow-lifted border border-line" style={{ minWidth: 100 }}>
-                <div role="none" className="flex items-center gap-3 px-2 py-1 text-xs text-slate-500" style={{ borderBottom: "1px solid #e5e7eb" }}>
-                  <button
-                    role="menuitem"
-                    type="button"
-                    onClick={() => {
-                      void router.push(localizedPath("en"));
-                      setLangOpen(false);
-                    }}
-                    className="flex-1 rounded-none px-0 py-0 bg-transparent text-navy hover:bg-slate-100"
-                  >
-                    English
-                  </button>
-                  <button
-                    role="menuitem"
-                    type="button"
-                    onClick={() => {
-                      void router.push(localizedPath("ur"));
-                      setLangOpen(false);
-                    }}
-                    className="flex-1 rounded-none px-0 py-0 bg-transparent text-navy hover:bg-slate-100"
-                  >
-                    اردو
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
+          <LanguageSwitcher locale={locale} pathname={pathname} dict={dict} variant="strip" />
         </div>
       </div>
 
       <div className="container-shell flex h-[72px] items-center justify-between gap-4">
-        {/* The mark carries the brand. The wordmark beside it was the old
-            implementation's habit, and it is what made this header read as
-            something that had been half-migrated. */}
         <Link href={homeHref} aria-label={dict.nav.brandLabel} title={dict.nav.brandLabel} className="flex min-w-0 shrink-0 items-center">
           <BrandMark className="size-10" />
         </Link>
@@ -240,7 +138,7 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
           ) : signedIn ? (
             <div className="flex items-center gap-2">
               <NotificationBell locale={locale} />
-              <div className="relative">
+              <div className="relative" ref={accountWrap}>
                 <button
                   type="button"
                   onClick={() => setAccountOpen((was) => !was)}
@@ -306,13 +204,13 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
                 <BrandMark />
               </span>
               <div className="flex items-center gap-2">
-                <Link href={localeHref} className={buttonStyles({ variant: "secondary", className: "h-11 border-line text-navy" })}>
-                  {otherLocale === "ur" ? "اردو" : "English"}
-                </Link>
                 <button type="button" onClick={() => setOpen(false)} className="grid size-11 place-items-center rounded-[9px] border border-line" aria-label={dict.nav.close}>
                   <X className="size-5" aria-hidden="true" />
                 </button>
               </div>
+            </div>
+            <div className="mt-4">
+              <LanguageSwitcher locale={locale} pathname={pathname} dict={dict} variant="drawer" />
             </div>
             <nav className="mt-5 grid gap-1" aria-label={dict.nav.menu}>
               {shownLinks.map((link) => {
