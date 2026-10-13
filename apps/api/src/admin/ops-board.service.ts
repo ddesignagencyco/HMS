@@ -44,10 +44,11 @@ export class OpsBoardService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    this.queues.registerScheduled('ops-board.refresh', async () => void (await this.refresh()));
-    // The interval lives here rather than in REPEATABLE_JOBS because five seconds is a display
-    // cadence, not a piece of work worth putting in the shared queue table — and because the
-    // push has to happen in the process holding the subscribers.
+    // Refreshed on an in-process interval, deliberately not a REPEATABLE_JOBS tick. Five seconds is
+    // a display cadence, and the push to subscribers has to happen in the process holding them —
+    // the API. A queue tick would run in the worker, which has no subscribers, so the board would
+    // be recomputed there and never pushed. (This used to also register an `ops-board.refresh`
+    // scheduled task, which nothing ever scheduled; the interval is the only mechanism that works.)
     this.timer = setInterval(() => {
       void this.refresh().catch(error => this.logger.error(`ops board refresh failed: ${(error as Error).message}`));
     }, OPS_BOARD_INTERVAL_MS);

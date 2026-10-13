@@ -1,0 +1,28 @@
+# Prometheus scrape configuration for SHM-092 / NFR-OBS.
+#
+# Two jobs, not one, and that is the point. `shm_http_*` (request count and latency) and the
+# queue/escrow gauges are served by the API on :3000. But the background jobs that
+# `shm_jobs_total` counts run in the worker process — a separate process with its own in-memory
+# registry — so the worker exposes its own `/metrics` on :9464. Scraping only the API left
+# `shm_jobs_total` empty and the `JobFailureRateHigh` rule permanently silent.
+#
+# The alert rules live alongside this file in `alerts.yml`. Point a real Prometheus at this
+# directory (mount it and delete the `targets` defaults below, or override them per environment) —
+# there is no Prometheus deployment in this repository yet.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: smart-home-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['localhost:3000']
+
+  - job_name: smart-home-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['localhost:9464']

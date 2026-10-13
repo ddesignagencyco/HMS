@@ -17,6 +17,10 @@
       "types": "./dist/platform/outbox.dispatcher.d.ts",
       "import": "./dist/platform/outbox.dispatcher.js"
     },
+    "./platform/metrics.service": {
+      "types": "./dist/platform/metrics.service.d.ts",
+      "import": "./dist/platform/metrics.service.js"
+    },
     "./platform/settings.service": {
       "types": "./dist/platform/settings.service.d.ts",
       "import": "./dist/platform/settings.service.js"

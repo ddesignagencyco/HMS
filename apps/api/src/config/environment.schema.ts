@@ -14,6 +14,13 @@ export const environmentSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
     API_HOST: z.string().min(1).default('0.0.0.0'),
+    /**
+     * The worker's Prometheus scrape port. The API serves `/metrics` on `PORT`, but the background
+     * jobs that `shm_jobs_total` counts run in the worker, a separate process — so the worker has to
+     * expose its own registry for those counters to be scrapeable at all. 9464 is the conventional
+     * port for a Prometheus exporter that is not the application's own.
+     */
+    WORKER_METRICS_PORT: z.coerce.number().int().min(1).max(65_535).default(9464),
     SHUTDOWN_GRACE_MS: z.coerce.number().int().min(0).max(120_000).default(10_000),
 
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
