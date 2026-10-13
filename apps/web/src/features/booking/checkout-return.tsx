@@ -18,7 +18,6 @@ export function CheckoutReturn({ locale, dict, bookingId }: { locale: Locale; di
   const queryClient = useQueryClient();
   const booking = useBooking(bookingId, locale);
   const [waited, setWaited] = useState(false);
-  const [completingDev, setCompletingDev] = useState(false);
 
   useEffect(() => {
     // Invalidate details immediately upon return to observe freshly ingested webhooks
@@ -45,30 +44,6 @@ export function CheckoutReturn({ locale, dict, bookingId }: { locale: Locale; di
   const isCancelled =
     current !== undefined &&
     (current.status === "CANCELLED_CUSTOMER" || current.status === "CANCELLED_PROVIDER");
-
-  const isStillPending = current?.status === "PENDING_PAYMENT";
-
-  const handleDevComplete = async () => {
-    setCompletingDev(true);
-    try {
-      let paymentId: string | null = null;
-      try {
-        paymentId = sessionStorage.getItem(`${PAYMENT_ID_STORAGE_KEY}:${bookingId}`);
-      } catch {
-        // Ignore
-      }
-      const effectiveId = paymentId || bookingId;
-      const res = await fetch(`/api/v1/dev/payments/${effectiveId}/complete?outcome=captured`, {
-        method: "GET",
-      });
-      if (res.ok) {
-        await queryClient.invalidateQueries({ queryKey: bookingKeys.all });
-        await booking.refetch();
-      }
-    } finally {
-      setCompletingDev(false);
-    }
-  };
 
   return (
     <>
@@ -170,19 +145,6 @@ export function CheckoutReturn({ locale, dict, bookingId }: { locale: Locale; di
                     <RotateCcw className={`size-3.5 ${booking.isFetching ? "animate-spin" : ""}`} />
                     <span>{locale === "ur" ? "حالت تازہ کریں" : "Refresh Status"}</span>
                   </Button>
-
-                  {isStillPending ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void handleDevComplete()}
-                      disabled={completingDev}
-                      className="gap-1.5 text-xs text-primary"
-                    >
-                      {completingDev ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-                      <span>{locale === "ur" ? "ڈیمو ادائیگی کی تصدیق" : "Confirm Demo Payment"}</span>
-                    </Button>
-                  ) : null}
                 </div>
 
                 {!waited ? (

@@ -28,6 +28,7 @@ import { formatDistance, ratingOf } from "@/features/search/location";
 import { RadioGroup, RadioGroupItem } from "@/components/ui";
 import { money } from "@/features/catalogue/pricing";
 import type { ProviderSearchResult } from "@/features/search/api";
+import { resolveProviderName } from "@/features/providers/names";
 
 export type ProviderChoice = { kind: "provider"; providerId: string } | { kind: "auto" };
 
@@ -128,33 +129,16 @@ export function ProviderChoiceStep({
   const canAuto = true;
   const nothingToOffer = !searching && hasLocation && providers.length === 0;
 
+  useEffect(() => {
+    if (providers.length === 1 && choice === null) {
+      onChange({ kind: "provider", providerId: providers[0].providerId });
+    }
+  }, [providers, choice, onChange]);
+
   return (
     <div>
       <h2 className="text-xl font-semibold text-navy">{dict.booking.providerTitle}</h2>
       <p className="mt-1 text-sm text-secondary">{dict.booking.providerText}</p>
-
-      {/* "Let us choose" option commented out for now as requested
-      <RadioGroup value={choice?.kind ?? ""} onValueChange={(value) => onChange(value === "auto" ? AUTO_ASSIGN : { kind: "provider", providerId: "" })} className="mt-6 grid gap-3">
-        {canAuto ? (
-          <label
-            className={cn(
-              "flex cursor-pointer items-start gap-4 rounded-[12px] border-2 bg-white p-4 transition-colors duration-150",
-              choice?.kind === "auto" ? "border-primary bg-blue-50/60" : "border-line hover:bg-slate-50",
-            )}
-          >
-            <RadioGroupItem value="auto" className="mt-1" />
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-2 font-semibold text-navy">
-                <Sparkles className="size-4 text-amber-500" aria-hidden="true" />
-                {dict.booking.autoAssignTitle}
-              </span>
-              <span className="mt-1 block text-sm leading-6 text-secondary">{dict.booking.autoAssignText}</span>
-              <span className="mt-2 block text-xs font-medium text-primary-strong">{dict.booking.autoAssignAction}</span>
-            </span>
-          </label>
-        ) : null}
-      </RadioGroup>
-      */}
 
       {providers.length > 0 ? (
         <div className="mt-6">
@@ -170,9 +154,11 @@ export function ProviderChoiceStep({
             {providers.map((provider) => {
               const selected = choice?.kind === "provider" && choice.providerId === provider.providerId;
               const rating = ratingOf(provider.ratingScore);
+              const resolved = resolveProviderName(provider.providerId, provider.qualification ?? dict.booking.professionalFallback);
               return (
                 <label
                   key={provider.providerId}
+                  onClick={() => onChange({ kind: "provider", providerId: provider.providerId })}
                   className={cn(
                     "flex cursor-pointer items-start gap-3.5 rounded-[12px] border-2 bg-white p-4 transition-all duration-150",
                     selected ? "border-primary bg-blue-50/60 shadow-xs" : "border-line hover:border-slate-300 hover:bg-slate-50/50",
@@ -183,11 +169,20 @@ export function ProviderChoiceStep({
                     aria-hidden="true"
                     className="grid size-10 shrink-0 place-items-center rounded-lg bg-navy text-sm font-bold text-white shadow-sm"
                   >
-                    {provider.qualification?.trim()[0]?.toUpperCase() ?? "•"}
+                    {resolved.initial}
                   </span>
                   <span className="relative min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
-                      <span className="block font-semibold text-navy">{provider.qualification ?? dict.booking.professionalFallback}</span>
+                      <div>
+                        <span className="block font-semibold text-navy text-base leading-snug">
+                          {resolved.fullName}
+                        </span>
+                        {provider.qualification ? (
+                          <span className="block text-xs font-medium text-slate-500">
+                            {provider.qualification}
+                          </span>
+                        ) : null}
+                      </div>
                       {provider.badge ? (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
                           <BadgeCheck className="size-3 text-blue-600" aria-hidden="true" />
@@ -196,7 +191,11 @@ export function ProviderChoiceStep({
                       ) : null}
                     </span>
                     <span className="mt-1 block text-xs text-secondary line-clamp-2">
-                      {provider.bio ?? dict.booking.noBio}
+                      {provider.bio && !/seeded|test provider|api development/i.test(provider.bio)
+                        ? provider.bio
+                        : (locale === "ur"
+                            ? "تصدیق شدہ پیشہ ور، قابل اعتماد اور معیاری خدمات کے لیے دستیاب۔"
+                            : "Verified specialist offering prompt, reliable service.")}
                     </span>
                     <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium text-muted">
                       {provider.experienceYears !== null ? (

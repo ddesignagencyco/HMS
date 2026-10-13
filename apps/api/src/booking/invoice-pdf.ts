@@ -25,40 +25,86 @@ const escapePdf = (text: string): string =>
  * critical path of adding a library. Every amount is formatted from integer paisa.
  */
 export const renderInvoicePdf = (invoice: InvoiceDocument): Buffer => {
-  const rows: string[] = [];
-  let y = 790;
-  const text = (value: string, size = 11, x = 50): void => {
-    rows.push(`BT /F1 ${size} Tf ${x} ${y} Td (${escapePdf(value)}) Tj ET`);
-    y -= size + 6;
+  const commands: string[] = [];
+  const text = (value: string, size = 11, x = 50, y = 700, r = 0.15, g = 0.2, b = 0.3): void => {
+    commands.push(`${r} ${g} ${b} rg BT /F1 ${size} Tf ${x} ${y} Td (${escapePdf(value)}) Tj ET`);
   };
   const money = (value: bigint): string => `PKR ${formatPaisa(value)}`;
 
-  text('Smart Home Maintenance Services', 16);
-  text(`Invoice ${invoice.number}`, 13);
-  text(`Issued: ${invoice.issuedAt.toISOString().slice(0, 10)}   Booking: ${invoice.bookingCode}`);
-  y -= 8;
-  text(`Customer: ${invoice.customerName}`);
-  text(`Provider: ${invoice.providerName}`);
-  text(`Service: ${invoice.serviceName}`);
-  y -= 12;
-  text('Items', 12);
-  for (const line of invoice.lines) {
-    text(`${line.description}`, 11, 60);
-    y += 17;
-    text(money(line.amountPaisa), 11, 430);
-  }
-  y -= 10;
-  text(`Subtotal: ${money(invoice.subtotalPaisa)}`, 11, 330);
-  if (invoice.surchargePaisa > 0n) text(`Surcharge: ${money(invoice.surchargePaisa)}`, 11, 330);
-  if (invoice.discountPaisa > 0n) text(`Discount: -${money(invoice.discountPaisa)}`, 11, 330);
-  text(`Total: ${money(invoice.totalPaisa)}`, 13, 330);
+  // Header background banner (Royal Blue)
+  commands.push('0.06 0.28 0.58 rg 0 740 595 102 re f');
+  // Decorative accent line
+  commands.push('0.15 0.45 0.85 rg 0 735 595 5 re f');
 
-  const stream = rows.join('\n');
+  // Header text
+  text('INVOICE', 22, 45, 792, 1, 1, 1);
+  text(`NO: ${invoice.number}`, 12, 420, 792, 1, 1, 1);
+  text('Smart Home Maintenance Services', 10, 45, 768, 0.85, 0.92, 1);
+  text(`Booking: ${invoice.bookingCode}`, 10, 420, 768, 0.85, 0.92, 1);
+
+  // Metadata Card (Bill To / Provider / Date)
+  commands.push('0.96 0.97 0.99 rg 40 642 515 78 re f');
+  commands.push('0.85 0.88 0.93 RG 0.75 w 40 642 515 78 re s');
+
+  text('BILL TO:', 8, 55, 702, 0.4, 0.45, 0.55);
+  text(invoice.customerName, 11, 55, 686, 0.1, 0.15, 0.25);
+  text(`Date: ${invoice.issuedAt.toISOString().slice(0, 10)}`, 9, 55, 668, 0.4, 0.45, 0.55);
+
+  text('FROM / PROVIDER:', 8, 280, 702, 0.4, 0.45, 0.55);
+  text(invoice.providerName, 11, 280, 686, 0.1, 0.15, 0.25);
+  text(`Service: ${invoice.serviceName}`, 9, 280, 668, 0.4, 0.45, 0.55);
+
+  // PAID Badge
+  commands.push('0.08 0.65 0.32 rg 455 664 85 24 re f');
+  text('PAID', 11, 483, 672, 1, 1, 1);
+
+  // Items Table Header
+  let y = 600;
+  commands.push(`0.08 0.28 0.58 rg 40 ${y} 515 24 re f`);
+  text('DESCRIPTION', 9, 55, y + 7, 1, 1, 1);
+  text('AMOUNT', 9, 460, y + 7, 1, 1, 1);
+  y -= 22;
+
+  // Table Rows
+  let rowIndex = 0;
+  for (const line of invoice.lines) {
+    if (rowIndex % 2 === 1) {
+      commands.push(`0.97 0.98 0.99 rg 40 ${y - 4} 515 22 re f`);
+    }
+    commands.push(`0.9 0.92 0.95 RG 0.5 w 40 ${y - 4} 515 0.5 re s`);
+    text(line.description, 10, 55, y + 3, 0.15, 0.2, 0.3);
+    text(money(line.amountPaisa), 10, 460, y + 3, 0.15, 0.2, 0.3);
+    y -= 22;
+    rowIndex++;
+  }
+
+  // Summary box
+  y -= 10;
+  commands.push(`0.9 0.92 0.95 RG 0.75 w 330 ${y - 65} 225 75 re s`);
+  commands.push(`0.98 0.99 1 rg 330 ${y - 65} 225 75 re f`);
+
+  text(`Subtotal: ${money(invoice.subtotalPaisa)}`, 10, 345, y - 8, 0.3, 0.35, 0.45);
+  if (invoice.surchargePaisa > 0n) {
+    text(`Surcharge: ${money(invoice.surchargePaisa)}`, 10, 345, y - 24, 0.3, 0.35, 0.45);
+  }
+  if (invoice.discountPaisa > 0n) {
+    text(`Discount: -${money(invoice.discountPaisa)}`, 10, 345, y - 40, 0.1, 0.55, 0.25);
+  }
+
+  // Total banner box
+  commands.push(`0.06 0.28 0.58 rg 330 ${y - 65} 225 24 re f`);
+  text(`TOTAL: ${money(invoice.totalPaisa)}`, 11, 345, y - 57, 1, 1, 1);
+
+  // Thank you footer
+  text('Thank You!', 16, 245, 110, 0.08, 0.28, 0.58);
+  text('Smart Home Maintenance Services · Automated Digital Escrow Receipt', 8, 140, 90, 0.5, 0.55, 0.6);
+
+  const stream = commands.join('\n');
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
     `<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`
   ];
   let output = '%PDF-1.4\n';

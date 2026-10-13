@@ -28,16 +28,24 @@ export const passwordRule = z
   .refine((value) => /\d/.test(value), "Add a number")
   .refine((value) => !COMMON_PASSWORDS.has(value.toLowerCase()), "That password is too common");
 
-/** Strips the punctuation the API's normaliseTarget ignores, then puts a local
-    Pakistani number into the E.164 form it stores. Returns null when the input
+/** Strips punctuation and formatting, then puts a local or international
+    number into the E.164 form the API stores. Returns null when the input
     cannot become a valid E.164 number. */
 export const toE164 = (input: string): string | null => {
   const cleaned = input.replace(/[\s()-]/g, "");
   if (cleaned === "") return null;
+  // If user pasted/typed with an extra leading 0 after 92 (e.g. +9203001234567 or 9203001234567)
+  if (/^(\+?92)03\d{9}$/.test(cleaned)) {
+    return `+92${cleaned.replace(/^\+?920/, "")}`;
+  }
   if (cleaned.startsWith("+")) return E164_PATTERN.test(cleaned) ? cleaned : null;
-  if (cleaned.startsWith("0092")) return E164_PATTERN.test(`+${cleaned.slice(2)}`) ? `+${cleaned.slice(2)}` : null;
-  if (cleaned.startsWith("92") && cleaned.length === 12) return E164_PATTERN.test(`+${cleaned}`) ? `+${cleaned}` : null;
+  if (cleaned.startsWith("00")) {
+    const withPlus = `+${cleaned.slice(2)}`;
+    return E164_PATTERN.test(withPlus) ? withPlus : null;
+  }
   if (/^03\d{9}$/.test(cleaned)) return `+92${cleaned.slice(1)}`;
+  const withPlus = `+${cleaned}`;
+  if (E164_PATTERN.test(withPlus)) return withPlus;
   return null;
 };
 
@@ -66,7 +74,7 @@ export const registerSchema = z
     role: z.enum(["CUSTOMER", "PROVIDER"], { required_error: "Choose whether you are booking or offering services" }),
     firstName: z.string().trim().min(1, "Enter your first name").max(80, "That is too long"),
     lastName: z.string().trim().max(80, "That is too long").optional(),
-    phoneE164: z.string().refine((value) => E164_PATTERN.test(value), "Enter a mobile number such as 0300 1234567"),
+    phoneE164: z.string().trim().min(1, "Enter your mobile number"),
     email: z
       .string()
       .trim()

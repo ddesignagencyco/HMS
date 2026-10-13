@@ -159,7 +159,9 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate font-bold text-white text-sm leading-tight">{user ? `${user.firstName} ${user.lastName}`.trim() : dict.brand.name}</p>
-        <p className="truncate text-xs text-white/55 capitalize leading-tight">{dict.portal[role]}</p>
+        {role !== "customer" ? (
+          <p className="truncate text-xs text-white/55 capitalize leading-tight">{dict.portal[role]}</p>
+        ) : null}
       </div>
     </Link>
   );

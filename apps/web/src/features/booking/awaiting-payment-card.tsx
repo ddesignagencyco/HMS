@@ -27,7 +27,6 @@ export function AwaitingPaymentCard({
   const queryClient = useQueryClient();
   const cancelBooking = useCancelBooking(locale);
   const [cancelling, setCancelling] = useState(false);
-  const [completingDev, setCompletingDev] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Check if booking is in pending payment state
@@ -48,41 +47,13 @@ export function AwaitingPaymentCard({
     // SessionStorage unavailable
   }
 
-  const payableAmount = bookingTotalPaisa(booking);
+  const effectivePaymentUrl =
+    storedRedirectUrl ||
+    (storedPaymentId
+      ? `/api/v1/dev/payments/${storedPaymentId}?returnUrl=${encodeURIComponent(`/${locale}/checkout/return?bookingId=${booking.id}`)}`
+      : `/api/v1/dev/payments/${booking.id}?returnUrl=${encodeURIComponent(`/${locale}/checkout/return?bookingId=${booking.id}`)}`);
 
-  const handleDevComplete = async (outcome: "captured" | "failed") => {
-    setCompletingDev(true);
-    setFeedback(null);
-    try {
-      // In dev environment, invoke dev payments completion endpoint if paymentId exists or try direct route
-      const paymentId = storedPaymentId || booking.id;
-      const res = await fetch(`/api/v1/dev/payments/${paymentId}/complete?outcome=${outcome}`, {
-        method: "GET",
-      });
-      if (res.ok) {
-        setFeedback({
-          type: "success",
-          message: outcome === "captured"
-            ? (locale === "ur" ? "ادائیگی کامیابی سے وصول ہو گئی! بکنگ آگے بڑھا دی گئی۔" : "Payment captured successfully! Booking has progressed to Requested.")
-            : (locale === "ur" ? "ادائیگی منسوخ کر دی گئی۔" : "Payment was marked as failed.")
-        });
-        await queryClient.invalidateQueries({ queryKey: bookingKeys.all });
-      } else {
-        const errorData = await res.json().catch(() => ({}));
-        setFeedback({
-          type: "error",
-          message: errorData.message || (locale === "ur" ? "ادائیگی پروسیس کرنے میں مسئلہ پیش آیا۔" : "Failed to complete payment via dev gateway.")
-        });
-      }
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        message: err instanceof Error ? err.message : (locale === "ur" ? "نیٹ ورک کی خرابی۔" : "Network error completing payment.")
-      });
-    } finally {
-      setCompletingDev(false);
-    }
-  };
+  const payableAmount = bookingTotalPaisa(booking);
 
   const handleCancel = async () => {
     if (!window.confirm(locale === "ur" ? "کیا آپ واقعی یہ بکنگ منسوخ کرنا چاہتے ہیں؟" : "Are you sure you want to cancel this pending booking?")) {
@@ -156,31 +127,13 @@ export function AwaitingPaymentCard({
           )}
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            {storedRedirectUrl ? (
-              <a
-                href={storedRedirectUrl}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-primary px-5 text-sm font-semibold text-white shadow-sm hover:bg-primary/95 focus:outline-none"
-              >
-                <span>{dict.booking.payNow}</span>
-                <ExternalLink className="size-4" />
-              </a>
-            ) : null}
-
-            {/* Development / Testing quick-payment helper for smooth client demo presentations */}
-            <Button
-              type="button"
-              variant={storedRedirectUrl ? "secondary" : "primary"}
-              onClick={() => void handleDevComplete("captured")}
-              disabled={completingDev}
-              className="gap-2"
+            <a
+              href={effectivePaymentUrl}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-primary px-5 text-sm font-semibold text-white shadow-sm hover:bg-primary/95 focus:outline-none"
             >
-              {completingDev ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="size-4 text-emerald-600" />
-              )}
-              <span>{locale === "ur" ? "ڈیمو ادائیگی مکمل کریں" : "Complete Demo Payment"}</span>
-            </Button>
+              <span>{dict.booking.payNow}</span>
+              <ExternalLink className="size-4" />
+            </a>
 
             <Button
               type="button"

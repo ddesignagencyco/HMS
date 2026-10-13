@@ -178,7 +178,6 @@ export function SiteHeader({ locale, dict }: { locale: Locale; dict: Dictionary 
             </Link>
           )}
           <Link href={localizedPath(locale, "/services")} className={buttonStyles()}>
-            <Plus className="size-4" aria-hidden="true" />
             {dict.nav.bookService}
           </Link>
         </div>

@@ -4,12 +4,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import {
   ArrowRight,
   Lock,
   Mail,
-  Phone,
   User,
   UserRound,
   Wrench,
@@ -19,7 +18,7 @@ import type { Dictionary } from "@/lib/dictionaries";
 import { cn, localizedPath, type Locale } from "@/lib/utils";
 import { authApi } from "./api";
 import { toE164, registerSchema, type RegisterValues } from "./schemas";
-import { Field, PasswordField, SubmitButton } from "./auth-fields";
+import { Field, PasswordField, PhoneField, SubmitButton } from "./auth-fields";
 import { AUTH_SECONDARY_IMAGE, AuthShell } from "./auth-shell";
 import { applyServerFieldErrors, authErrorMessage, toastError, toastSuccess } from "./auth-feedback";
 import { PasswordPopover } from "./password-popover";
@@ -191,17 +190,20 @@ export function RegisterForm({ locale, dict }: { locale: Locale; dict: Dictionar
 
         {/* Phone & Email */}
         <div className="grid items-start gap-2 sm:grid-cols-2">
-          <Field
-            {...form.register("phoneE164")}
-            label={locale === "ur" ? "فون نمبر" : "Phone number"}
-            error={form.formState.errors.phoneE164?.message}
-            placeholder={locale === "ur" ? "0300 1234567" : "(555) 123-4567"}
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            dir="ltr"
-            className="[&_input]:text-start"
-            startIcon={<Phone className="size-3.5" aria-hidden="true" />}
+          <Controller
+            name="phoneE164"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <PhoneField
+                id="phoneE164"
+                label={locale === "ur" ? "فون نمبر" : "Phone number"}
+                error={fieldState.error?.message}
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                locale={locale}
+              />
+            )}
           />
 
           <Field

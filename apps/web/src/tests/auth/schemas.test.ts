@@ -20,9 +20,13 @@ describe("toE164", () => {
   it("puts a local Pakistani number into the E.164 form the API stores", () => {
     expect(toE164("03001234567")).toBe("+923001234567");
     expect(toE164("0300 1234567")).toBe("+923001234567");
+    expect(toE164("0300 2276502")).toBe("+923002276502");
     expect(toE164("+923001234567")).toBe("+923001234567");
     expect(toE164("00923001234567")).toBe("+923001234567");
     expect(toE164("923001234567")).toBe("+923001234567");
+    expect(toE164("9203001234567")).toBe("+923001234567");
+    expect(toE164("+9203001234567")).toBe("+923001234567");
+    expect(toE164("+14155552671")).toBe("+14155552671");
   });
 
   it("refuses anything that is not a valid E.164 number rather than guessing", () => {
@@ -81,8 +85,10 @@ describe("registerSchema", () => {
     expect(result.error.issues.map((issue) => issue.path[0])).not.toContain("password");
   });
 
-  it("rejects a number that is not E.164 and a role the API does not self-register", () => {
-    expect(registerSchema.safeParse({ ...valid, phoneE164: "03001234567" }).success).toBe(false);
+  it("accepts phone numbers without strict E.164 formatting and rejects empty phone or a role the API does not self-register", () => {
+    expect(registerSchema.safeParse({ ...valid, phoneE164: "03001234567" }).success).toBe(true);
+    expect(registerSchema.safeParse({ ...valid, phoneE164: "923001234567" }).success).toBe(true);
+    expect(registerSchema.safeParse({ ...valid, phoneE164: "" }).success).toBe(false);
     expect(registerSchema.safeParse({ ...valid, role: "ADMIN" }).success).toBe(false);
   });
 

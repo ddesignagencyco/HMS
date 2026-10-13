@@ -1,10 +1,11 @@
 'use client';
 
-import { AlertTriangle, ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, PhoneCall, TrendingUp } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, Navigation, PhoneCall, TrendingUp } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
 import { Button, Card, FileInput, Input, Label, PageHeader, Textarea } from '@/components/ui';
 import { useAllServices } from '@/features/catalogue/queries';
-import { InvoiceDownload, isInvoiceReady } from '@/features/booking/invoice-download';
+import { BookingInvoiceCard, InvoiceDownload, isInvoiceReady } from '@/features/booking/invoice-download';
 import {
   useAcceptBooking,
   useAddEvidence,
@@ -89,6 +90,8 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
   const cashReceived = useCashReceived(locale);
   const raiseRevision = useCreateRevision(locale);
   const addEvidence = useAddEvidence(locale);
+  const checklist = useChecklist(bookingId, locale);
+  const markChecklist = useMarkChecklistDone(locale);
 
   const [otp, setOtp] = useState('');
   const [finalAmount, setFinalAmount] = useState('');
@@ -124,12 +127,14 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
    * useful information in the response.
    */
   const attempt = async (perform: () => Promise<unknown>): Promise<void> => {
-    setLocalError('');
     setBusy(true);
+    setLocalError('');
     try {
       await perform();
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : dict.job.actionFailed);
+      const msg = error instanceof Error ? error.message : dict.job.actionFailed;
+      setLocalError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -137,10 +142,9 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
 
   const submitStart = async (): Promise<void> => {
     const code = otp.trim();
-    /* Six digits, checked here so an obvious typo never burns one of the five
-       attempts the API allows before it locks the code for fifteen minutes. */
     if (!/^\d{6}$/.test(code)) {
       setLocalError(dict.job.otpSixDigits);
+      toast.error(dict.job.otpSixDigits);
       return;
     }
     await attempt(async () => {
@@ -150,14 +154,11 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
   };
 
   const submitComplete = async (): Promise<void> => {
-    setLocalError('');
     const typed = finalAmount.trim();
-    /* `finalAmountPaisa` may lower the charge but never exceed the approved total;
-       an empty box means "complete at the approved total", which is the schema's
-       own default. */
     const paisa = typed === '' ? undefined : Math.round(Number(typed) * 100);
     if (paisa !== undefined && (!Number.isFinite(paisa) || paisa < 0)) {
       setLocalError(dict.job.finalAmountInvalid);
+      toast.error(dict.job.finalAmountInvalid);
       return;
     }
     await attempt(async () => {
@@ -169,10 +170,10 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
   };
 
   const submitRevision = async (): Promise<void> => {
-    setLocalError('');
     const delta = Math.round(Number(revision.delta) * 100);
     if (revision.reason.trim() === '' || !Number.isFinite(delta) || delta <= 0) {
       setLocalError(dict.job.revisionIncomplete);
+      toast.error(dict.job.revisionIncomplete);
       return;
     }
     await attempt(async () => {
@@ -197,16 +198,12 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
    * re-encoding, so there is nothing left to attempt here.
    */
   const attachPhoto = async (file: File, kind: EvidenceKind, checklistItemId?: number): Promise<void> => {
-    setLocalError('');
-    const clientUuid = crypto.randomUUID();
     setBusy(true);
+    const clientUuid = crypto.randomUUID();
     try {
       const prepared = await prepareEvidenceImage(file);
-      /* `Prepared` carries `rejected?: undefined` on the success arm so the two
-         shapes stay assignable, which means `in` does not narrow it — the value
-         check is what actually discriminates. */
       if (prepared.rejected !== undefined) {
-        setLocalError(prepared.rejected);
+        toast.error(prepared.rejected);
         return;
       }
       await addEvidence.mutateAsync({
@@ -219,8 +216,40 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
           ...(checklistItemId === undefined ? {} : { checklistItemId })
         }
       });
+      // Synchronize with checklist if photo wasn't already targeted at an item
+      if (checklistItemId === undefined && checklist.data?.items) {
+        const targetStep = checklist.data.items.find((item) => {
+          if (!item.requiresPhoto || item.done) return false;
+          if (kind === 'BEFORE') {
+            return item.labelEn.toLowerCase().includes('before') || item.position <= 2;
+          }
+          if (kind === 'AFTER') {
+            return item.labelEn.toLowerCase().includes('after') || item.labelEn.toLowerCase().includes('finish') || item.position > 2;
+          }
+          return false;
+        });
+        if (targetStep) {
+          try {
+            const chkUuid = crypto.randomUUID();
+            const added = await addEvidence.mutateAsync({
+              id: bookingId,
+              payload: {
+                kind: 'CHECKLIST',
+                clientUuid: chkUuid,
+                checklistItemId: targetStep.itemId,
+                contentType: prepared.contentType,
+                contentBase64: prepared.base64
+              }
+            });
+            await markChecklist.mutateAsync({ id: bookingId, itemId: targetStep.itemId, evidenceId: added.id });
+          } catch {
+            // Non-blocking sync attempt
+          }
+        }
+      }
+      toast.success(locale === 'ur' ? 'تصویر کامیابی سے محفوظ ہو گئی' : 'Photo recorded successfully');
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : dict.job.photoUploadFailed);
+      toast.error(error instanceof Error ? error.message : (locale === 'ur' ? 'تصویر محفوظ کرنے میں مسئلہ پیش آیا' : 'Failed to record photo'));
     } finally {
       setBusy(false);
     }
@@ -271,12 +300,7 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
     <div>
       <PageHeader eyebrow={dict.portal.provider} title={serviceName} description={dict.job.codeLabel.replace('{code}', current.code)} action={<StatusPill status={current.status} dict={dict} />} />
 
-      {localError !== '' ? (
-        <p role="alert" className="mt-5 flex items-start gap-2 rounded-[10px] border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-800">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <span>{localError}</span>
-        </p>
-      ) : null}
+      {localError !== '' ? <span className="sr-only" role="status">{localError}</span> : null}
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <div className="grid gap-5">
@@ -345,6 +369,10 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
           {current.status === 'IN_PROGRESS' || current.status === 'WORK_COMPLETED' || current.status === 'AWAITING_VERIFICATION' ? (
             <ChecklistCard locale={locale} dict={dict} bookingId={current.id} canTick={current.status === 'IN_PROGRESS'} />
           ) : null}
+
+          {isInvoiceReady(current.status) ? (
+            <BookingInvoiceCard booking={{ ...current, serviceName }} locale={locale} dict={dict} />
+          ) : null}
         </div>
 
         <div className="grid content-start gap-5">
@@ -405,8 +433,8 @@ function buildSteps(booking: Booking, dict: Dictionary, photos: { hasBefore: boo
   /* Every step below is a fact read off the booking row or the photo list. The
      previous version kept a `stage` counter in `useState`, which meant the screen
      disagreed with the server after any refetch, and reset entirely on reload. */
-  const started = ['IN_PROGRESS', 'QUOTE_REVISION', 'WORK_COMPLETED', 'AWAITING_VERIFICATION', 'VERIFIED', 'PAYMENT_RELEASED', 'PARTIALLY_REFUNDED', 'CLOSED'].includes(booking.status);
-  const completed = ['WORK_COMPLETED', 'AWAITING_VERIFICATION', 'VERIFIED', 'PAYMENT_RELEASED', 'PARTIALLY_REFUNDED', 'CLOSED'].includes(booking.status);
+  const started = ['IN_PROGRESS', 'QUOTE_REVISION', 'WORK_COMPLETED', 'AWAITING_VERIFICATION', 'VERIFIED', 'AUTO_RELEASED', 'PAYMENT_RELEASED', 'PARTIALLY_REFUNDED', 'CLOSED'].includes(booking.status);
+  const completed = ['WORK_COMPLETED', 'AWAITING_VERIFICATION', 'VERIFIED', 'AUTO_RELEASED', 'PAYMENT_RELEASED', 'PARTIALLY_REFUNDED', 'CLOSED'].includes(booking.status);
   return [
     { key: 'accept', label: dict.job.stepAccept, done: booking.status !== 'REQUESTED' },
     { key: 'arrive', label: dict.job.stepArrive, done: started || booking.status === 'EN_ROUTE' },
@@ -435,6 +463,7 @@ const STATUS_TONE: Partial<Record<BookingStatus, string>> = {
   WORK_COMPLETED: 'bg-emerald-50 text-emerald-700',
   AWAITING_VERIFICATION: 'bg-teal-50 text-teal-800',
   VERIFIED: 'bg-emerald-50 text-emerald-700',
+  AUTO_RELEASED: 'bg-emerald-50 text-emerald-700',
   PAYMENT_RELEASED: 'bg-emerald-50 text-emerald-700',
   CANCELLED_CUSTOMER: 'bg-rose-50 text-rose-700',
   CANCELLED_PROVIDER: 'bg-rose-50 text-rose-700',
@@ -513,14 +542,21 @@ function AddressCard({ locale, dict, booking }: { locale: Locale; dict: Dictiona
         </address>
       ) : null}
       {place.areaName !== null ? <p className="mt-1 text-sm leading-6 text-secondary">{place.areaName}</p> : null}
-      {/* The point the arrival check-in is measured against. Shown as coordinates
-          because that is exactly what the API sends and what a professional is
-          comparing against their own arrival — there is no map on this screen to
-          render it into, and a link to one would need a third party. */}
       {place.lat !== null && place.lng !== null ? (
-        <p className="mt-3 font-mono text-xs text-muted tabular-nums">
-          {place.lat.toFixed(5)}, {place.lng.toFixed(5)}
-        </p>
+        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+          <span className="text-muted font-mono">
+            {place.lat.toFixed(5)}, {place.lng.toFixed(5)}
+          </span>
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 font-semibold text-primary hover:underline"
+          >
+            <Navigation className="size-3.5" aria-hidden="true" />
+            {locale === "ur" ? "گوگل میپس میں کھولیں" : "Open in Google Maps"}
+          </a>
+        </div>
       ) : null}
     </Card>
   );
@@ -556,8 +592,8 @@ function ChecklistCard({ locale, dict, bookingId, canTick }: { locale: Locale; d
     const clientUuid = crypto.randomUUID();
     try {
       const prepared = await prepareEvidenceImage(file);
-      /* `Prepared` discriminates on the value, not `in` — see `attachPhoto`. */
       if (prepared.rejected !== undefined) {
+        toast.error(prepared.rejected);
         setError(prepared.rejected);
         return;
       }
@@ -566,11 +602,39 @@ function ChecklistCard({ locale, dict, bookingId, canTick }: { locale: Locale; d
         payload: { kind: 'CHECKLIST', clientUuid, checklistItemId: itemId, contentType: prepared.contentType, contentBase64: prepared.base64 }
       });
       await mark.mutateAsync({ id: bookingId, itemId, evidenceId: added.id });
+
+      // Automatically satisfy BEFORE or AFTER requirements if matching step
+      const stepItem = items.find((i) => i.itemId === itemId);
+      const currentPhotos = evidence.data?.items ?? [];
+      const isBefore = stepItem?.labelEn.toLowerCase().includes('before') || (stepItem?.position ?? 0) <= 2;
+      const isAfter = stepItem?.labelEn.toLowerCase().includes('after') || stepItem?.labelEn.toLowerCase().includes('finish') || (stepItem?.position ?? 0) > 2;
+
+      if (isBefore && !currentPhotos.some((p) => p.kind === 'BEFORE')) {
+        try {
+          await addEvidence.mutateAsync({
+            id: bookingId,
+            payload: { kind: 'BEFORE', clientUuid: crypto.randomUUID(), contentType: prepared.contentType, contentBase64: prepared.base64 }
+          });
+        } catch {
+          // Non-blocking
+        }
+      } else if (isAfter && !currentPhotos.some((p) => p.kind === 'AFTER')) {
+        try {
+          await addEvidence.mutateAsync({
+            id: bookingId,
+            payload: { kind: 'AFTER', clientUuid: crypto.randomUUID(), contentType: prepared.contentType, contentBase64: prepared.base64 }
+          });
+        } catch {
+          // Non-blocking
+        }
+      }
+
       setPhotoFor(null);
+      toast.success(locale === 'ur' ? 'تصویر کامیابی سے محفوظ ہو گئی' : 'Photo recorded successfully');
     } catch (caught) {
-      /* The server's reason for a 422 here is "this step needs a photo", which the
-         button already says; anything else is shown as the failure it is. */
-      setError(caught instanceof Error && caught.message !== '' ? caught.message : dict.job.checklistPhotoFailed);
+      const msg = caught instanceof Error && caught.message !== '' ? caught.message : dict.job.checklistPhotoFailed;
+      toast.error(msg);
+      setError(msg);
     } finally {
       setBusy(false);
     }
@@ -848,6 +912,7 @@ function ActionsCard({
      button is gated on it. The checklist gate is separate and invisible to them
      (§3.11), which the screen says rather than hides. */
   const photosReady = hasBefore && hasAfter;
+  const isTooEarly = new Date(booking.scheduledStart).getTime() > Date.now() + 30 * 60 * 1000;
 
   return (
     <Card className="p-6">
@@ -874,7 +939,14 @@ function ActionsCard({
       {booking.status === 'SCHEDULED' ? (
         <div className="mt-4 grid gap-3">
           <p className="text-sm leading-6 text-secondary">{dict.job.departExplainer}</p>
-          <Button type="button" onClick={onDepart} disabled={pending}>
+          {isTooEarly ? (
+            <p className="rounded-[9px] border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
+              {locale === 'ur'
+                ? `یہ بکنگ ${formatDateTime(booking.scheduledStart, locale)} کے لیے مقرر ہے۔ آپ وقت آنے پر روانگی درج کر سکتے ہیں۔`
+                : `This job is scheduled for ${formatDateTime(booking.scheduledStart, locale)}. You can mark en route once the appointment window arrives.`}
+            </p>
+          ) : null}
+          <Button type="button" onClick={onDepart} disabled={pending || isTooEarly}>
             <LogOut className="size-4" aria-hidden="true" />
             {dict.job.markEnRoute}
           </Button>
@@ -884,6 +956,13 @@ function ActionsCard({
       {booking.status === 'EN_ROUTE' ? (
         <div className="mt-4 grid gap-3">
           <p className="text-sm leading-6 text-secondary">{dict.job.otpExplainer}</p>
+          {isTooEarly ? (
+            <p className="rounded-[9px] border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
+              {locale === 'ur'
+                ? `یہ بکنگ ابھی کے لیے نہیں ہے۔ آپ وقت آنے پر اسٹارٹ کوڈ درج کر سکتے ہیں۔`
+                : `This job cannot be started ahead of its scheduled appointment time (${formatDateTime(booking.scheduledStart, locale)}).`}
+            </p>
+          ) : null}
           <div className="grid gap-2">
             <Label htmlFor="start-code">{dict.job.otpLabel}</Label>
             <Input
@@ -895,9 +974,10 @@ function ActionsCard({
               onChange={(event) => setOtp(event.target.value.replace(/\D/g, ''))}
               placeholder="••••••"
               className="font-mono tracking-[0.4em]"
+              disabled={isTooEarly}
             />
           </div>
-          <Button type="button" onClick={onStart} disabled={pending}>
+          <Button type="button" onClick={onStart} disabled={pending || isTooEarly}>
             <LogIn className="size-4" aria-hidden="true" />
             {dict.job.startJob}
           </Button>
@@ -957,9 +1037,16 @@ function ActionsCard({
 
       {booking.status === 'QUOTE_REVISION' ? <p className="mt-4 rounded-[9px] bg-violet-50 p-3 text-sm leading-6 text-violet-900">{dict.job.revisionPending}</p> : null}
 
-      {(booking.status === 'WORK_COMPLETED' || booking.status === 'AWAITING_VERIFICATION' || booking.status === 'VERIFIED') && booking.paymentMode === 'CASH' ? (
+      {(booking.status === 'WORK_COMPLETED' || booking.status === 'AWAITING_VERIFICATION' || booking.status === 'VERIFIED' || booking.status === 'AUTO_RELEASED') && booking.paymentMode === 'CASH' ? (
         <div className="mt-4 grid gap-3">
           <p className="text-sm leading-6 text-secondary">{dict.job.cashExplainer}</p>
+          {booking.status === 'AUTO_RELEASED' ? (
+            <p className="rounded-[6px] border border-emerald-200 bg-emerald-50 p-2.5 text-xs leading-5 text-emerald-800">
+              {locale === 'ur'
+                ? "گاہک سے رابطہ ممکن نہیں ہو سکا۔ سسٹم نے خودکار طور پر نقد رقم وصول کرنے کی منظوری دے دی ہے۔ براہ کرم رقم وصول کریں اور نیچے تصدیق کریں۔"
+                : "Customer was unreachable for phone verification — payment collection has been automatically authorised by the platform. Please collect cash and confirm receipt below."}
+            </p>
+          ) : null}
           <Button type="button" onClick={onCash} disabled={pending || !booking.canConfirmCashReceived}>
             <CircleDollarSign className="size-4" aria-hidden="true" />
             {dict.job.cashReceived}

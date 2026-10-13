@@ -13,6 +13,11 @@ import {
   Check,
   Maximize2,
   X,
+  PhoneOff,
+  PhoneMissed,
+  History,
+  Clock,
+  MessageSquareText,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -76,7 +81,7 @@ export function VerificationConsole({
     conduct: null,
     cleanliness: null,
   });
-  const [outcome, setOutcome] = useState<"SATISFIED" | "WITH_ISSUE" | "REWORK" | "UNREACHABLE" | null>(null);
+  const [outcome, setOutcome] = useState<"SATISFIED" | "WITH_ISSUE" | "REWORK" | "DISPUTED" | null>(null);
   const [selectedEvidence, setSelectedEvidence] = useState<{
     id: string;
     kind: string;
@@ -147,10 +152,21 @@ export function VerificationConsole({
 
   const attemptMutation = useMutation({
     mutationFn: (result: "ANSWERED" | "NO_ANSWER" | "BUSY" | "SWITCHED_OFF" | "WRONG_PERSON" | "CALL_DROPPED") =>
-      agentApi.recordAttempt(verificationId, { result, durationSeconds: 84 }, { locale }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agent", "console", verificationId] });
-      toast.success("Attempt recorded");
+      agentApi.recordAttempt(verificationId, { result, durationSeconds: Math.max(callSeconds, 1) }, { locale }),
+    onSuccess: (res: any) => {
+      setCallActive(false);
+      if (res?.linkSent) {
+        toast.success("3 call attempts recorded! Verification SMS and WhatsApp link sent to customer.");
+        queryClient.invalidateQueries({ queryKey: ["agent", "queue"] });
+        router.push(localizedPath(locale, "/agent"));
+      } else if (res?.result === "ANSWERED") {
+        queryClient.invalidateQueries({ queryKey: ["agent", "console", verificationId] });
+        toast.success("Call answered. You can now complete the interview questionnaire below.");
+      } else {
+        toast.success(`Attempt logged: ${res?.result}. Call returned to queue for next time band.`);
+        queryClient.invalidateQueries({ queryKey: ["agent", "queue"] });
+        router.push(localizedPath(locale, "/agent"));
+      }
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to log attempt");
@@ -241,9 +257,18 @@ export function VerificationConsole({
   const evidenceItems = data?.evidence ?? [];
   const checklistItems = data?.checklist ?? [];
 
+  const attempts = data?.verification.attempts ?? [];
+  const hasAnswered = attempts.some((a) => a.result === "ANSWERED");
+  const distinctBands = new Set(attempts.filter((a) => a.result !== "ANSWERED").map((a) => a.band)).size;
+  const isExhausted = attempts.filter((a) => a.result !== "ANSWERED").length >= 3 && distinctBands >= 2;
+
   const handleCommit = async () => {
     if (!outcome) {
       toast.error("Please select a decision outcome below (e.g., VERIFIED SATISFIED) first.");
+      return;
+    }
+    if (!hasAnswered) {
+      toast.error("You must record an answered call before submitting verification.");
       return;
     }
     if (!answered || workCompleted === null || extraChargeDemanded === null || uniformWorn === null || ownTools === null) {
@@ -253,17 +278,6 @@ export function VerificationConsole({
     if (scores.quality === null || scores.punctuality === null || scores.conduct === null || scores.cleanliness === null) {
       toast.error("Please rate quality, punctuality, conduct, and cleanliness (1-5 each).");
       return;
-    }
-
-    // Auto-record the ANSWERED attempt if not yet recorded so backend doesn't reject with CONFLICT
-    const attempts = data?.verification.attempts ?? [];
-    const hasAnswered = attempts.some((a) => a.result === "ANSWERED");
-    if (!hasAnswered) {
-      try {
-        await agentApi.recordAttempt(verificationId, { result: "ANSWERED", durationSeconds: Math.max(callSeconds, 60) }, { locale });
-      } catch {
-        // proceed if already logged
-      }
     }
 
     if (callActive) {
@@ -330,56 +344,104 @@ export function VerificationConsole({
                 </p>
               </div>
 
-              {/* Call Controls */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={callMutation.isPending}
-                  onClick={() => {
-                    if (callActive) {
-                      setCallActive(false);
-                      attemptMutation.mutate("ANSWERED");
-                    } else {
-                      callMutation.mutate();
-                    }
-                  }}
-                  className={`inline-flex min-h-9 items-center gap-1.5 rounded-[8px] px-3 text-xs font-semibold transition ${
-                    callActive
-                      ? "bg-rose-600 text-white hover:bg-rose-700"
-                      : "bg-emerald-600 text-white hover:bg-emerald-700"
-                  }`}
-                >
-                  <PhoneCall className="size-3.5" />
-                  {callMutation.isPending
-                    ? "Connecting..."
-                    : callActive
-                    ? `End Call (${callTimer})`
-                    : "Start Call"}
-                </button>
-                <div className="flex rounded-[8px] border border-line bg-slate-50 p-0.5">
-                  {[1, 2, 3].map((num) => (
+              {/* Call Controls & Outcome Loggers */}
+              <div className="flex flex-wrap items-center gap-2">
+                {!callActive ? (
+                  <button
+                    type="button"
+                    disabled={callMutation.isPending || attemptMutation.isPending}
+                    onClick={() => callMutation.mutate()}
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-[8px] bg-emerald-600 px-3.5 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    <PhoneCall className="size-3.5" />
+                    {callMutation.isPending ? "Connecting..." : "Start Call Bridge"}
+                  </button>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <button
-                      key={num}
                       type="button"
-                      onClick={() => setAttempt(num)}
-                      className={`min-h-8 min-w-8 rounded-[6px] text-xs font-semibold transition ${
-                        attempt === num ? "bg-white text-navy shadow-xs" : "text-muted hover:text-navy"
-                      }`}
+                      disabled={attemptMutation.isPending}
+                      onClick={() => attemptMutation.mutate("ANSWERED")}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-[8px] bg-emerald-600 px-3 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700"
                     >
-                      {num}
+                      <CheckCircle2 className="size-3.5" />
+                      Answered ({callTimer})
                     </button>
-                  ))}
-                </div>
+                    <button
+                      type="button"
+                      disabled={attemptMutation.isPending}
+                      onClick={() => attemptMutation.mutate("NO_ANSWER")}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-[8px] bg-amber-600 px-2.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+                    >
+                      <PhoneMissed className="size-3.5" />
+                      No Answer
+                    </button>
+                    <button
+                      type="button"
+                      disabled={attemptMutation.isPending}
+                      onClick={() => attemptMutation.mutate("BUSY")}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-[8px] bg-slate-700 px-2.5 text-xs font-semibold text-white transition hover:bg-slate-800"
+                    >
+                      <PhoneOff className="size-3.5" />
+                      Busy
+                    </button>
+                    <button
+                      type="button"
+                      disabled={attemptMutation.isPending}
+                      onClick={() => attemptMutation.mutate("SWITCHED_OFF")}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-[8px] bg-slate-700 px-2.5 text-xs font-semibold text-white transition hover:bg-slate-800"
+                    >
+                      Off
+                    </button>
+                  </div>
+                )}
+
+                {/* Quick Log for manual phone dials */}
+                {!callActive && (
+                  <div className="flex items-center gap-1 rounded-[8px] border border-line bg-slate-50 p-1">
+                    <span className="px-1 text-[10px] font-semibold uppercase text-muted">Log Call:</span>
+                    <button
+                      type="button"
+                      disabled={attemptMutation.isPending}
+                      onClick={() => attemptMutation.mutate("ANSWERED")}
+                      title="Log as Answered"
+                      className="rounded bg-white px-2 py-1 text-xs font-medium text-navy shadow-2xs hover:bg-emerald-50 hover:text-emerald-700 transition"
+                    >
+                      Answered
+                    </button>
+                    <button
+                      type="button"
+                      disabled={attemptMutation.isPending}
+                      onClick={() => attemptMutation.mutate("NO_ANSWER")}
+                      title="Log as No Answer"
+                      className="rounded px-2 py-1 text-xs font-medium text-secondary hover:bg-amber-50 hover:text-amber-800 transition"
+                    >
+                      No Answer
+                    </button>
+                    <button
+                      type="button"
+                      disabled={attemptMutation.isPending}
+                      onClick={() => attemptMutation.mutate("BUSY")}
+                      title="Log as Busy"
+                      className="rounded px-2 py-1 text-xs font-medium text-secondary hover:bg-slate-100 hover:text-navy transition"
+                    >
+                      Busy
+                    </button>
+                    <button
+                      type="button"
+                      disabled={attemptMutation.isPending}
+                      onClick={() => attemptMutation.mutate("SWITCHED_OFF")}
+                      title="Log as Switched Off"
+                      className="rounded px-2 py-1 text-xs font-medium text-secondary hover:bg-slate-100 hover:text-navy transition"
+                    >
+                      Off
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Call in progress.
-                The strip used to read "Recording active (Encrypted
-                telephony)" over an animated bar that was not a waveform — it
-                was four divs with `animate-pulse`. No recording is started from
-                this screen, so the label claimed a capture that does not
-                happen. It now states only what is true: a call is up, for the
-                elapsed time shown beside it. */}
+            {/* Call in progress. */}
             {callActive && (
               <div className="mt-4 flex items-center justify-between rounded-[10px] bg-slate-900 px-4 py-3 text-white">
                 <div className="flex items-center gap-3">
@@ -388,7 +450,7 @@ export function VerificationConsole({
                     <span className="relative inline-flex size-3 rounded-full bg-emerald-500" />
                   </span>
                   <span className="text-xs font-medium tracking-wide">
-                    Call in progress · {callTimer} · not recorded from this screen
+                    Call in progress · {callTimer} · Choose an outcome button above when finished
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -397,6 +459,75 @@ export function VerificationConsole({
                   <div className="h-3 w-1 animate-pulse rounded bg-emerald-400" />
                   <div className="h-5 w-1 animate-pulse rounded bg-emerald-400" />
                   <div className="h-2 w-1 animate-pulse rounded bg-emerald-400" />
+                </div>
+              </div>
+            )}
+
+            {/* Attempt History & Unreachable Protocol Card */}
+            {attempts.length > 0 && (
+              <div className="mt-4 rounded-[10px] border border-line bg-slate-50 p-4">
+                <div className="flex items-center justify-between text-xs font-semibold text-navy">
+                  <span className="flex items-center gap-1.5">
+                    <History className="size-3.5 text-primary" />
+                    Call Attempts History ({attempts.length} of 3 recorded)
+                  </span>
+                  {isExhausted && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200">
+                      <MessageSquareText className="size-3" />
+                      Fallback Link Sent (SMS & WhatsApp)
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-2.5 space-y-1.5 text-xs">
+                  {attempts.map((att) => (
+                    <div key={att.id} className="flex items-center justify-between rounded bg-white px-3 py-1.5 border border-line text-secondary">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-navy">Attempt #{att.attempt}</span>
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted">{att.band}</span>
+                        <span className="text-[11px] text-muted">{att.recordedAt ? new Date(att.recordedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                      </div>
+                      <span className={cn(
+                        "rounded px-2 py-0.5 text-[10px] font-bold",
+                        att.result === "ANSWERED" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"
+                      )}>
+                        {att.result.replace("_", " ")}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {isExhausted && (
+                  <div className="mt-3 rounded-[8px] border border-indigo-200 bg-indigo-50/70 p-3 text-xs text-indigo-900">
+                    <p className="flex items-center gap-1.5 font-semibold">
+                      <Clock className="size-3.5 text-indigo-600" />
+                      Unreachable Customer Protocol Active
+                    </p>
+                    <p className="mt-1 leading-relaxed text-indigo-800">
+                      Customer did not answer calls across 3 time bands. A 1-tap confirmation link and OTP have been texted to the customer via SMS and WhatsApp. If the customer does not respond within 72 hours, the platform will automatically release payment (for online) or authorise collection (for cash).
+                    </p>
+                    <div className="mt-3">
+                      <Link
+                        href={localizedPath(locale, "/agent")}
+                        className="inline-flex items-center gap-1.5 rounded bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800"
+                      >
+                        <ArrowLeft className="size-3" />
+                        Return to Verification Queue
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!hasAnswered && (
+              <div className="mt-4 rounded-[8px] border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
+                <PhoneMissed className="size-4 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Customer Has Not Answered Yet</p>
+                  <p className="mt-0.5 leading-relaxed text-amber-800">
+                    Please use the call controls above to connect with the customer. If the customer does not pick up, log "No Answer", "Busy", or "Off" to schedule the next time band attempt. An answered call is required before posting a verification decision.
+                  </p>
                 </div>
               </div>
             )}
@@ -657,16 +788,16 @@ export function VerificationConsole({
 
                 <button
                   type="button"
-                  onClick={() => setOutcome("UNREACHABLE")}
+                  onClick={() => setOutcome("DISPUTED")}
                   className={`flex flex-col items-center rounded-[10px] border p-3 text-center transition ${
-                    outcome === "UNREACHABLE"
-                      ? "border-slate-700 bg-slate-100 ring-2 ring-slate-600 shadow-sm"
-                      : "border-line hover:border-slate-300 hover:bg-slate-50"
+                    outcome === "DISPUTED"
+                      ? "border-rose-700 bg-rose-50 ring-2 ring-rose-600 shadow-sm"
+                      : "border-line hover:border-rose-300 hover:bg-rose-50"
                   }`}
                 >
-                  <XCircle className="size-5 text-slate-600" />
-                  <span className="mt-1 text-xs font-bold text-navy">UNREACHABLE</span>
-                  <span className="mt-0.5 text-[10px] text-muted">Tier B SMS Link</span>
+                  <XCircle className="size-5 text-rose-600" />
+                  <span className="mt-1 text-xs font-bold text-navy">DISPUTED</span>
+                  <span className="mt-0.5 text-[10px] text-muted">Freeze & Escalate</span>
                 </button>
               </div>
 
@@ -678,7 +809,7 @@ export function VerificationConsole({
                       {outcome ? (
                         <>
                           <span className="inline-block size-2.5 rounded-full bg-emerald-400" />
-                          Decision: {outcome === "SATISFIED" ? "VERIFIED SATISFIED (Release 100% Escrow)" : outcome}
+                          Decision: {outcome === "SATISFIED" ? "VERIFIED SATISFIED (Release 100% Escrow)" : outcome === "WITH_ISSUE" ? "VERIFIED WITH ISSUE" : outcome === "REWORK" ? "REWORK REQUIRED" : "DISPUTED (Freeze & Escalate)"}
                         </>
                       ) : (
                         <>

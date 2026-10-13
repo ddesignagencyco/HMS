@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ArrowRight, BriefcaseBusiness, CalendarClock, CheckCircle2, CircleDollarSign, FileWarning, Gavel, Inbox, Star, Wallet } from 'lucide-react';
+import { AlertTriangle, ArrowRight, BriefcaseBusiness, CalendarClock, CheckCircle2, CircleDollarSign, FileWarning, Gavel, Inbox, Lock, Star, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { Card, PageHeader, StatCard, StatusBadge } from '@/components/ui';
@@ -149,15 +149,10 @@ export function ProviderDashboardScreen({ locale, dict }: { locale: Locale; dict
         <ProviderSubmitCard locale={locale} dict={dict} />
       ) : null}
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {/*
-          `releasablePaisa` and the wallet are different numbers and the screen says
-          which is which: one is earned-and-releasable, the other is the whole
-          balance including money still held against a job. Conflating them would
-          let a professional ask for money the platform is still holding.
-        */}
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label={dict.portal.dashboardNeedsAttention} value={formatNumber(needsAttention, locale)} icon={needsAttention > 0 ? AlertTriangle : CheckCircle2} />
         <StatCard label={dict.portal.dashboardActiveJobs} value={formatNumber(rows.filter((row) => ACTIONABLE.has(row.status)).length, locale)} icon={BriefcaseBusiness} />
+        <StatCard label={dict.portal.held} value={formatMoney(earnings.data?.heldPaisa ?? 0, locale)} icon={Lock} />
         <StatCard label={dict.portal.dashboardReleasable} value={formatMoney(earnings.data?.releasablePaisa ?? 0, locale)} icon={CircleDollarSign} />
         <StatCard label={dict.portal.dashboardWallet} value={formatMoney(wallet.data?.balancePaisa ?? 0, locale)} icon={Wallet} />
       </div>

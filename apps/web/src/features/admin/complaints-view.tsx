@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, ArrowRight, Clock, Loader2, ShieldAlert } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, ArrowRight, Clock, Gavel, Info, Loader2, ShieldAlert } from 'lucide-react';
 import { Button, Card, PageHeader, StatCard } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
 import { RESOLUTIONS, type ComplaintQueueFilters, type ComplaintStatus, type ComplaintTarget, type Resolution } from '@/features/admin/cases-api';
@@ -266,6 +267,10 @@ function ComplaintDetailPanel({ locale, dict, id, onBack }: { locale: Locale; di
 
   const row = detail.data;
   const closed = row.status === 'RESOLVED' || row.status === 'REJECTED';
+  const isDisputed = row.booking?.status === 'DISPUTED' || row.disputes.some((d) => d.status !== 'RESOLVED');
+  const isAwaitingVerification = row.booking?.status === 'AWAITING_VERIFICATION';
+  const isReleased = Boolean(row.booking && ['VERIFIED', 'PAYMENT_RELEASED', 'AUTO_RELEASED', 'CLOSED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(row.booking.status));
+  const isPendingWork = Boolean(row.booking && ['DRAFT', 'CONFIRMED', 'EN_ROUTE', 'IN_PROGRESS', 'QUOTE_REVISION'].includes(row.booking.status));
 
   const submit = async (): Promise<void> => {
     setFormError('');
@@ -486,16 +491,64 @@ function ComplaintDetailPanel({ locale, dict, id, onBack }: { locale: Locale; di
             )}
           </Card>
 
-          {/* Freezes the job's money. Only meaningful while the job is awaiting
-              verification, which the server decides — a 4xx here is the server's
-              answer, not a broken button. */}
+          {/* Escrow Dispute / Freeze Money panel.
+              A dispute can only be opened when the booking is AWAITING_VERIFICATION (funds held in escrow).
+              If already disputed, link to the dispute queue.
+              If funds are already released or work is still pending, inform the admin clearly rather
+              than showing a failing button. */}
           <Card className="p-5">
             <h2 className="font-semibold text-navy">{dict.admin.freezeMoney}</h2>
-            <p className="mt-2 text-sm leading-6 text-secondary">{dict.admin.freezeMoneyText}</p>
-            {closed ? null : (
-              <Button type="button" variant="secondary" className="mt-4" disabled={openDispute.isPending} onClick={() => void freeze()}>
-                {dict.admin.openDispute}
-              </Button>
+            {closed ? null : isDisputed ? (
+              <div className="mt-3 rounded-[10px] border border-amber-200 bg-amber-50/70 p-3.5 text-xs text-amber-900">
+                <div className="flex items-start gap-2.5">
+                  <Gavel className="mt-0.5 size-4 shrink-0 text-amber-700" aria-hidden="true" />
+                  <div>
+                    <p className="font-semibold text-amber-950">{dict.admin.freezeAlreadyDisputed}</p>
+                    <Link
+                      href={`/${locale}/admin/disputes`}
+                      className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900 underline hover:text-amber-950"
+                    >
+                      {dict.admin.freezeViewDisputes}
+                      <ArrowRight className="size-3" aria-hidden="true" />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ) : isAwaitingVerification ? (
+              <div className="mt-2">
+                <p className="text-sm leading-6 text-secondary">{dict.admin.freezeMoneyText}</p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="mt-4 flex items-center gap-2"
+                  disabled={openDispute.isPending}
+                  onClick={() => void freeze()}
+                >
+                  {openDispute.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Gavel className="size-4" aria-hidden="true" />}
+                  {dict.admin.openDispute}
+                </Button>
+              </div>
+            ) : isReleased ? (
+              <div className="mt-3 rounded-[10px] border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-700">
+                <div className="flex items-start gap-2.5">
+                  <Info className="mt-0.5 size-4 shrink-0 text-slate-500" aria-hidden="true" />
+                  <p className="leading-5">{dict.admin.freezeFundsReleased}</p>
+                </div>
+              </div>
+            ) : isPendingWork ? (
+              <div className="mt-3 rounded-[10px] border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-700">
+                <div className="flex items-start gap-2.5">
+                  <Info className="mt-0.5 size-4 shrink-0 text-slate-500" aria-hidden="true" />
+                  <p className="leading-5">{dict.admin.freezeNotCompleted}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-[10px] border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-700">
+                <div className="flex items-start gap-2.5">
+                  <Info className="mt-0.5 size-4 shrink-0 text-slate-500" aria-hidden="true" />
+                  <p className="leading-5">{row.booking === null ? dict.admin.freezeNoBooking : dict.admin.freezeFundsReleased}</p>
+                </div>
+              </div>
             )}
           </Card>
         </div>

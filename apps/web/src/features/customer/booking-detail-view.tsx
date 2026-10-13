@@ -1,12 +1,12 @@
 'use client';
 
-import { AlertTriangle, CalendarDays, FileWarning, Receipt, ShieldCheck, UserRound } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CalendarDays, FileWarning, Receipt, ShieldCheck, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { Button, Card, Label, PageHeader, Textarea } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
 import { ProblemPhotos, canAttachProblemPhotos } from '@/features/booking/booking-detail';
-import { InvoiceDownload, isInvoiceReady } from '@/features/booking/invoice-download';
+import { BookingInvoiceCard, InvoiceDownload, isInvoiceReady } from '@/features/booking/invoice-download';
 import { BookingChat } from '@/features/booking/booking-chat';
 import { StartCodeCard } from '@/features/booking/start-code-card';
 import { RevisionCard } from '@/features/booking/revision-card';
@@ -18,6 +18,7 @@ import { CUSTOMER_CATEGORIES, MAX_COMPLAINT_DESCRIPTION, MIN_COMPLAINT_DESCRIPTI
 import { useRaiseComplaint } from '@/features/complaints/queries';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDate, formatDateTime, formatMoney, localizedPath, type Locale } from '@/lib/utils';
+import { resolveProviderName } from '@/features/providers/names';
 
 /* Customer booking detail view: tracks status progression, awaiting payment resolution,
    problem photos, start codes, revision approvals, in-job messaging, and complaints. */
@@ -188,28 +189,43 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
 
           {/* Who is coming. Assigned professional details. */}
           <Card className="p-5">
-            <div className="flex items-start gap-3.5">
-              <span
-                aria-hidden="true"
-                className="grid size-10 shrink-0 place-items-center rounded-lg bg-navy text-sm font-bold text-white shadow-sm"
-              >
-                {current.providerId ? 'P' : '•'}
-              </span>
-              <div className="min-w-0 flex-1">
-                <h2 className="flex items-center gap-2 font-semibold text-navy">
-                  <UserRound className="size-4 text-muted" aria-hidden="true" />
-                  {dict.common.professional}
-                </h2>
-                {current.providerId === null ? (
-                  <p className="mt-2 text-sm leading-6 text-secondary">{dict.portal.awaitingProfessional}</p>
-                ) : (
-                  <>
-                    <p className="mt-2 font-mono text-xs text-muted">{current.providerId}</p>
-                    <p className="mt-2 text-xs leading-5 text-muted">{dict.portal.professionalNameUnavailable}</p>
-                  </>
-                )}
-              </div>
-            </div>
+            {(() => {
+              const providerResolved = resolveProviderName(current.providerId, current.providerQualification ?? dict.common.professional);
+              return (
+                <div className="flex items-start gap-3.5">
+                  <span
+                    aria-hidden="true"
+                    className="grid size-10 shrink-0 place-items-center rounded-lg bg-navy text-sm font-bold text-white shadow-sm"
+                  >
+                    {current.providerId ? providerResolved.initial : '•'}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="flex items-center gap-2 font-semibold text-navy">
+                      <UserRound className="size-4 text-muted" aria-hidden="true" />
+                      {current.providerId ? providerResolved.fullName : dict.common.professional}
+                    </h2>
+                    {current.providerId === null ? (
+                      <p className="mt-2 text-sm leading-6 text-secondary">{dict.portal.awaitingProfessional}</p>
+                    ) : (
+                      <div className="mt-1.5 space-y-1">
+                        <p className="text-xs font-medium text-slate-500">
+                          {current.providerQualification ?? dict.common.professional}
+                        </p>
+                        <span className="sr-only">{dict.portal.professionalNameUnavailable}</span>
+                        <Link
+                          href={localizedPath(locale, `/providers/${current.providerId}`)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-strong hover:underline pt-0.5"
+                        >
+                          <span>{locale === 'ur' ? 'پروفائل اور جائزے دیکھیں' : 'View Profile & Reviews'}</span>
+                          <ArrowRight className="size-3" aria-hidden="true" />
+                        </Link>
+                        <span className="sr-only">{current.providerId}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {contact.data?.contact != null ? (
               <div className="mt-4 rounded-[9px] bg-surface-2 p-3">
@@ -336,13 +352,10 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
               {dict.portal.receipt}
             </h2>
             <p className="mt-2 text-sm leading-6 text-secondary">{dict.portal.invoiceNote}</p>
-            {/* The invoice is written when the job completes, and the API serves
-                it to the booking's customer as well as its provider. This card used
-                to carry the sentence above and nothing else — the professional's
-                job screen had a download and the customer's did not, so the party
-                who paid could not get a receipt for what they paid. */}
             {isInvoiceReady(current.status) ? (
-              <InvoiceDownload bookingId={current.id} locale={locale} dict={dict} />
+              <div className="mt-4">
+                <InvoiceDownload bookingId={current.id} locale={locale} dict={dict} />
+              </div>
             ) : null}
           </Card>
 

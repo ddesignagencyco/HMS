@@ -23,7 +23,7 @@ const en = {
        action rather than the page it opens. The page is a browsable directory of
        professionals, and it now has an "All categories" view. */
     providersShort: 'Professionals',
-    bookings: 'Bookings',
+    bookings: 'My Bookings',
     plansShort: 'Plans',
     servicesShort: 'Services',
     /* Two more destinations that existed as routes but had no navbar entry, so a
@@ -348,11 +348,11 @@ const en = {
     otpSixDigits: 'The start code is six digits.',
     startJob: 'Start the job',
     finalAmountInputLabel: 'Final amount (Rs)',
-    finalAmountHint: 'You may charge less than the approved total. You may not charge more — the API refuses it.',
+    finalAmountHint: 'You may charge less than the approved total. You may not charge more than what the customer approved.',
     finalAmountInvalid: 'Enter the final amount in rupees, as a number.',
     completeJob: 'Mark the job complete',
     photosReadyNote: 'Your before and after photos are both on file, so you can complete the job.',
-    photosNotReadyNote: 'The API refuses completion until a before and an after photo are both on file.',
+    photosNotReadyNote: 'A before and an after photo are both required before marking the job complete.',
     /* `revisionTitle` / `revisionText` already existed for the old job screen and are
        reused rather than shadowed — a second pair under the same keys would be a
        silent last-one-wins. */
@@ -364,7 +364,7 @@ const en = {
     revisionPending: 'Waiting for the customer to decide on your proposal.',
     cashExplainer: 'Only record cash once verification has authorised you to collect it.',
     cashReceived: 'I have been paid in cash',
-    cashNeedsVerification: 'This will be refused until verification has run.',
+    cashNeedsVerification: 'Cash collection will be enabled once customer verification is completed.',
     invoiceLink: 'Download the invoice',
     invoicePreparing: 'Preparing…',
     invoiceDownloaded: '{file} saved',
@@ -2111,6 +2111,11 @@ const en = {
     freezeMoneyText: 'Moves the booking to DISPUTED so its money cannot be released, and opens a dispute for a ruling. Only possible while the job is awaiting verification.',
     openDispute: 'Open a dispute',
     disputeOpened: 'The dispute was opened and the money is frozen.',
+    freezeAlreadyDisputed: 'A dispute is already active for this booking. Escrow funds are frozen pending a ruling.',
+    freezeViewDisputes: 'Go to dispute queue',
+    freezeFundsReleased: 'Payment has already been released to the provider. Escrow cannot be frozen. Use the decision panel above to grant a platform refund or provider penalty.',
+    freezeNotCompleted: 'The job is still in progress. Escrow cannot be disputed until work is completed.',
+    freezeNoBooking: 'This complaint is not linked to a live booking.',
     penalties: 'Penalties',
     /* ---- disputes ---- */
     disputesText: 'Jobs whose money is frozen pending a ruling. The professional has a right of reply first.',
@@ -2264,6 +2269,9 @@ const en = {
     documentStates: { PENDING: 'Waiting for review', VERIFIED: 'Verified', REJECTED: 'Rejected' },
     docTypes: { CNIC_FRONT: 'CNIC front', CNIC_BACK: 'CNIC back', UTILITY_BILL: 'Utility bill', BANK_LETTER: 'Bank letter', OTHER: 'Other' },
     verify: 'Verify',
+    viewDocument: 'View document',
+    documentPreview: 'Document Preview',
+    closePreview: 'Close preview',
     documentVerified: 'The document was verified.',
     documentRejected: 'The document was rejected.',
     /* ---- catalogue ---- */
@@ -3245,11 +3253,11 @@ const ur: typeof en = {
     otpSixDigits: 'اسٹارٹ کوڈ چھ ہندسوں کا ہوتا ہے۔',
     startJob: 'کام شروع کریں',
     finalAmountInputLabel: 'حتمی رقم (روپے)',
-    finalAmountHint: 'آپ منظور شدہ رقم سے کم لے سکتے ہیں، زیادہ نہیں — API اسے مسترد کر دیتا ہے۔',
+    finalAmountHint: 'آپ منظور شدہ رقم سے کم لے سکتے ہیں، لیکن گاہک کی منظور شدہ رقم سے زیادہ رقم درج نہیں کی جا سکتی۔',
     finalAmountInvalid: 'حتمی رقم روپے میں، نمبر کی صورت میں لکھیں۔',
     completeJob: 'کام مکمل کریں',
     photosReadyNote: 'آپ کی پہلے اور بعد کی دونوں تصاویر موجود ہیں، اس لیے آپ کام مکمل کر سکتے ہیں۔',
-    photosNotReadyNote: 'API پہلے اور بعد کی تصویر دونوں موجود ہونے تک کام مکمل کرنے کی درخواست مسترد کرتا ہے۔',
+    photosNotReadyNote: 'کام مکمل کرنے کے لیے پہلے اور بعد کی تصاویر دونوں درکار ہیں۔',
     /* `revisionTitle` / `revisionText` پہلے سے موجود ہیں اور دوبارہ نہیں لکھے گئے۔ */
     revisionReasonLabel: 'کیا درکار ہے',
     revisionReasonPlaceholder: 'دیوار کے پیچھے پائپ کا ایک حصہ بدلنا ہے',
@@ -3259,7 +3267,7 @@ const ur: typeof en = {
     revisionPending: 'گاہک کے فیصلے کا انتظار ہے۔',
     cashExplainer: 'تصدیق کی اجازت ملنے کے بعد ہی نقد وصولی درج کریں۔',
     cashReceived: 'نقد وصول کر لیا',
-    cashNeedsVerification: 'تصدیق کے ہونے تک یہ مسترد ہو گا۔',
+    cashNeedsVerification: 'گاہک کی تصدیق مکمل ہونے کے بعد نقد رقم وصولی کا اندراج کیا جا سکے گا۔',
     invoiceLink: 'انوائس ڈاؤن لوڈ کریں',
     invoicePreparing: 'تیار کی جا رہی ہے…',
     invoiceDownloaded: '{file} محفوظ ہو گئی',
@@ -4881,6 +4889,11 @@ const ur: typeof en = {
     freezeMoneyText: 'بکنگ کو DISPUTED میں منتقل کرتا ہے تاکہ اس کی رقم جاری نہ ہو، اور فیصلے کے لیے اختلاف کھولتا ہے۔ صرف اس وقت ممکن ہے جب کام تصدیق کا منتظر ہو۔',
     openDispute: 'اختلاف کھولیں',
     disputeOpened: 'اختلاف کھل گیا اور رقم فریز ہو گئی۔',
+    freezeAlreadyDisputed: 'اس بکنگ کے لیے پہلے ہی ایک تنازع فعال ہے۔ فیصلے تک رقم روکی ہوئی ہے۔',
+    freezeViewDisputes: 'تنازعات کی فہرست کھولیں',
+    freezeFundsReleased: 'اس بکنگ کی رقم پیشہ ور کو پہلے ہی جاری کی جا چکی ہے۔ رقم کو فریز نہیں کیا جا سکتا۔ رقم کی واپسی یا جرمانہ عائد کرنے کے لیے اوپر والا فیصلہ پینل استعمال کریں۔',
+    freezeNotCompleted: 'کام ابھی جاری ہے۔ مکمل ہونے سے پہلے تنازع نہیں کھولا جا سکتا۔',
+    freezeNoBooking: 'یہ شکایت کسی فعال بکنگ سے منسلک نہیں ہے۔',
     penalties: 'سزاییں',
     /* ---- اختلافات ---- */
     disputesText: 'وہ کام جن کی رقم فیصلے کا منتظر ہے۔ پیشہ کار کو پہلے جواب دینے کا حق ہے۔',
@@ -5034,6 +5047,9 @@ const ur: typeof en = {
     documentStates: { PENDING: 'جائزے کا منتظر', VERIFIED: 'تصدیق شدہ', REJECTED: 'مسترد' },
     docTypes: { CNIC_FRONT: 'CNIC سامنے', CNIC_BACK: 'CNIC پیچھے', UTILITY_BILL: 'یوٹیلٹی بل', BANK_LETTER: 'بینک خط', OTHER: 'دیگر' },
     verify: 'تصدیق کریں',
+    viewDocument: 'دستاویز دیکھیں',
+    documentPreview: 'دستاویز کا پیش نظارہ',
+    closePreview: 'پیش نظارہ بند کریں',
     documentVerified: 'دستاویز تصدیق ہو گئی۔',
     documentRejected: 'دستاویز مسترد ہو گئی۔',
     /* ---- سروس کیٹلاگ ---- */

@@ -25,6 +25,7 @@ import { useIssueOptions } from "@/features/catalogue/queries";
 import { isAwaitingProvider, isHeldPayment } from "@/features/booking/status";
 import { bookingApi, type CreatedBooking, type PaymentMode, type Quote } from "@/features/booking/api";
 import { prepareEvidenceImage } from "@/features/uploads/image";
+import { resolveProviderName } from "@/features/providers/names";
 import type { CatalogueService } from "@/features/catalogue/api";
 
 /* 6-step booking checkout flow against live API with server-calculated quotes. */
@@ -170,6 +171,7 @@ const eligibleProviders = useMemo(() => {
   }, [detailsLoading, providers.isFetching, activeAreaId, basket.choice, eligibleProviders]);
 
   const chosenProviderId = basket.choice?.kind === "provider" && basket.choice.providerId !== "" ? basket.choice.providerId : null;
+  const chosenProvider = eligibleProviders.find((p) => p.providerId === chosenProviderId);
   const autoAssign = isAutoAssign(basket.choice);
 
   /* A carried-in date is honoured when it is one of the offered days. Anything
@@ -320,16 +322,11 @@ const eligibleProviders = useMemo(() => {
       }
 
       /* The booking create response includes a payment object when the mode is
-         ONLINE. Its `redirectUrl` is a relative path from the API origin
-         (e.g. `/api/v1/dev/payments/...`) and must be prefixed with the API
-         origin before assigning to `window.location`. The `returnUrl` inside it
-         already points at the web origin (:3001). */
-       /* The booking create response includes a payment object when the mode is
-          ONLINE. The redirectUrl is passed to BookingConfirmed which renders a
-          "Pay Now" link with the correct URL. We do NOT redirect immediately
-          here because the screen must show the "awaiting payment" state and
-          let the user click "Pay Now" to proceed. */
-       setCreated(booking);
+         ONLINE. The redirectUrl is passed to BookingConfirmed which renders a
+         "Pay Now" link with the correct URL. We do NOT redirect immediately
+         here because the screen must show the "awaiting payment" state and
+         let the user click "Pay Now" to proceed. */
+      setCreated(booking);
     } catch (error) {
       /* 409 SLOT_TAKEN is the documented outcome of two people taking the same
          slot. It is not a generic failure: the customer goes back to the time
@@ -413,6 +410,7 @@ const eligibleProviders = useMemo(() => {
                       slot: null,
                       request: null,
                     });
+                    setLocalError("");
                     quote.reset();
                   }}
                 />
@@ -428,6 +426,7 @@ const eligibleProviders = useMemo(() => {
                   hasLocation={point !== null && basket.addressId !== null}
                   onChange={(choice) => {
                     update({ choice, slot: null, request: null });
+                    setLocalError("");
                     quote.reset();
                   }}
                 />
@@ -448,13 +447,27 @@ const eligibleProviders = useMemo(() => {
                   onDateChange={(date) => {
                     setSelectedDate(date);
                     update({ slot: null, request: null });
+                    setLocalError("");
                   }}
-                  onSlot={(slot) => update({ slot, request: null })}
-                  onRequest={(request) => update({ request, slot: null })}
+                  onSlot={(slot) => {
+                    update({ slot, request: null });
+                    setLocalError("");
+                  }}
+                  onRequest={(request) => {
+                    update({ request, slot: null });
+                    setLocalError("");
+                  }}
                   emergencyAllowed={emergencyAllowed}
                   emergency={basket.emergency}
                   onEmergency={(value) => {
-                    update({ emergency: value });
+                    if (value) {
+                      const firstSlot = slots.data?.items?.[0];
+                      const slotToKeep = effectiveSlot ?? (firstSlot ? { start: firstSlot.start, end: firstSlot.end } : null);
+                      update({ emergency: true, ...(slotToKeep ? { slot: slotToKeep } : {}) });
+                    } else {
+                      update({ emergency: false });
+                    }
+                    setLocalError("");
                     quote.reset();
                   }}
                   emergencyLabel={dict.common.emergency}
@@ -476,8 +489,6 @@ const eligibleProviders = useMemo(() => {
                   onPhotos={setPhotos}
                   onSelect={(issueOptionId) => {
                     update({ issueOptionId });
-                    /* The complaint on screen was "choose the problem"; they just
-                       did. Leaving it up would argue with the answer. */
                     setLocalError("");
                   }}
                   onNotes={(value) => update({ problem: value })}
@@ -491,11 +502,13 @@ const eligibleProviders = useMemo(() => {
                   service={service}
                   basket={basket}
                   scheduled={scheduled}
-                  /* The public search row publishes no name (§2.2 of the
-                     handoff), so the review step names the choice by its
-                     qualification rather than inventing a person's name. */
                   chosenProviderName={
-                    eligibleProviders.find((item) => item.providerId === chosenProviderId)?.qualification ?? null
+                    chosenProviderId
+                      ? resolveProviderName(
+                          chosenProviderId,
+                          eligibleProviders.find((item) => item.providerId === chosenProviderId)?.qualification ?? dict.booking.professionalFallback
+                        ).fullName
+                      : null
                   }
                   quote={currentQuote}
                   loading={quote.isPending}
@@ -539,20 +552,6 @@ const eligibleProviders = useMemo(() => {
                       </label>
                     ))}
                   </RadioGroup>
-                  {/* What actually happens next, once a choice is made.
-                   *
-                   * The two option blurbs each explained the *end* of the
-                   * journey ("only after verification") and so read as two
-                   * versions of the same promise. What a customer is really
-                   * deciding is the next few steps, and those differ sharply:
-                   * one path shows a payment page before anything is booked,
-                   * the other books immediately and defers payment to the visit.
-                   * This states the consequence of the choice just made, in one
-                   * line, so the decision does not have to be inferred from two
-                   * paragraphs that share a clause.
-
-                   * It only appears once something is chosen, because before
-                   * that there is no consequence to describe. */}
                   {basket.paymentMode !== null ? (
                     <p
                       role="status"
@@ -610,10 +609,28 @@ const eligibleProviders = useMemo(() => {
                 <h2 className="font-semibold text-white">{locale === "ur" ? service.nameUr : service.nameEn}</h2>
                 <p className="mt-1 text-sm leading-6 text-white/70">{service.description}</p>
                 <dl className="mt-5 grid gap-3 border-t border-white/15 pt-4 text-sm">
+                  {chosenProvider ? (
+                    <div className="flex justify-between gap-3 text-xs">
+                      <dt className="text-white/60">{locale === "ur" ? "منتخب ماہر" : "Selected professional"}</dt>
+                      <dd className="text-end font-semibold text-white">
+                        {resolveProviderName(chosenProvider.providerId, chosenProvider.qualification ?? "").fullName}
+                      </dd>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between gap-3">
-                    <dt className="text-white/60">{dict.booking.estimate}</dt>
-                    <dd className="text-end font-medium text-white">{money(service.basePricePaisa, locale)}</dd>
+                    <dt className="text-white/60">
+                      {chosenProvider ? (locale === "ur" ? "پیشہ کار کی فیس" : "Professional rate") : dict.booking.estimate}
+                    </dt>
+                    <dd className="text-end font-medium text-white">
+                      {money(chosenProvider ? chosenProvider.pricePaisa : service.basePricePaisa, locale)}
+                    </dd>
                   </div>
+                  {chosenProvider && service.basePricePaisa !== chosenProvider.pricePaisa ? (
+                    <div className="flex justify-between gap-3 text-xs text-white/50">
+                      <dt>{locale === "ur" ? "پلیٹ فارم بنیادی تخمینہ" : "Platform base estimate"}</dt>
+                      <dd className="text-end line-through">{money(service.basePricePaisa, locale)}</dd>
+                    </div>
+                  ) : null}
                   {service.visitFeePaisa > 0 ? (
                     <div className="flex justify-between gap-3">
                       <dt className="text-white/60">{dict.booking.visitFee}</dt>
@@ -630,7 +647,13 @@ const eligibleProviders = useMemo(() => {
                 {/* The catalogue figure is a starting point, not a total. The
                     authoritative number is the quote, shown on the review step
                     and never here, so no figure on screen contradicts another. */}
-                <p className="mt-4 text-xs leading-5 text-white/60">{dict.booking.estimateIsGuide}</p>
+                <p className="mt-4 text-xs leading-5 text-white/60">
+                  {chosenProvider
+                    ? (locale === "ur"
+                        ? "یہ فیس منتخب پیشہ کار کی مقرر کردہ ہے۔ حتمی رقم اگلے جائزے کے مرحلے پر تصدیق ہوگی۔"
+                        : "This rate is set by the selected professional. Final total is confirmed on the review step.")
+                    : dict.booking.estimateIsGuide}
+                </p>
                 <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-white/60">
                   <ShieldCheck className="mt-0.5 size-4 shrink-0 text-yellow-500" />
                   {dict.booking.escrowNote}
@@ -895,7 +918,19 @@ function ScheduleStep({
       <div className="mt-6 grid gap-5">
         <DayPicker dict={dict} days={days} selected={selectedDate} onSelect={onDateChange} />
 
-        {autoAssign ? (
+        {emergency ? (
+          <div className="rounded-[12px] border border-amber-300 bg-amber-50/80 p-4">
+            <div className="flex items-center gap-2 font-semibold text-amber-900">
+              <Zap className="size-4 text-amber-600 fill-amber-500" />
+              <span>{locale === 'ur' ? 'فوری ایمرجنسی تعیناتی فعال ہے' : 'Immediate Emergency Dispatch Scheduled'}</span>
+            </div>
+            <p className="mt-1.5 text-sm leading-6 text-amber-800">
+              {locale === 'ur'
+                ? `پیشہ ور اگلے 60 منٹ کے اندر آپ کے پتے پر روانہ کیا جائے گا۔ وقت: ${selected !== null && 'start' in selected ? formatSlotTime(selected.start, tag) : 'فوری'} تا ${selected !== null && 'end' in selected ? formatSlotTime(selected.end, tag) : ''}`
+                : `An on-call professional will be dispatched to your address within 60 minutes (${selected !== null && 'start' in selected ? formatSlotTime(selected.start, tag) : 'Immediate'} – ${selected !== null && 'end' in selected ? formatSlotTime(selected.end, tag) : ''}).`}
+            </p>
+          </div>
+        ) : autoAssign ? (
           <RequestedWindowPicker
             locale={locale}
             dict={dict}
@@ -919,26 +954,52 @@ function ScheduleStep({
               <p className="rounded-[9px] border border-line bg-surface-2 p-4 text-sm leading-6 text-secondary">{dict.booking.slotsNone}</p>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {slotTimes.map((slot) => {
-                    const active = selected !== null && "start" in selected && selected.start === slot.start;
-                    return (
-                      <button
-                        key={slot.start}
-                        type="button"
-                        onClick={() => onSlot(slot)}
-                        aria-pressed={active}
-                        className={cn(
-                          "min-h-11 whitespace-nowrap rounded-[9px] border px-3 text-sm font-semibold tabular-nums transition-colors duration-200",
-                          active ? "border-primary bg-blue-50 text-primary-strong" : "border-line bg-white text-navy hover:bg-slate-50",
-                        )}
-                      >
-                        {formatSlotTime(slot.start, tag)}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-xs leading-5 text-muted">{dict.booking.slotsAreNotHeld}</p>
+                {(() => {
+                  const morning: { start: string; end: string }[] = [];
+                  const afternoon: { start: string; end: string }[] = [];
+                  const evening: { start: string; end: string }[] = [];
+                  for (const slot of slotTimes) {
+                    const hour = new Date(slot.start).getHours();
+                    if (hour < 12) morning.push(slot);
+                    else if (hour < 17) afternoon.push(slot);
+                    else evening.push(slot);
+                  }
+                  const groups = [
+                    { label: locale === 'ur' ? 'صبح (12:00 سے پہلے)' : 'Morning (Before 12:00 PM)', items: morning },
+                    { label: locale === 'ur' ? 'دوپہر (12:00 تا 5:00)' : 'Afternoon (12:00 PM – 5:00 PM)', items: afternoon },
+                    { label: locale === 'ur' ? 'شام (5:00 کے بعد)' : 'Evening (5:00 PM Onwards)', items: evening }
+                  ].filter((g) => g.items.length > 0);
+
+                  return (
+                    <div className="grid gap-3">
+                      {groups.map((group) => (
+                        <div key={group.label}>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted">{group.label}</p>
+                          <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            {group.items.map((slot) => {
+                              const active = selected !== null && "start" in selected && selected.start === slot.start;
+                              return (
+                                <button
+                                  key={slot.start}
+                                  type="button"
+                                  onClick={() => onSlot(slot)}
+                                  aria-pressed={active}
+                                  className={cn(
+                                    "min-h-10 whitespace-nowrap rounded-[9px] border px-3 text-xs font-semibold tabular-nums transition-colors duration-150",
+                                    active ? "border-primary bg-blue-50 text-primary-strong ring-1 ring-primary" : "border-line bg-white text-navy hover:bg-slate-50",
+                                  )}
+                                >
+                                  {formatSlotTime(slot.start, tag)}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+                <p className="mt-1 text-xs leading-5 text-muted">{dict.booking.slotsAreNotHeld}</p>
               </>
             )}
             {slotTaken ? (
