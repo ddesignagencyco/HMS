@@ -24,7 +24,8 @@ export type OutcomeBooking = {
   alreadyReleased: boolean;
 };
 
-export type Actor = { userId: string | null; role: 'AGENT' | 'SYSTEM' };
+/** Who decided the outcome. `CUSTOMER` is the in-app form's own decision (FR-VC-14); the transition is still applied as SYSTEM, this only fills the history row. */
+export type Actor = { userId: string | null; role: 'CUSTOMER' | 'AGENT' | 'SYSTEM' };
 
 export type RatingInput = { quality: number; punctuality: number; conduct: number; cleanliness: number; remark?: string | undefined };
 

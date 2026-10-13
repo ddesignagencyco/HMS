@@ -6511,6 +6511,131 @@
         ]
       }
     },
+    "/api/v1/bookings/{bookingId}/verification/confirmation": {
+      "get": {
+        "description": "Everything the form needs to render, plus `canSubmit` and, when it is false, a `blockedReason` written for the customer to read. Always 200 for your own booking — the form being unavailable is an answer, not an error, and a client handed only a status code has nothing to show. 404 for a booking that is not yours.",
+        "operationId": "VerificationSelfController_describe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Open the \"confirm the work\" form (customer)",
+        "tags": [
+          "verification"
+        ]
+      },
+      "post": {
+        "description": "Closes the verification yourself: rate the provider on quality, punctuality, conduct and cleanliness, and say whether the job was done. `SATISFIED` releases the payment and publishes the rating; `WITH_ISSUE` releases it too but opens a quality complaint and flags the provider. Either way the release is yours to make — this is your money, already paid and held. For a cash job the form authorises the handover and the provider then confirms they were paid (`canConfirmCashReceived` on the booking). `NOT_ACCEPTABLE`, or saying no work was done, or saying money was demanded beyond the agreed price, releases nothing and puts the case in front of a person at the top of the queue instead; the booking stays AWAITING_VERIFICATION. 409 when the form is not currently available — an agent is mid-call, or the job is already settled — with the reason in `detail`; 422 when the answers contradict the outcome.",
+        "operationId": "VerificationSelfController_confirm",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workCompleted": {
+                    "type": "string",
+                    "enum": [
+                      "FULL",
+                      "PARTIAL",
+                      "NONE"
+                    ]
+                  },
+                  "quality": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  },
+                  "punctuality": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  },
+                  "conduct": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  },
+                  "cleanliness": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  },
+                  "extraChargeDemanded": {
+                    "type": "boolean"
+                  },
+                  "consentToRelease": {
+                    "type": "boolean"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "SATISFIED",
+                      "WITH_ISSUE",
+                      "NOT_ACCEPTABLE"
+                    ]
+                  },
+                  "remark": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "workCompleted",
+                  "quality",
+                  "punctuality",
+                  "conduct",
+                  "cleanliness",
+                  "extraChargeDemanded",
+                  "consentToRelease",
+                  "outcome"
+                ],
+                "additionalProperties": false
+              },
+              "examples": {
+                "default": {
+                  "summary": "Everything was fine",
+                  "value": {
+                    "workCompleted": "FULL",
+                    "quality": 5,
+                    "punctuality": 5,
+                    "conduct": 5,
+                    "cleanliness": 4,
+                    "extraChargeDemanded": false,
+                    "consentToRelease": true,
+                    "outcome": "SATISFIED",
+                    "remark": "Fixed it first time, very tidy."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Confirm the work and rate the provider (customer)",
+        "tags": [
+          "verification"
+        ]
+      }
+    },
     "/api/v1/finance/recordings/{attemptId}": {
       "get": {
         "description": "Finance and admin only — agents cannot play recordings, even their own (403). Returns a short-lived signed link to the recording of one call attempt, and records who asked in the audit log. 404 if the attempt had no recording or it has passed its retention period and been deleted.",

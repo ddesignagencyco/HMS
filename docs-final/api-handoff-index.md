@@ -2,9 +2,9 @@
      Produced by `npm run api:handoff --workspace @smart-home/api`, from the live application.
      Re-run it whenever an API is added or changed, and edit API_HANDOFF.md for the contracts. -->
 
-# API index — 223 operations
+# API index â€” 225 operations
 
-Generated 2026-10-12 from version `1.0.0`. Base path `api/v1`;
+Generated 2026-10-13 from version `1.0.0`. Base path `api/v1`;
 OpenAPI at `api/docs`. This table is the exhaustive list; `API_HANDOFF.md` adds the contracts you cannot
 infer from a path.
 
@@ -40,10 +40,10 @@ infer from a path.
 | Operation | Role | Summary |
 |---|---|---|
 | `GET /api/v1/search/providers` | AUTHENTICATED | Find providers who offer a service near a point |
-| `GET /api/v1/search/providers/{providerId}` | AUTHENTICATED | Get a provider’s full public profile |
+| `GET /api/v1/search/providers/{providerId}` | AUTHENTICATED | Get a providerâ€™s full public profile |
 | `GET /api/v1/search/providers/{providerId}/next-slots` | AUTHENTICATED | When is this provider next free? |
-| `GET /api/v1/search/providers/{providerId}/remarks` | AUTHENTICATED | A provider’s published remarks |
-| `GET /api/v1/search/providers/{providerId}/reputation` | AUTHENTICATED | A provider’s public reputation |
+| `GET /api/v1/search/providers/{providerId}/remarks` | AUTHENTICATED | A providerâ€™s published remarks |
+| `GET /api/v1/search/providers/{providerId}/reputation` | AUTHENTICATED | A providerâ€™s public reputation |
 | `GET /api/v1/search/providers/{providerId}/slots` | AUTHENTICATED | List the times a provider can be booked on a day |
 
 ## Customer profile & addresses
@@ -72,12 +72,12 @@ infer from a path.
 | `POST /api/v1/bookings/{id}/accept` | AUTHENTICATED | Accept a booking request |
 | `POST /api/v1/bookings/{id}/cancel` | AUTHENTICATED | Cancel a scheduled booking |
 | `POST /api/v1/bookings/{id}/cash-received` | AUTHENTICATED | Confirm the customer paid cash |
-| `GET /api/v1/bookings/{id}/checklist` | AUTHENTICATED | Read the service’s checklist for this booking |
+| `GET /api/v1/bookings/{id}/checklist` | AUTHENTICATED | Read the serviceâ€™s checklist for this booking |
 | `POST /api/v1/bookings/{id}/checklist/{itemId}` | AUTHENTICATED | Mark a checklist item done |
 | `POST /api/v1/bookings/{id}/complete` | AUTHENTICATED | Mark the job complete |
 | `POST /api/v1/bookings/{id}/decline` | AUTHENTICATED | Decline a booking request |
 | `POST /api/v1/bookings/{id}/depart` | AUTHENTICATED | Mark yourself en route |
-| `GET /api/v1/bookings/{id}/evidence` | AUTHENTICATED | List a booking’s photos |
+| `GET /api/v1/bookings/{id}/evidence` | AUTHENTICATED | List a bookingâ€™s photos |
 | `POST /api/v1/bookings/{id}/evidence` | AUTHENTICATED | Upload a photo |
 | `GET /api/v1/bookings/{id}/invoice.pdf` | AUTHENTICATED | Download the invoice |
 | `GET /api/v1/bookings/{id}/messages` | AUTHENTICATED | Read the booking chat |
@@ -89,8 +89,8 @@ infer from a path.
 | `POST /api/v1/bookings/{id}/revisions/approve` | AUTHENTICATED | Approve the pending revised quote |
 | `POST /api/v1/bookings/{id}/revisions/reject` | AUTHENTICATED | Reject the pending revised quote |
 | `GET /api/v1/bookings/{id}/service-address` | AUTHENTICATED | Where this job is |
-| `POST /api/v1/bookings/{id}/start` | AUTHENTICATED | Start the job with the customer’s code |
-| `POST /api/v1/bookings/{id}/start-code` | AUTHENTICATED | Show the start code on the customer’s screen |
+| `POST /api/v1/bookings/{id}/start` | AUTHENTICATED | Start the job with the customerâ€™s code |
+| `POST /api/v1/bookings/{id}/start-code` | AUTHENTICATED | Show the start code on the customerâ€™s screen |
 | `POST /api/v1/bookings/{id}/warranty-claim` | AUTHENTICATED | Claim under warranty |
 | `POST /api/v1/bookings/checkout` | AUTHENTICATED | Check out a booking (alias of POST /bookings) |
 | `POST /api/v1/bookings/quote` | AUTHENTICATED | Price a booking before committing to it |
@@ -166,11 +166,18 @@ infer from a path.
 | `GET /api/v1/v/{token}` | AUTHENTICATED | Open a verification link (customer) |
 | `POST /api/v1/v/{token}` | AUTHENTICATED | Answer a verification link (customer) |
 
+## Customer self-confirmation (FR-VC-16)
+
+| Operation | Role | Summary |
+|---|---|---|
+| `GET /api/v1/bookings/{bookingId}/verification/confirmation` | AUTHENTICATED | Open the "confirm the work" form (customer) |
+| `POST /api/v1/bookings/{bookingId}/verification/confirmation` | AUTHENTICATED | Confirm the work and rate the provider (customer) |
+
 ## Provider reputation & conduct
 
 | Operation | Role | Summary |
 |---|---|---|
-| `GET /api/v1/admin/providers/{providerId}/ratings` | ADMIN | Review a provider’s ratings |
+| `GET /api/v1/admin/providers/{providerId}/ratings` | ADMIN | Review a providerâ€™s ratings |
 | `POST /api/v1/admin/remarks/{id}/unpublish` | ADMIN | Unpublish an abusive remark |
 | `GET /api/v1/provider/conduct` | PROVIDER | See my conduct record |
 | `GET /api/v1/provider/penalties` | PROVIDER | See my penalties |
@@ -210,8 +217,8 @@ infer from a path.
 | `GET /api/v1/finance/payout-batches` | FINANCE | List payout batches |
 | `POST /api/v1/finance/payout-batches` | FINANCE | Create a payout batch |
 | `GET /api/v1/finance/payout-batches/{id}/export.csv` | FINANCE | Download the bank file |
-| `POST /api/v1/finance/payout-batches/{id}/mark-paid` | FINANCE | Record the bank’s result for a batch |
-| `GET /api/v1/finance/payout-batches/{id}/statements/{providerId}` | FINANCE | A provider’s statement for a batch |
+| `POST /api/v1/finance/payout-batches/{id}/mark-paid` | FINANCE | Record the bankâ€™s result for a batch |
+| `GET /api/v1/finance/payout-batches/{id}/statements/{providerId}` | FINANCE | A providerâ€™s statement for a batch |
 | `GET /api/v1/finance/payouts` | FINANCE | List payout requests |
 | `POST /api/v1/finance/payouts/{id}/approve` | FINANCE | Approve a payout |
 | `POST /api/v1/finance/reconciliation/run` | FINANCE | Run the ledger reconciliation now |
@@ -302,7 +309,7 @@ infer from a path.
 | `GET /api/v1/admin/complaints` | ADMIN | The complaint queue |
 | `GET /api/v1/admin/complaints/{id}` | ADMIN | Open a complaint |
 | `POST /api/v1/admin/complaints/{id}/assign` | ADMIN | Assign a complaint |
-| `POST /api/v1/admin/complaints/{id}/open-dispute` | ADMIN | Freeze the job’s money as a dispute |
+| `POST /api/v1/admin/complaints/{id}/open-dispute` | ADMIN | Freeze the jobâ€™s money as a dispute |
 | `POST /api/v1/admin/complaints/{id}/transition` | ADMIN | Move a complaint along, or decide it |
 | `GET /api/v1/admin/disputes` | ADMIN | The dispute queue |
 | `GET /api/v1/admin/disputes/{id}` | ADMIN | Open a dispute: the evidence floor |

@@ -9,13 +9,15 @@ import { VerificationConsoleService } from './verification-console.service.js';
 import { VerificationController } from './verification.controller.js';
 import { VerificationOutcomeService } from './verification-outcome.service.js';
 import { VerificationQueueService } from './verification-queue.service.js';
+import { VerificationSelfController } from './verification-self.controller.js';
+import { VerificationSelfService } from './verification-self.service.js';
 import { VerificationSubmitService } from './verification-submit.service.js';
 import { VerificationSweepsService } from './verification-sweeps.service.js';
 
 @Module({
   imports: [BookingModule],
-  controllers: [VerificationController, VerificationLinkController, RecordingController],
-  providers: [VerificationQueueService, VerificationConsoleService, VerificationOutcomeService, VerificationSubmitService, VerificationSweepsService, VerificationLinkService, RecordingService],
-  exports: [VerificationQueueService, VerificationOutcomeService, VerificationSweepsService, VerificationLinkService]
+  controllers: [VerificationController, VerificationLinkController, VerificationSelfController, RecordingController],
+  providers: [VerificationQueueService, VerificationConsoleService, VerificationOutcomeService, VerificationSubmitService, VerificationSweepsService, VerificationLinkService, VerificationSelfService, RecordingService],
+  exports: [VerificationQueueService, VerificationOutcomeService, VerificationSweepsService, VerificationLinkService, VerificationSelfService]
 })
 export class VerificationModule {}

@@ -886,6 +886,24 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/bookings/{bookingId}/verification/confirmation",
+      "operationId": "VerificationSelfController_describe",
+      "summary": "Open the \"confirm the work\" form (customer)",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bookings/{bookingId}/verification/confirmation",
+      "operationId": "VerificationSelfController_confirm",
+      "summary": "Confirm the work and rate the provider (customer)",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/bookings/{id}",
       "operationId": "BookingController_getOne",
       "summary": "Read one booking",

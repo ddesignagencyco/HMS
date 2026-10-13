@@ -34,6 +34,7 @@ export const settingsDefinitions: readonly SettingsDefinition[] = [
   S('verification.b_escalation_hours', 24, 'Hours before a silent Tier B call escalates to Tier A.'),
   S('verification.lock_timeout_min', 10, 'BR-26: minutes before a stale agent lock is swept back to the queue.'),
   S('verification.force_tier_a', false, 'BR-25: force every verification into Tier A.'),
+  S('verification.self_verify_enabled', true, 'FR-VC-16: let a signed-in customer confirm and rate a job from the app instead of waiting for the verification call.'),
   S('verification.require_verified_cnic', true, 'Approval requires a VERIFIED CNIC document.'),
   S('tier.first_jobs', 5, 'R1: provider verified-job count below which the booking routes to Tier A.'),
   S('tier.value_threshold_paisa', 1_500_000, 'R2: job value above which the booking routes to Tier A.'),

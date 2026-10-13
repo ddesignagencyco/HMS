@@ -14,7 +14,7 @@ import { VerificationQueueService } from './verification-queue.service.js';
 /**
  * The scheduled halves of verification (worker jobs): flag SLA breaches, return abandoned claims, escalate silent Tier B
  * jobs, release what nobody could verify in 72 hours, and end rework windows nobody used. Each is safe to run twice or on
- * two workers at once — every one re-checks the row inside its own transaction and a lost race simply does nothing.
+ * two workers at once â€” every one re-checks the row inside its own transaction and a lost race simply does nothing.
  */
 @Injectable()
 export class VerificationSweepsService implements OnModuleInit {
@@ -65,15 +65,29 @@ export class VerificationSweepsService implements OnModuleInit {
 
   /**
    * FR-VC-07 / CL-09: 72 hours (`verification.auto_release_hours`) after completion with no verification, the job is released so a
-   * provider is not held up forever by an unreachable customer. No rating is published — nobody actually confirmed anything — and the
+   * provider is not held up forever by an unreachable customer. No rating is published â€” nobody actually confirmed anything â€” and the
    * customer keeps a complaint window. Cash is authorised to collect, as for any other release.
    *
    * **A job with an unresolved complaint is never auto-released.** An unreachable customer is silent, but a customer who has
-   * filed a complaint has spoken — and `ComplaintsService.openDispute` exists precisely because a complaint about a job still
+   * filed a complaint has spoken â€” and `ComplaintsService.openDispute` exists precisely because a complaint about a job still
    * awaiting verification should freeze the money rather than let it drain through escrow. Nothing required that escalation to
    * happen within the 72 hours, so the sweep used to release the money out from under a live complaint and leave the admin
    * deciding it post-release, when a refund has to be drawn from the provider's wallet instead of escrow. The sweep now leaves
    * those bookings alone: the complaint's own SLA is what should get an admin to it, and the complaint queue already alerts them.
+   *
+   * **The same applies to a customer who has answered "no" (FR-VC-16).** The in-app form lets a customer say the work was not
+   * acceptable, that none of it was done, or that money was demanded beyond the price. That releases nothing and escalates the
+   * case to Tier A at priority 0 â€” the exact opposite of the silence this sweep exists for. Releasing the money 72 hours later
+   * would settle the job against a customer who told us it was wrong and was waiting for somebody to call them back. The
+   * escalation records `CUSTOMER_NOT_ACCEPTED` or `CUSTOMER_INTEGRITY_FLAG` in `routing_reasons`, and this sweep skips those
+   * calls outright, exactly as it skips a booking with a live complaint.
+   *
+   * Not time-boxed, and deliberately: the alternative was to expire the protection after the escalation's own SLA, which is 30
+   * business minutes and therefore always lapses long before the 72-hour cutoff it was meant to override â€” a guard that can never
+   * fire is not a guard. A customer who rejected the job has said something true about it, and paying the provider anyway on a
+   * timer is the one outcome nobody involved asked for. What makes the case findable instead is the escalation itself: Tier A,
+   * priority 0, with a fresh SLA that `verification.sla-monitor` flags as breached so it sits overdue in the queue until an agent
+   * works it. The same exposure as any Tier A job nobody picks up, which is the existing system's, not this form's.
    */
   async autoRelease(): Promise<number> {
     const hours = await this.settings.getNumber('verification.auto_release_hours');
@@ -81,16 +95,20 @@ export class VerificationSweepsService implements OnModuleInit {
     const due = await this.prisma.$queryRaw<{ verificationId: string; bookingId: string }[]>(
       Prisma.sql`SELECT v.id as "verificationId", b.id as "bookingId" FROM verification_calls v JOIN bookings b ON b.id = v.booking_id
 WHERE b.status = 'AWAITING_VERIFICATION' AND v.submitted_at IS NULL AND b.completed_at <= ${cutoff.toISOString()}::timestamptz AND v.status IN ('QUEUED','LOCKED')
-          AND NOT EXISTS (SELECT 1 FROM complaints c WHERE c.booking_id = b.id AND c.status NOT IN ('RESOLVED','REJECTED'))`
+          AND NOT EXISTS (SELECT 1 FROM complaints c WHERE c.booking_id = b.id AND c.status NOT IN ('RESOLVED','REJECTED'))
+          AND NOT (v.routing_reasons && ARRAY['CUSTOMER_NOT_ACCEPTED','CUSTOMER_INTEGRITY_FLAG']::text[])`
     );
     let released = 0;
     const refundIds: string[] = [];
     for (const call of due) {
       const done = await this.prisma.$transaction(async tx => {
-        const locked = await tx.$queryRaw<{ id: string }[]>(
-          Prisma.sql`SELECT id FROM verification_calls WHERE id = ${call.verificationId}::uuid AND submitted_at IS NULL FOR UPDATE SKIP LOCKED`
+        const locked = await tx.$queryRaw<{ id: string; negated: boolean }[]>(
+          Prisma.sql`SELECT id, (routing_reasons && ARRAY['CUSTOMER_NOT_ACCEPTED','CUSTOMER_INTEGRITY_FLAG']::text[]) as negated
+            FROM verification_calls WHERE id = ${call.verificationId}::uuid AND submitted_at IS NULL FOR UPDATE SKIP LOCKED`
         );
-        if (locked[0] === undefined) return null;
+        // The customer saying "no" between this sweep's SELECT and this transaction must stop the release
+        // just as much as one that was already on the record when the sweep started.
+        if (locked[0] === undefined || locked[0].negated) return null;
         const booking = await VerificationOutcomeService.loadBooking(tx, call.bookingId);
         const statuses = await tx.$queryRaw<{ status: string }[]>(Prisma.sql`SELECT status::text FROM bookings WHERE id = ${call.bookingId}::uuid`);
         if (statuses[0]?.status !== 'AWAITING_VERIFICATION') return null;
