@@ -1,6 +1,12 @@
 // apps/api/test/integration/complaints.test.ts
 //
 // SHM-075: complaints — raising, the timeline, the right of reply, the admin queue, state machine, and the outcomes a decision can carry.
+//
+// Requires a freshly migrated + seeded database, like CI gives it. `admin/complaints?open=true` is a
+// global list ordered `closed, severity, sla_due_at` and capped at `LIMIT 200`, so re-running this
+// file against an already-populated database accumulates open complaints until the 200-row window
+// truncates the ones this test just created — the queue test then fails with
+// `expected <n> to be less than -1`, which reads like an ordering bug in the product but is not one.
 import { Prisma } from '@prisma/client';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';

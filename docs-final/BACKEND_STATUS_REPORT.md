@@ -79,13 +79,13 @@ Maintenance plans (subscribe, deferred revenue per subscription, daily scheduler
 | **180-day expiry boundary** (SHM-077) | Test cannot distinguish `<= now` from `< now` because `AppClock` advances with real elapsed time | 0.5 day | Needs a fully deterministic clock |
 | **`db:reset` does not flush the Redis settings cache** | Found 11 Oct, `flush-settings-cache.mjs` now exists but wiring is unverified | 0.5 day | A reset that is not a reset causes false-negative mutation checks |
 | **Worker has zero tests** | `apps/worker/test` does not exist (`passWithNoTests: true`) | 1–2 days | 17 repeatable jobs and all scheduler ticks are unexercised; needs a live Redis-backed worker |
-| **SHM-094** production images & deploy pipeline | Not started | 3–5 days | No staging, no tag-based deploy, no zero-manual-step proof |
+| **SHM-094** production images & deploy pipeline | `IN REVIEW` — multi-stage non-root images (api/worker/migrate), prod compose and GHCR tag→staging workflow written; all three images build and boot against a seeded PostGIS/Redis locally | ~0.5 day | Cannot prove "staging deploy from a tag, zero manual steps" until a staging host and `{STAGING,PRODUCTION}_*` secrets exist |
 
 ### 4.2 Verification gaps that are not code
 
 | Item | State | Owner |
 |---|---|---|
-| **CI has never run on a real PR** | Workflow exists and has 4 jobs; no observed run on a pull request | Repo admin — open one PR |
+| **CI has never run on a real PR** | Workflow exists and has 4 jobs; no observed run on a pull request. The `integration` job's own suite was executed locally against a freshly migrated + seeded PostGIS/Redis on 13 Oct and passed 636/636 — the job's logic is sound, but that is not a GitHub run | Repo admin — open one PR |
 | **Branch protection not enabled** | `quality` + `integration` are not required checks; a red PR can merge | Repo admin — one GitHub setting |
 | **ZAP baseline scan never executed** against a deployed instance; no reviewed baseline file committed | `continue-on-error: true` on the scan step | Needs a deployed target |
 | **Alert rules never fired** | 8 rules defined, no staging to fire them in | Needs a staging environment |
