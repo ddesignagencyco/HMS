@@ -109,12 +109,23 @@ export const bookingChecklistSchema = z.object({ done: z.literal(true), evidence
 
 export type BookingChecklistInput = z.infer<typeof bookingChecklistSchema>;
 
+export const evidenceContentTypes = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'application/pdf'
+] as const;
+
 export const bookingEvidenceSchema = z
   .object({
     /** Generated on the device; a retry of the same upload (offline queue, flaky network) carries the same value and is stored once. */
     clientUuid: z.string().uuid(),
     kind: z.enum(['CUSTOMER_PROBLEM', 'BEFORE', 'AFTER', 'CHECKLIST']),
-    contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+    contentType: z.enum(evidenceContentTypes),
     contentBase64: z.string().min(1),
     checklistItemId: z.number().int().positive().optional(),
     capturedAt: z.string().datetime().optional(),

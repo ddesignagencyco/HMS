@@ -11,9 +11,10 @@ export type SystemEventOptions = {
   paymentStatus?: 'NONE' | 'PENDING' | 'HELD' | 'RELEASED' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'CASH_DUE' | 'CASH_SETTLED';
   /** Extra columns to set alongside the status flip, e.g. `provider_id` when an offer is accepted. */
   providerId?: string;
-  /** Who decided, when the platform is applying somebody else's decision (an agent's verification outcome, an admin's ruling). The transition is still SYSTEM's; this only fills the history row. */
+  /** Who decided, when the platform is applying somebody else's decision (an agent's verification outcome, an admin's ruling, the customer's own confirmation). The transition is still SYSTEM's; this only fills the history row. */
   actorUserId?: string;
-  actorRole?: 'AGENT' | 'FINANCE' | 'ADMIN' | 'SYSTEM';
+  /** `CUSTOMER` is here for one case only: FR-VC-16's in-app form, where the customer is the decider but the platform applies it. */
+  actorRole?: 'CUSTOMER' | 'AGENT' | 'FINANCE' | 'ADMIN' | 'SYSTEM';
   /** Overrides the transition table's target, for events whose target depends on context (none today beyond cancel). */
   to?: BookingStatus;
 };
@@ -24,7 +25,7 @@ export type SystemEventOptions = {
  * booking, inside a transaction the caller already owns so the status write is
  * atomic with whatever caused it (a ledger posting, an offer row, ...).
  *
- * Returns null when the booking is no longer in a status this event can leave —
+ * Returns null when the booking is no longer in a status this event can leave â€”
  * every caller here is idempotent by design (a replayed webhook, a sweeper that
  * raced another), so "already moved on" is a normal outcome, not an error.
  * Throws only when the booking does not exist.

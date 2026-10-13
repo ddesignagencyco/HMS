@@ -846,6 +846,7 @@ model provider_services {
 
   @@id([provider_id, service_id])
   @@index([service_id, status], map: "provider_services_service_idx")
+  @@index([provider_id, status], map: "provider_services_provider_status_idx")
 }
 
 /// This model contains an index with non-default null sort order and requires additional setup for migrations. Visit https://pris.ly/d/default-index-null-ordering for more info.
@@ -1332,6 +1333,7 @@ model verification_calls {
   call_duration_seconds                     Int?
   submitted_at                              DateTime?                    @db.Timestamptz(6)
   created_at                                DateTime                     @default(now()) @db.Timestamptz(6)
+  confirmed_via                             verification_confirmed_via?
   ratings                                   ratings?
   verification_amendments                   verification_amendments[]
   verification_call_attempts                verification_call_attempts[]
@@ -1784,4 +1786,9 @@ enum work_completion {
   FULL
   PARTIAL
   NONE
+}
+
+enum verification_confirmed_via {
+  LINK
+  IN_APP
 }

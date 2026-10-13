@@ -1,5 +1,5 @@
 -- =====================================================================
--- Smart Home Maintenance Services — canonical schema (PostgreSQL 16 + PostGIS 3)
+-- Smart Home Maintenance Services â€” canonical schema (PostgreSQL 16 + PostGIS 3)
 -- Source of truth for the data model. Apply as migration 0001 (dbmate),
 -- then generate the Prisma client with `prisma db pull && prisma generate`.
 -- Money: BIGINT paisa. Time: timestamptz (UTC). IDs: uuid (entities), bigint (logs).
@@ -42,6 +42,7 @@ CREATE TYPE item_kind          AS ENUM ('SERVICE','VISIT_FEE','EXTRA','PART','SU
 CREATE TYPE verification_tier  AS ENUM ('A','B');
 CREATE TYPE verification_status AS ENUM ('QUEUED','LOCKED','SUBMITTED');
 CREATE TYPE verification_outcome AS ENUM ('VERIFIED_SATISFIED','VERIFIED_WITH_ISSUE','REWORK_REQUIRED','DISPUTED','LINK_CONFIRMED','AUTO_RELEASED');
+CREATE TYPE verification_confirmed_via AS ENUM ('LINK','IN_APP');   -- how the customer confirmed; null = an agent's call
 CREATE TYPE work_completion    AS ENUM ('FULL','PARTIAL','NONE');
 CREATE TYPE time_band          AS ENUM ('MORNING','AFTERNOON','EVENING');
 CREATE TYPE attempt_result     AS ENUM ('ANSWERED','NO_ANSWER','BUSY','SWITCHED_OFF','WRONG_PERSON','CALL_DROPPED');
@@ -496,7 +497,7 @@ CREATE TABLE bookings (
   -- "Book this for someone who isn't you." The booker's account still pays, rates,
   -- disputes and is verified against; these columns only record who will actually
   -- receive the provider, so the provider can reach the door. Either both are set
-  -- or neither is — a booking cannot claim to be on someone's behalf and then not
+  -- or neither is â€” a booking cannot claim to be on someone's behalf and then not
   -- say who.
   is_on_behalf           boolean NOT NULL DEFAULT false,
   on_behalf_name         text,
@@ -742,7 +743,7 @@ CREATE TABLE verification_calls (
   next_attempt_at           timestamptz NOT NULL DEFAULT now(),
   locked_by                 uuid REFERENCES users(id),
   locked_at                 timestamptz,
-  -- questionnaire (SRS §5.3)
+  -- questionnaire (SRS Â§5.3)
   agent_id                  uuid REFERENCES users(id),
   outcome                   verification_outcome,
   work_completed            work_completion,
@@ -761,6 +762,7 @@ CREATE TABLE verification_calls (
   call_duration_seconds     int,
   submitted_at              timestamptz,
   created_at                timestamptz NOT NULL DEFAULT now(),
+  confirmed_via             verification_confirmed_via,   -- FR-VC-16: LINK = the texted one-tap, IN_APP = the signed-in form; null = an agent's call
   UNIQUE (booking_id, visit_no),
   CHECK ((status = 'SUBMITTED') = (outcome IS NOT NULL AND submitted_at IS NOT NULL)),
   CHECK (status <> 'LOCKED' OR (locked_by IS NOT NULL AND locked_at IS NOT NULL)),
@@ -769,10 +771,15 @@ CREATE TABLE verification_calls (
          (agent_id IS NOT NULL AND work_completed IS NOT NULL AND quality IS NOT NULL AND punctuality IS NOT NULL
           AND conduct IS NOT NULL AND cleanliness IS NOT NULL AND extra_charge_demanded IS NOT NULL
           AND consent_line_read IS TRUE AND consent_to_release IS NOT NULL)),
-  -- integrity guard (SRS §5.4)
+  -- integrity guard (SRS Â§5.4)
   CHECK (outcome IS NULL OR outcome IN ('DISPUTED','AUTO_RELEASED')
          OR (coalesce(extra_charge_demanded,false) = false AND coalesce(work_completed,'FULL') <> 'NONE')),
-  CHECK (outcome IS NULL OR outcome NOT IN ('VERIFIED_SATISFIED','VERIFIED_WITH_ISSUE') OR consent_to_release IS TRUE)
+  CHECK (outcome IS NULL OR outcome NOT IN ('VERIFIED_SATISFIED','VERIFIED_WITH_ISSUE') OR consent_to_release IS TRUE),
+  -- Only a customer's own confirmation arrives through a transport; an agent's submission and the 72-hour sweep leave it null.
+  -- Named to match the migration that added it (20261013120000): unnamed CHECKs get auto-named
+  -- verification_calls_checkN, which is drift the schema-fidelity check catches.
+  CONSTRAINT verification_confirmed_via_matches_outcome
+    CHECK (confirmed_via IS NULL OR outcome IN ('LINK_CONFIRMED','AUTO_RELEASED'))
 );
 CREATE INDEX verification_queue_idx ON verification_calls(priority, sla_due_at) WHERE status = 'QUEUED';
 CREATE INDEX verification_calls_status_idx ON verification_calls(status, tier);

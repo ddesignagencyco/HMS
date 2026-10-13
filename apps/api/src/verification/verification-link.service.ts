@@ -175,7 +175,7 @@ export class VerificationLinkService implements OnModuleInit {
 
       const booking = await VerificationOutcomeService.loadBooking(tx, link.bookingId);
       await tx.$executeRaw(
-        Prisma.sql`UPDATE verification_calls SET status = 'SUBMITTED'::verification_status, outcome = 'LINK_CONFIRMED'::verification_outcome, submitted_at = now(), work_completed = ${answers.workCompleted}::work_completion,
+        Prisma.sql`UPDATE verification_calls SET status = 'SUBMITTED'::verification_status, outcome = 'LINK_CONFIRMED'::verification_outcome, submitted_at = now(), confirmed_via = 'LINK'::verification_confirmed_via, work_completed = ${answers.workCompleted}::work_completion,
             quality = ${answers.quality}, punctuality = ${answers.punctuality}, conduct = ${answers.conduct}, cleanliness = ${answers.cleanliness}, extra_charge_demanded = false, consent_to_release = true,
             locked_by = NULL, locked_at = NULL WHERE id = ${link.verificationId}::uuid AND submitted_at IS NULL`
       );

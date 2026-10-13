@@ -26,4 +26,28 @@ export class EnvironmentService {
   get storageBuckets(): string[] {
     return this.values.STORAGE_BUCKETS;
   }
+
+  get storageProvider(): string {
+    return this.values.STORAGE_PROVIDER;
+  }
+
+  get supabaseUrl(): string | undefined {
+    return this.values.SUPABASE_URL;
+  }
+
+  get supabaseSecretKey(): string | undefined {
+    return this.values.SUPABASE_SECRET_KEY;
+  }
+
+  get supabaseStorageBucket(): string {
+    return this.values.SUPABASE_STORAGE_BUCKET;
+  }
+
+  get supabasePublishableKey(): string | undefined {
+    return this.values.SUPABASE_PUBLISHABLE_KEY;
+  }
+
+  get supabaseJwksUrl(): string | undefined {
+    return this.values.SUPABASE_JWKS_URL;
+  }
 }

@@ -374,6 +374,10 @@ Every transition writes `booking_status_history` (from, to, event, actor, reason
 | FR-VC-13 | Cash jobs priority, 15-min SLA (CL-08). | H | v2.1 | Queue ordering test. |
 | FR-VC-14 | SLA counted only in calling hours (CL-20). | H | v2.1 | Completion 21:50 → deadline next day 08:20. |
 | FR-VC-15 | A queue item is locked to one agent at a time; lock auto-expires after `BR-26` min idle. | H | v2.1 | Two agents cannot open the same call. |
+| FR-VC-16 | A signed-in customer may confirm and rate their own job from the app, from the moment it completes, without waiting for the verification call. | H | v2.2 | `canSelfVerify` true at `AWAITING_VERIFICATION`; one POST releases escrow and writes one rating. |
+| FR-VC-17 | The customer's own answer observes the §5.4 integrity guard: no work done, or money demanded beyond the price, releases nothing and escalates to a person — regardless of which button was pressed. | H | v2.2 | Contradictory submission → 422; honest one → `ESCALATED`, no ledger movement. |
+| FR-VC-18 | A job the customer has rejected is never auto-released. | H | v2.2 | `verification.auto-release` skips `CUSTOMER_NOT_ACCEPTED` / `CUSTOMER_INTEGRITY_FLAG` at any age. |
+| FR-VC-19 | Which transport the customer confirmed through is recorded on the verification row. | L | v2.2 | `verification_calls.confirmed_via` is `LINK` or `IN_APP`, null for an agent's call. |
 
 ### 7.8 M8 — Payments, Escrow & Payouts
 | ID | Requirement | P | Src | Acceptance criterion |
@@ -649,3 +653,9 @@ All 24 FR.pdf requirements map exactly as in SRS v2.0 Appendix A (FR-SP-01…05,
 - New states: `PENDING_PAYMENT`, `ABANDONED`, `UNFULFILLED`, `REWORK_REQUIRED`, `QUOTE_REVISION` (formalised).
 - New requirements: FR-CAT-08, FR-BK-09/10, FR-EX-10/11/12, FR-VC-13/14/15, FR-PY-11/12/13, FR-NT-06, FR-AD-16, FR-PN-10, NFR-SE-07/08, NFR-PE-05, NFR-MA-04, NFR-AV-01.
 - Money in paisa; escrow on ledger; complete transition table T1–T26; acceptance criteria for every requirement.
+
+## Appendix C — v2.2 delta summary
+- New requirements: FR-VC-16/17/18/19, the customer's own work confirmation. FR-VC-16…19 are additions to §7.7; nothing below FR-VC-15 has been renumbered, and no existing requirement changed.
+- Why: verification had three exits — an agent's call, a texted link sent only for Tier B jobs or after three missed calls, and a 72-hour auto-release that publishes no rating. A Tier A job nobody worked had none the customer could reach, so the provider's money sat in escrow for three days and the customer's opinion of the work was discarded. FR-VC-16 adds that missing exit.
+- Bound on FR-VC-16: it releases only the customer's own money to the provider they already paid; it is refused while an agent holds the call, after the job is settled, and by `verification.self_verify_enabled`. It cannot record a rework or a dispute as a *decision* — `verification_calls` still requires a real agent, a full questionnaire and a spoken consent line for any outcome beyond the two customer-driven ones — so "not acceptable" escalates instead (FR-VC-17).
+- FR-VC-18 closes a hole FR-VC-16 would otherwise open: the 72-hour sweep exists for a customer who never answers, and must not settle a job that one has actively rejected.

@@ -4,7 +4,18 @@ import { z } from 'zod';
 export const CATEGORIES = ['MISBEHAVIOUR', 'QUALITY', 'OVERCHARGE', 'NO_SHOW', 'SAFETY', 'NON_PAYMENT', 'UNSAFE_PREMISES', 'ABUSE', 'CASH_DISCREPANCY', 'OTHER'] as const;
 export const RESOLUTIONS = ['NO_ACTION', 'WARNING', 'PARTIAL_REFUND', 'FULL_REFUND', 'PROVIDER_PENALTY', 'TEMPORARY_SUSPENSION', 'PERMANENT_BLOCK'] as const;
 
-const photo = z.object({ contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']), contentBase64: z.string().min(1) }).strict();
+export const complaintMediaTypes = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'application/pdf'
+] as const;
+
+const photo = z.object({ contentType: z.enum(complaintMediaTypes), contentBase64: z.string().min(1) }).strict();
 
 export const complaintCreateSchema = z
   .object({

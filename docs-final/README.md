@@ -34,6 +34,7 @@ genuinely-historical documents were still sitting in the old locations. Now ther
 | `TASKS_FRONTEND.md` | Frontend task board, by phase, screen-by-screen against the SRS | **Doc of record.** No frontend code exists yet - this is 100% forward-looking. |
 | `API_HANDOFF.md` | The API contract for frontend developers: conventions (auth, idempotency, errors, status codes), the booking and verification flows, per-screen notes, and what is **not** built yet | **Doc of record for the frontend. Update it in the same change as any API work.** Includes `api-handoff-index.md`. |
 | `api-handoff-index.md` | Every operation, grouped by screen area | **Generated - do not edit.** Regenerate with `npm run api:handoff --workspace @smart-home/api`. |
+| `DIRECTION_FRONTEND_CONFIRM_THE_WORK.md` | Implementation brief for the customer's own work-confirmation and rating form (FR-VC-16…19) — placement, states, error handling, and what is *not* built yet | **Doc of record for the frontend.** Companion to `API_HANDOFF.md` §2.4.1. |
 
 ### The API handoff rule
 

@@ -357,8 +357,49 @@ Tier B (routine jobs) releases on the customer's own answer via a one-tap link �
 agent's phone call. Either way the customer is now **texted** when the work completes,
 so build a notification surface for it rather than assuming they will open the app.
 
+**And the customer can always do it themselves from the app** — see §2.4.1.
+
 After 72 hours with no answer, escrow auto-releases (`AUTO_RELEASED`, no rating). So
 the customer's prompt is time-limited — say so.
+
+#### 2.4.1 "Confirm the work" — the customer finishes their own job (FR-VC-16)
+
+> Full implementation brief — placement, states, error handling, and what is **not**
+> built yet — in `DIRECTION_FRONTEND_CONFIRM_THE_WORK.md`.
+
+`GET`/`POST /bookings/{bookingId}/verification/confirmation`. **Signed-in customer, no
+OTP.** This is the exit that was missing when an agent never picked the job up: the link
+is only sent for Tier B or after three missed calls, so a Tier A job nobody worked left
+the provider unpaid for three days and the customer never once asked. Build this screen
+from `canSelfVerify` on the booking row, and expect it to be open **from the moment the
+job completes** — there is no grace period.
+
+`GET` returns `canSubmit` and, when false, a `blockedReason` **written for the customer
+to read**. Always 200 for your own booking: the form being unavailable is an answer, not
+an error, and a client handed only a status code has nothing to show. The reasons you
+will meet: *"One of our team is calling you about this job right now"*, *"This job has
+already been paid for"*, *"Self-confirmation is switched off"*.
+
+`POST` returns `outcome`, a `message` to render verbatim, and the refreshed booking:
+
+| `outcome` | What happened | Booking ends up |
+|---|---|---|
+| `CONFIRMED` | payment released, rating published | `PAYMENT_RELEASED` |
+| `CONFIRMED_WITH_ISSUE` | payment **still released**, quality complaint opened, provider flagged | `PAYMENT_RELEASED` |
+| `ESCALATED` | **nothing released**, case to a person at the top of the queue | stays `AWAITING_VERIFICATION` |
+
+Two things a client will get wrong otherwise:
+
+- **For a cash job the form never reaches `PAYMENT_RELEASED`.** It authorises the
+  handover and notifies the provider; they then tap `cash-received` as in §2.5. The
+  `booking.canConfirmCashReceived` in the response is the flag your provider screen wants.
+- **`ESCALATED` is not a failure state and not a dispute.** It is the same destination
+  the texted link sends a negative answer to. Do not render it as "something went wrong"
+  and do not offer a retry — the form is single-use per job and the case now belongs to
+  a person. The customer can still raise a complaint separately.
+
+The form is **closed on submit**, and submitting it closes any verification link we
+texted for the same job, so one job can never be confirmed twice through two doors.
 
 ### 2.5 Cash jobs
 

@@ -24,7 +24,7 @@ export const attemptSchema = z
 
 const score = z.number().int().min(1).max(5);
 
-/** SRS §5.3: the fixed questionnaire. There is deliberately no free-form "feedback" field other than the customer's own remark, transcribed. */
+/** SRS Â§5.3: the fixed questionnaire. There is deliberately no free-form "feedback" field other than the customer's own remark, transcribed. */
 export const submitSchema = z
   .object({
     workCompleted: z.enum(['FULL', 'PARTIAL', 'NONE']),
@@ -50,3 +50,33 @@ export const submitSchema = z
 
 export type SubmitInput = z.infer<typeof submitSchema>;
 export type AttemptInput = z.infer<typeof attemptSchema>;
+
+/**
+ * FR-VC-16: the customer's own confirmation, from the app rather than a texted link.
+ *
+ * The four rating fields are required even when the customer is about to say the job was unacceptable.
+ * That looks odd and is deliberate: `verification_calls` carries the questionnaire, and an agent picking
+ * the case up afterwards should find what the customer actually thought rather than four nulls. The
+ * `outcome` those scores imply is decided by `selfVerifyDecision`, never by the client â€” a request that
+ * says "all fine" alongside "no work was done" is refused with 422 rather than believed.
+ *
+ * The client's `NOT_ACCEPTABLE` maps to the domain's `REWORK_REQUIRED`: both mean "this is not
+ * acceptable", and the domain is where that becomes an escalation rather than a decision.
+ */
+export const selfVerifySchema = z
+  .object({
+    workCompleted: z.enum(['FULL', 'PARTIAL', 'NONE']),
+    quality: score,
+    punctuality: score,
+    conduct: score,
+    cleanliness: score,
+    extraChargeDemanded: z.boolean(),
+    /** The customer explicitly agreeing to release the money. Recorded as the consent it is. */
+    consentToRelease: z.boolean(),
+    outcome: z.enum(['SATISFIED', 'WITH_ISSUE', 'NOT_ACCEPTABLE']),
+    /** Published under the customer's first name and initial only (FR-RT-06), and only when the outcome permits a rating. */
+    remark: z.string().trim().max(1000).optional()
+  })
+  .strict();
+
+export type SelfVerifyInput = z.infer<typeof selfVerifySchema>;

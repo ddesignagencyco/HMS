@@ -1,6 +1,6 @@
 // apps/api/src/booking/booking.row.ts
 import { Prisma } from '@prisma/client';
-import { canTransition, paisaToNumber, type BookingStatus } from '@smart-home/domain';
+import { canTransition, paisaToNumber, transitionFor, type BookingStatus } from '@smart-home/domain';
 
 export type BookingRow = {
   id: string;
@@ -21,7 +21,7 @@ export type BookingRow = {
   /**
    * Whether someone other than the customer will receive the provider. The
    * booker's account still pays and still owns the job; this flag and the name are
-   * only who to knock on. The contact number is deliberately *not* on this row —
+   * only who to knock on. The contact number is deliberately *not* on this row â€”
    * see `on-behalf.ts`: it is read through one method that applies the masking rule,
    * so no provider-facing endpoint can return it by accident.
    */
@@ -45,7 +45,7 @@ export type BookingRow = {
    * `paymentStatus` is `CASH_DUE` from the moment the job completes, but the
    * handover is not authorised until verification permits it. Between those two
    * points the booking honestly says "cash owed" and settling it is honestly
-   * refused with a 409 — a window in which a client that renders the button
+   * refused with a 409 â€” a window in which a client that renders the button
    * from `paymentStatus` alone offers an action the API will reject. This flag
    * is the second half of that answer.
    *
@@ -54,10 +54,23 @@ export type BookingRow = {
    * transition table changes, this changes with it.
    */
   canConfirmCashReceived: boolean;
+  /**
+   * Whether the customer may fill in their own "verify the work" form right now (FR-VC-16).
+   *
+   * `AWAITING_VERIFICATION` is the only status that carries an undecided verification, so this is asked
+   * of the transition table for the same reason `canConfirmCashReceived` is: a client that renders the
+   * button off `status` alone is fine today, but a new outcome that leaves the status alone would
+   * silently break it, and the transition table is where that change would be made.
+   *
+   * It says nothing about whether the submission will be *accepted*. A verification an agent is
+   * currently calling is locked, and a call in progress is answered with 409 rather than a second
+   * outcome â€” that cannot be derived from a row, so it lives in the response to the submission.
+   */
+  canSelfVerify: boolean;
 };
 
-/** The money columns and the derived flag are the only fields not read straight off the row. */
-export type BookingRowRaw = Omit<BookingRow, 'quotedAmountPaisa' | 'approvedTotalPaisa' | 'finalAmountPaisa' | 'discountPaisa' | 'canConfirmCashReceived'> & {
+/** The money columns and the derived flags are the only fields not read straight off the row. */
+export type BookingRowRaw = Omit<BookingRow, 'quotedAmountPaisa' | 'approvedTotalPaisa' | 'finalAmountPaisa' | 'discountPaisa' | 'canConfirmCashReceived' | 'canSelfVerify'> & {
   quotedAmountPaisa: bigint;
   approvedTotalPaisa: bigint;
   finalAmountPaisa: bigint | null;
@@ -79,7 +92,7 @@ export type BookingItemRow = { id: string; kind: string; description: string; qu
  * `GET /bookings/:id`), where the extra text costs nothing.
  *
  * `qualification` and not `users.first_name`: the public search contract
- * deliberately never publishes a provider's name (§2.2 of the search notes), so
+ * deliberately never publishes a provider's name (Â§2.2 of the search notes), so
  * the booking row stays consistent with what the rest of the product may show.
  * The service name is published in both languages like every other catalogue
  * label, because the customer reads it.
@@ -95,7 +108,7 @@ export type BookingReadRow = BookingRow & {
   areaName: string | null;
 };
 
-export type BookingReadRaw = Omit<BookingReadRow, 'quotedAmountPaisa' | 'approvedTotalPaisa' | 'finalAmountPaisa' | 'discountPaisa' | 'canConfirmCashReceived'> & {
+export type BookingReadRaw = Omit<BookingReadRow, 'quotedAmountPaisa' | 'approvedTotalPaisa' | 'finalAmountPaisa' | 'discountPaisa' | 'canConfirmCashReceived' | 'canSelfVerify'> & {
   quotedAmountPaisa: bigint;
   approvedTotalPaisa: bigint;
   finalAmountPaisa: bigint | null;
@@ -137,6 +150,7 @@ const withMoney = <T extends { paymentMode: string; status: string; quotedAmount
   finalAmountPaisa: number | null;
   discountPaisa: number;
   canConfirmCashReceived: boolean;
+  canSelfVerify: boolean;
 } => ({
   ...raw,
   quotedAmountPaisa: paisaToNumber(raw.quotedAmountPaisa),
@@ -146,7 +160,13 @@ const withMoney = <T extends { paymentMode: string; status: string; quotedAmount
   // Asked of the transition table itself rather than restated: `confirmCashReceived` is legal from
   // VERIFIED and AUTO_RELEASED only, and the database trigger refuses the release without a
   // release-permitting verification. An online job never carries this event at all.
-  canConfirmCashReceived: raw.paymentMode === 'CASH' && canTransition(raw.status as BookingStatus, 'confirmCashReceived', 'PROVIDER') !== null
+  canConfirmCashReceived: raw.paymentMode === 'CASH' && canTransition(raw.status as BookingStatus, 'confirmCashReceived', 'PROVIDER') !== null,
+  // The customer's own confirmation (FR-VC-16) is the `linkConfirmed` event, which exists only from
+  // AWAITING_VERIFICATION â€” every outcome that leaves that status also settles the question, so the
+  // flag cannot outlive its own form. Asked role-blind on purpose: the transition itself is SYSTEM's
+  // (the platform applies a decision somebody else made) while the history row names the customer,
+  // exactly as it does for an agent's outcome.
+  canSelfVerify: transitionFor(raw.status as BookingStatus, 'linkConfirmed') !== undefined
 });
 
 export const toBookingRow = (raw: BookingRowRaw): BookingRow => withMoney(raw);

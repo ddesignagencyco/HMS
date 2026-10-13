@@ -89,10 +89,27 @@ describe('strict environment validation', () => {
     }
   });
 
-  it('keeps every adapter on the mock implementation in this increment', () => {
+  it('keeps other adapters on mock and supports supabase for storage', () => {
     const result = environmentSchema.safeParse({ ...base(), PAYMENT_PROVIDER: 'safepay' });
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error.issues[0]?.path).toEqual(['PAYMENT_PROVIDER']);
+
+    // STORAGE_PROVIDER=supabase requires SUPABASE_URL and SUPABASE_SECRET_KEY
+    const supabaseMissingKeys = environmentSchema.safeParse({ ...base(), STORAGE_PROVIDER: 'supabase' });
+    expect(supabaseMissingKeys.success).toBe(false);
+
+    const supabaseValid = environmentSchema.safeParse({
+      ...base(),
+      STORAGE_PROVIDER: 'supabase',
+      SUPABASE_URL: 'https://test.supabase.co',
+      SUPABASE_SECRET_KEY: 'test-secret-key',
+      SUPABASE_STORAGE_BUCKET: 'verification-documents'
+    });
+    expect(supabaseValid.success).toBe(true);
+    if (supabaseValid.success) {
+      expect(supabaseValid.data.STORAGE_PROVIDER).toBe('supabase');
+      expect(supabaseValid.data.SUPABASE_STORAGE_BUCKET).toBe('verification-documents');
+    }
   });
 
   it('coerces numeric and boolean strings', () => {

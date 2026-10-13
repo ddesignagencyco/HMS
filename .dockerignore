@@ -1,0 +1,38 @@
+# Keep the build context to source and manifests. The Dockerfile installs
+# dependencies itself, so anything already downloaded or generated is noise that
+# only slows the context transfer and risks a stale artifact winning the COPY.
+
+.git
+.github
+.gitignore
+.dockerignore
+
+# Dependencies and build output — always rebuilt inside the image.
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/*.tsbuildinfo
+coverage
+
+# Generated Prisma client (produced by `prisma generate` in the build stage).
+packages/db/generated
+packages/db/prisma/schema.prisma.local
+
+# Secrets. The container reads only real environment variables; a baked-in .env
+# is the one thing that must never end up in a layer.
+.env
+.env.*
+
+# Not needed to build or run the service.
+docs-final
+k6
+backups
+infra
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+*.log
+npm-debug.log*
