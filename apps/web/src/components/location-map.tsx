@@ -302,7 +302,7 @@ export function LocationMap({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-[12px] border border-line shadow-xs group",
+        "relative isolate z-0 overflow-hidden rounded-[12px] border border-line shadow-xs group",
         className,
       )}
       style={{ height }}
@@ -310,7 +310,7 @@ export function LocationMap({
       <div ref={containerRef} className="size-full z-0" />
 
       {/* Floating map controls */}
-      <div className="absolute end-3 top-3 z-[400] flex flex-col gap-1.5">
+      <div className="absolute end-3 top-3 z-10 flex flex-col gap-1.5">
         <button
           type="button"
           onClick={handleZoomIn}
@@ -357,7 +357,7 @@ export function LocationMap({
 
       {/* Interactive Helper Banner / Hint */}
       {!readOnly && (
-        <div className="pointer-events-none absolute bottom-2.5 inset-x-2.5 z-[400] flex justify-center">
+        <div className="pointer-events-none absolute bottom-2.5 inset-x-2.5 z-10 flex justify-center">
           <div className="rounded-full bg-navy/90 px-3 py-1 text-[11px] font-medium text-white shadow-md backdrop-blur-sm flex items-center gap-1.5">
             <MapPin className="size-3 text-yellow-400" />
             <span>{hint ?? "Click anywhere or drag the pin to set location"}</span>

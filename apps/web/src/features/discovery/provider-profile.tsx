@@ -72,8 +72,18 @@ export function ProviderProfile({ locale, dict, providerId }: { locale: Locale; 
       <section className="bg-page py-10 sm:py-14">
         <div className="container-shell grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-14">
           <div className="min-w-0">
-            <p className="eyebrow eyebrow-light">{dict.profile.eyebrow}</p>
-            <h1 className="title-page mt-3 text-navy">{value.qualification ?? dict.profile.titleFallback}</h1>
+            <div className="flex items-start gap-4">
+              <span
+                aria-hidden="true"
+                className="grid size-12 sm:size-14 shrink-0 place-items-center rounded-xl bg-navy text-lg sm:text-xl font-bold text-white shadow-sm"
+              >
+                {value.qualification?.trim()[0]?.toUpperCase() ?? "P"}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="eyebrow eyebrow-light">{dict.profile.eyebrow}</p>
+                <h1 className="title-page mt-1 text-navy">{value.qualification ?? dict.profile.titleFallback}</h1>
+              </div>
+            </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-secondary">
               {value.experienceYears !== null ? <span>{dict.search.yearsExperience.replace('{years}', formatNumber(value.experienceYears, locale))}</span> : null}

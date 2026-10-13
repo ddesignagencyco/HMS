@@ -45,8 +45,8 @@ export function Field({ label, hint, error, className, id, startIcon, ...props }
   const errorId = error === undefined ? undefined : `${fieldId}-error`;
 
   return (
-    <div className={cn("grid gap-1", className)}>
-      <Label htmlFor={fieldId} className="text-[11.5px] font-semibold text-slate-800">
+    <div className={cn("grid gap-1.5", className)}>
+      <Label htmlFor={fieldId} className="text-[11.5px] font-semibold text-slate-800 mb-1">
         {label}
       </Label>
       <div className="relative">
@@ -90,8 +90,8 @@ export function PasswordField({
   const errorId = error === undefined ? undefined : `${fieldId}-error`;
 
   return (
-    <div className={cn("grid gap-1", className)}>
-      <Label htmlFor={fieldId} className="text-[11.5px] font-semibold text-slate-800">
+    <div className={cn("grid gap-1.5", className)}>
+      <Label htmlFor={fieldId} className="text-[11.5px] font-semibold text-slate-800 mb-1">
         {label}
       </Label>
       <div className="relative">

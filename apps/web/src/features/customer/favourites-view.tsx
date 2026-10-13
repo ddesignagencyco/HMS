@@ -111,20 +111,26 @@ export function CustomerFavouritesScreen({ locale, dict }: { locale: Locale; dic
             const status = dict.portal.statusKeys[item.providerStatus as keyof typeof dict.portal.statusKeys] ?? null;
             return (
               <li key={item.providerId}>
-                <Card className="flex h-full flex-col p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      {/* The name is what the API publishes here, unlike the public
-                          provider search, which publishes no name at all. */}
-                      <h2 className="font-semibold text-navy">{name === '' ? dict.profile.titleFallback : name}</h2>
-                      <p className="mt-2 text-xs text-muted">{dict.portal.favouritesSavedOn.replace('{date}', formatDate(item.favouritedAt, locale))}</p>
+                <Card className="flex h-full flex-col p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-soft">
+                  <div className="flex items-start gap-3.5">
+                    <span
+                      aria-hidden="true"
+                      className="grid size-11 shrink-0 place-items-center rounded-lg bg-navy text-base font-bold text-white shadow-sm"
+                    >
+                      {name?.trim()[0]?.toUpperCase() ?? "•"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <h2 className="text-base font-bold text-navy">{name === '' ? dict.profile.titleFallback : name}</h2>
+                        {status !== null ? <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">{status}</span> : null}
+                      </div>
+                      <p className="mt-1 text-xs text-muted">{dict.portal.favouritesSavedOn.replace('{date}', formatDate(item.favouritedAt, locale))}</p>
                     </div>
-                    {status !== null ? <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{status}</span> : null}
                   </div>
 
                   {/* The richer public profile is one link away rather than
                       summarised here from fields this response never had. */}
-                  <Link href={localizedPath(locale, `/providers/${item.providerId}`)} className="mt-3 text-sm font-medium text-primary-strong hover:underline">
+                  <Link href={localizedPath(locale, `/providers/${item.providerId}`)} className="mt-4 text-sm font-medium text-primary-strong hover:underline">
                     {dict.portal.favouritesBookAgo}
                   </Link>
 

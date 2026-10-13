@@ -153,15 +153,15 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
   };
 
   const brand = () => (
-    <div className="flex min-w-0 flex-1 items-center gap-3">
-      <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-yellow-500 text-navy-950 font-bold">
+    <Link href={base} className="flex min-w-0 flex-1 items-center gap-3 transition hover:opacity-90">
+      <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-yellow-500 text-navy-950 font-bold shadow-xs">
         <Wrench className="size-4" />
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate font-bold text-white text-sm leading-tight">{user ? `${user.firstName} ${user.lastName}`.trim() : dict.brand.name}</p>
         <p className="truncate text-xs text-white/55 capitalize leading-tight">{dict.portal[role]}</p>
       </div>
-    </div>
+    </Link>
   );
 
   const bottomActions = (
@@ -213,7 +213,7 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
 
       <div className="min-w-0">
         {/* Unified Top Dashboard Header for all dashboards */}
-        <header className="sticky top-[var(--demo-bar-h,0px)] z-30 flex h-16 items-center justify-between border-b border-line bg-white px-4 sm:px-6 lg:px-8 shadow-xs">
+        <header className="sticky top-[var(--demo-bar-h,0px)] z-30 flex h-14 sm:h-16 items-center justify-between border-b border-line bg-white px-4 sm:px-6 lg:px-8 shadow-xs">
           {/* Left: Mobile hamburger + active role / section title */}
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -235,20 +235,11 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
             </div>
           </div>
 
-          {/* Right: Site link, Language switcher, Notification Bell, User Menu */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Link
-              href={localizedPath(locale, "/")}
-              className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-line bg-white px-3 text-xs font-semibold text-secondary transition hover:bg-slate-50 hover:text-navy"
-              title={dict.portal.backToSite}
-            >
-              <Globe2 className="size-3.5" />
-              <span className="hidden sm:inline">{dict.portal.backToSite}</span>
-            </Link>
-
+          {/* Right: Language switcher, Notification Bell, User Menu */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
             <Link
               href={localeHref}
-              className="inline-flex h-9 items-center justify-center rounded-[8px] border border-line bg-white px-2.5 text-xs font-semibold text-secondary transition hover:bg-slate-50 hover:text-navy"
+              className="inline-flex h-9 items-center justify-center rounded-[8px] border border-line bg-white px-3 text-xs font-semibold text-secondary transition hover:bg-slate-50 hover:text-navy"
               title={otherLocale === "ur" ? "اردو" : "English"}
             >
               <span>{otherLocale === "ur" ? "اردو" : "EN"}</span>
@@ -262,52 +253,68 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
                 onClick={() => setProfileOpen((was) => !was)}
                 aria-expanded={profileOpen}
                 aria-label="User profile menu"
-                className="flex items-center gap-2 rounded-[9px] border border-line bg-white p-1 pe-2 sm:pe-2.5 transition hover:bg-slate-50"
+                className="flex items-center gap-2 rounded-[9px] border border-line bg-white p-1 pe-2 sm:pe-2.5 transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-primary"
               >
-                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-navy text-xs font-bold text-white">
-                  {user ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase() : "U"}
+                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-navy text-xs font-bold text-white shadow-xs">
+                  {user ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase() || "U" : "U"}
                 </span>
                 <span className="hidden max-w-[100px] truncate text-xs font-semibold text-navy sm:inline-block">
                   {user ? user.firstName : dict.nav.profile}
                 </span>
-                <ChevronDown className="size-3 text-muted" />
+                <ChevronDown className={cn("size-3 text-muted transition-transform duration-200", profileOpen && "rotate-180")} />
               </button>
 
               {profileOpen && (
                 <div
                   role="menu"
-                  className="absolute end-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-[12px] border border-line bg-white p-1.5 shadow-lifted"
+                  className="absolute end-0 top-[calc(100%+0.5rem)] z-50 w-56 rounded-[12px] border border-line bg-white p-1.5 shadow-lifted"
                 >
-                  <div className="border-b border-line px-3 py-2">
+                  <div className="border-b border-line px-3 py-2.5">
                     <p className="truncate text-xs font-bold text-navy">{user ? `${user.firstName} ${user.lastName}`.trim() : "Account"}</p>
-                    <p className="truncate text-[11px] text-muted">{user?.email || user?.phoneE164 || dict.portal[role]}</p>
+                    <p className="truncate text-[11px] text-muted">{user?.email || user?.phoneE164 || ""}</p>
+                    <span className="mt-1.5 inline-block rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 capitalize">
+                      {dict.portal[role]}
+                    </span>
                   </div>
-                  <Link
-                    role="menuitem"
-                    href={
-                      role === "customer"
-                        ? localizedPath(locale, "/account/profile")
-                        : role === "provider"
-                        ? localizedPath(locale, "/provider/profile")
-                        : role === "admin"
-                        ? localizedPath(locale, "/admin/settings")
-                        : localizedPath(locale, `/${role}`)
-                    }
-                    onClick={() => setProfileOpen(false)}
-                    className="flex items-center gap-2.5 rounded-[8px] px-3 py-2 text-xs font-medium text-navy hover:bg-slate-50"
-                  >
-                    <Settings className="size-3.5 text-muted" />
-                    {dict.nav.profile}
-                  </Link>
-                  <button
-                    role="menuitem"
-                    type="button"
-                    onClick={() => { setProfileOpen(false); void leave(); }}
-                    className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50"
-                  >
-                    <LogOut className="size-3.5 text-rose-500" />
-                    {dict.portal.exit}
-                  </button>
+                  <div className="py-1">
+                    <Link
+                      role="menuitem"
+                      href={
+                        role === "customer"
+                          ? localizedPath(locale, "/account/profile")
+                          : role === "provider"
+                          ? localizedPath(locale, "/provider/profile")
+                          : role === "admin"
+                          ? localizedPath(locale, "/admin/settings")
+                          : localizedPath(locale, `/${role}`)
+                      }
+                      onClick={() => setProfileOpen(false)}
+                      className="flex items-center gap-2.5 rounded-[8px] px-3 py-2 text-xs font-medium text-navy transition hover:bg-slate-50"
+                    >
+                      <Settings className="size-3.5 text-muted" />
+                      {dict.nav.profile}
+                    </Link>
+                    <Link
+                      role="menuitem"
+                      href={localizedPath(locale, "/")}
+                      onClick={() => setProfileOpen(false)}
+                      className="flex items-center gap-2.5 rounded-[8px] px-3 py-2 text-xs font-medium text-navy transition hover:bg-slate-50"
+                    >
+                      <Globe2 className="size-3.5 text-muted" />
+                      {dict.portal.backToSite}
+                    </Link>
+                  </div>
+                  <div className="border-t border-line pt-1">
+                    <button
+                      role="menuitem"
+                      type="button"
+                      onClick={() => { setProfileOpen(false); void leave(); }}
+                      className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
+                    >
+                      <LogOut className="size-3.5 text-rose-500" />
+                      {dict.portal.exit}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -371,7 +378,9 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
         {/* Registers and tables in the console are the work surface, so
             the page runs the full width the rail leaves it. */}
         <main className="relative min-w-0 overflow-x-hidden px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-          {children}
+          <div className="mx-auto w-full max-w-7xl">
+            {children}
+          </div>
         </main>
       </div>
     </div>

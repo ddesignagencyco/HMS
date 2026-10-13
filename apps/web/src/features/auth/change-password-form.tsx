@@ -11,7 +11,7 @@ import { detailOf, applyServerFieldErrors, toastError, toastSuccess } from '@/fe
 import { PasswordField, SubmitButton } from '@/features/auth/auth-fields';
 import { passwordRule } from '@/features/auth/schemas';
 import type { Dictionary } from '@/lib/dictionaries';
-import type { Locale } from '@/lib/utils';
+import { cn, type Locale } from '@/lib/utils';
 
 /* `PATCH /me/password` — the one self-service credential change the API
  * publishes for a signed-in person.
@@ -41,7 +41,7 @@ const changePasswordSchema = z
 
 export type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
 
-export function ChangePasswordCard({ locale, dict }: { locale: Locale; dict: Dictionary }) {
+export function ChangePasswordCard({ locale, dict, className }: { locale: Locale; dict: Dictionary; className?: string }) {
   const change = useChangePassword(locale);
   const [done, setDone] = useState<string | null>(null);
   /* Two things land here rather than only in a toast.
@@ -84,7 +84,7 @@ export function ChangePasswordCard({ locale, dict }: { locale: Locale; dict: Dic
   });
 
   return (
-    <Card className="mt-5 p-5 sm:p-6">
+    <Card className={cn('p-5 sm:p-6', className)}>
       <h2 className="flex items-center gap-2 text-base font-semibold text-navy">
         <KeyRound className="size-4 text-muted" aria-hidden="true" />
         {dict.auth.changePasswordTitle}

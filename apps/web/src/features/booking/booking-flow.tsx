@@ -1,12 +1,14 @@
 "use client";
 
 import { CalendarDays, Camera, CheckCircle2, ChevronLeft, ChevronRight, Info, ShieldCheck, Upload, X, Zap } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, localizedPath, type Locale } from "@/lib/utils";
 import { Button, ButtonLink, Card, Checkbox, Container, Label, PageBanner, RadioGroup, RadioGroupItem, Section, Textarea, buttonStyles } from "@/components/ui";
+import { getServicePhoto } from "@/lib/service-images";
 import { SelectField } from "@/components/select-field";
 import { money } from "@/features/catalogue/pricing";
 import { formatSlotTime } from "@/features/search/location";
@@ -25,19 +27,7 @@ import { bookingApi, type CreatedBooking, type PaymentMode, type Quote } from "@
 import { prepareEvidenceImage } from "@/features/uploads/image";
 import type { CatalogueService } from "@/features/catalogue/api";
 
-/* The booking flow, against the live API.
-
-   The order of the steps is driven by what the API needs, not by what reads
-   best. `POST /bookings` requires an address, a professional-or-auto-assign, a
-   start and an end, and an emergency flag; the price is only knowable once the
-   service, the professional and the emergency flag are settled, so the quote is
-   read at the review step rather than guessed at the top.
-
-   The one thing this flow deliberately refuses to do is show a total it computed
-   itself. Every figure on the review step comes from `POST /bookings/quote`,
-   which is the same `PricingService.price()` that creates the booking — so what
-   the customer agreed to and what they are charged can only differ if the
-   basket changed. */
+/* 6-step booking checkout flow against live API with server-calculated quotes. */
 
 const STEPS = 6;
 
@@ -605,7 +595,17 @@ const eligibleProviders = useMemo(() => {
               ) : null}
             </Card>
 
-            <aside className="h-fit overflow-hidden rounded-[14px] bg-navy-950 text-white lg:sticky lg:top-24">
+            <aside className="h-fit overflow-hidden rounded-[14px] bg-navy-950 text-white shadow-soft lg:sticky lg:top-24">
+              <div className="relative aspect-[16/8] w-full overflow-hidden bg-slate-900">
+                <Image
+                  src={getServicePhoto(service.slug)}
+                  alt=""
+                  fill
+                  sizes="(max-width: 1024px) 100vw, 340px"
+                  className="object-cover"
+                />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-navy-950 via-navy-950/40 to-transparent" />
+              </div>
               <div className="p-5">
                 <h2 className="font-semibold text-white">{locale === "ur" ? service.nameUr : service.nameEn}</h2>
                 <p className="mt-1 text-sm leading-6 text-white/70">{service.description}</p>
@@ -1180,8 +1180,10 @@ function BookingConfirmed({
                      a "Pay" button even if the customer navigates away and returns
                      later. The key is scoped to this booking id. */
                   const key = `${PAYMENT_URL_STORAGE_KEY}:${booking.id}`;
+                  const idKey = `booking:paymentId:${booking.id}`;
                   try {
                     sessionStorage.setItem(key, booking.payment.redirectUrl);
+                    sessionStorage.setItem(idKey, booking.payment.paymentId);
                   } catch {
                     /* Ignore quota/private mode failures. */
                   }

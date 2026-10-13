@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { BellRing, Loader2, Mail, MessageSquare, Save } from 'lucide-react';
 import { Button, Card, PageHeader } from '@/components/ui';
+import { SelectField } from '@/components/select-field';
 import type { Channel, NotificationStatus } from '@/features/admin/cases-api';
 import { useNotificationLog, usePreviewTemplate, useSaveTemplate, useTemplates } from '@/features/admin/cases-queries';
 import { detailOf, toastSuccess } from '@/features/auth/auth-feedback';
@@ -218,41 +219,43 @@ export function AdminNotificationLog({ locale, dict }: { locale: Locale; dict: D
       <PageHeader eyebrow={dict.portal.admin} title={dict.admin.notificationLog} description={dict.admin.notificationLogText} />
 
       <div className="mt-6 flex flex-wrap items-end gap-3">
-        <div>
-          <label htmlFor="log-channel" className="text-[11.5px] font-semibold text-slate-800">
+        <div className="min-w-[160px]">
+          <label htmlFor="log-channel" className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
             {dict.admin.channel}
           </label>
-          <select
+          <SelectField
             id="log-channel"
             value={channel ?? ''}
-            onChange={(event) => setChannel(event.target.value === '' ? undefined : (event.target.value as Channel))}
-            className="mt-1 min-h-11 rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
-          >
-            <option value="">{dict.admin.anyChannel}</option>
-            {CHANNELS.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setChannel(val === '' ? undefined : (val as Channel))}
+            options={[
+              { value: '', label: dict.admin.anyChannel },
+              ...CHANNELS.map((value) => ({
+                value,
+                label: value,
+              })),
+            ]}
+            placeholder={dict.admin.anyChannel}
+            size="sm"
+          />
         </div>
-        <div>
-          <label htmlFor="log-status" className="text-[11.5px] font-semibold text-slate-800">
+        <div className="min-w-[160px]">
+          <label htmlFor="log-status" className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
             {dict.common.status}
           </label>
-          <select
+          <SelectField
             id="log-status"
             value={status ?? ''}
-            onChange={(event) => setStatus(event.target.value === '' ? undefined : (event.target.value as NotificationStatus))}
-            className="mt-1 min-h-11 rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
-          >
-            <option value="">{dict.admin.anyStatus}</option>
-            {LOG_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {dict.admin.notificationStates[value]}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setStatus(val === '' ? undefined : (val as NotificationStatus))}
+            options={[
+              { value: '', label: dict.admin.anyStatus },
+              ...LOG_STATUSES.map((value) => ({
+                value,
+                label: dict.admin.notificationStates[value],
+              })),
+            ]}
+            placeholder={dict.admin.anyStatus}
+            size="sm"
+          />
         </div>
         {failed > 0 ? <p className="text-sm font-semibold text-rose-700">{dict.admin.failedCount.replace('{count}', String(failed))}</p> : null}
       </div>

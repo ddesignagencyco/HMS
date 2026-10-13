@@ -37,6 +37,7 @@ import { Camera, CheckCircle2, Loader2, ShieldAlert, AlertTriangle } from "lucid
 import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Button, Card, Label, PageHeader, Textarea } from "@/components/ui";
+import { SelectField } from "@/components/select-field";
 import {
   complaintsApi,
   CUSTOMER_CATEGORIES,
@@ -203,20 +204,16 @@ export function ReceiptComplaintForm({ locale, dict, token }: { locale: Locale; 
           >
             <div>
               <Label htmlFor="receipt-category">{dict.complaints.category}</Label>
-              <select
+              <SelectField
                 id="receipt-category"
-                className={field}
                 value={category}
-                onChange={(event) => setCategory(event.target.value as ComplaintCategory | "")}
-                required
-              >
-                <option value="">{dict.complaints.chooseCategory}</option>
-                {CUSTOMER_CATEGORIES.map((value) => (
-                  <option key={value} value={value}>
-                    {(dict as Dictionary & { complaintCategories: Record<string, string> }).complaintCategories[value]}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setCategory(val as ComplaintCategory | "")}
+                options={CUSTOMER_CATEGORIES.map((value) => ({
+                  value,
+                  label: (dict as Dictionary & { complaintCategories: Record<string, string> }).complaintCategories[value] ?? value,
+                }))}
+                placeholder={dict.complaints.chooseCategory}
+              />
               {category === "SAFETY" ? (
                 <p className="mt-1.5 text-xs font-medium leading-5 text-rose-700">{dict.complaints.urgentSafety}</p>
               ) : null}

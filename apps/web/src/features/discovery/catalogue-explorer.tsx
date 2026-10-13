@@ -1,8 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useState } from "react";
+import { CategoryIcon, getCategoryPhoto } from "@/components/ui/primitives";
 import {
   ArrowRight,
   Clock3,
@@ -275,57 +277,6 @@ export function CatalogueExplorer({
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Quick Category Chips for Fast Access (Clean & Professional) */}
-        <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 pt-2 no-scrollbar border-t border-slate-100">
-          <button
-            type="button"
-            onClick={() => handleCategorySelect("")}
-            className={cn(
-              "inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none",
-              effectiveCategory === ""
-                ? "bg-navy text-white shadow-sm"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-navy",
-            )}
-          >
-            {/* From the dictionary, not inline. This was a `locale === "ur" ? … : …`
-                ternary, which is the one place all copy is required to come from
-                `dictionaries.ts`, and it now shares `dict.catalogue.allCategories`
-                with the `/providers` category filter so the two pages cannot
-                drift apart. */}
-            <span>{dict.catalogue.allCategories}</span>
-            <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] tabular-nums", effectiveCategory === "" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
-              {allServices.length}
-            </span>
-          </button>
-
-          {categories.map((cat) => {
-            const count = categoryCounts[cat.slug] ?? 0;
-            const isActive = effectiveCategory === cat.slug;
-            const catName = locale === "ur" ? cat.nameUr : cat.nameEn;
-
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => handleCategorySelect(cat.slug)}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none",
-                  isActive
-                    ? "bg-navy text-white shadow-sm"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-navy",
-                )}
-              >
-                <span>{catName}</span>
-                {count > 0 && (
-                  <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] tabular-nums", isActive ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -760,76 +711,92 @@ export function ServiceCard({
     locale === "ur"
       ? service.categoryNameUr ?? categorySlug.replace("-", " ")
       : service.categoryNameEn ?? categorySlug.replace("-", " ");
+  const photo = getCategoryPhoto(service.slug || categorySlug);
 
   return (
     <article
       className={cn(
-        "group relative flex flex-col justify-between rounded-xl border border-slate-200/90 bg-white p-5 sm:p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-soft",
+        "group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-soft",
         className,
       )}
     >
       <div>
-        {/* Card Header: Category Badge + Eligibility Badges */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
-          <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 capitalize">
-            {categoryLabel}
+        {/* Photographic Media Area */}
+        <div className="relative aspect-[16/9] w-full overflow-hidden bg-slate-900">
+          <Image
+            src={photo}
+            alt=""
+            fill
+            sizes="(max-width: 640px) 100vw, 50vw"
+            className="object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-navy-950/85 via-navy-950/30 to-navy-950/10" />
+
+          {/* Category Badge on Bottom Start */}
+          <span className="absolute bottom-3 start-3 inline-flex items-center gap-1.5 rounded-md bg-white/95 px-2.5 py-1 text-xs font-semibold text-navy shadow-xs backdrop-blur-xs">
+            <CategoryIcon category={categorySlug} className="size-3.5 text-primary" />
+            <span className="capitalize">{categoryLabel}</span>
           </span>
 
-          <div className="flex flex-wrap items-center gap-1.5">
+          {/* Eligibility Pills on Top End */}
+          <div className="absolute end-3 top-3 flex flex-wrap items-center gap-1.5">
             {service.isEmergencyEligible && (
-              <span className="inline-flex items-center rounded-md border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+              <span className="inline-flex items-center rounded-md bg-amber-500/95 px-2 py-0.5 text-[11px] font-bold text-navy shadow-xs backdrop-blur-xs">
                 {locale === "ur" ? "ایمرجنسی" : "Emergency"}
               </span>
             )}
             {service.isPlanEligible && (
-              <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700">
+              <span className="inline-flex items-center rounded-md bg-white/95 px-2 py-0.5 text-[11px] font-semibold text-slate-800 shadow-xs backdrop-blur-xs">
                 {locale === "ur" ? "پلان اہل" : "Plan"}
               </span>
             )}
             {service.isHighRisk && (
-              <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700">
+              <span className="inline-flex items-center rounded-md bg-slate-900/90 px-2 py-0.5 text-[11px] font-semibold text-white shadow-xs backdrop-blur-xs">
                 {locale === "ur" ? "حفاظت جانچ" : "Safety Check"}
               </span>
             )}
           </div>
         </div>
 
-        {/* Service Title */}
-        <h3 className="text-lg font-bold leading-snug tracking-tight text-navy group-hover:text-primary transition-colors">
-          <Link href={detailHref} className="focus:outline-none">
-            {name}
-          </Link>
-        </h3>
+        {/* Card Content Body */}
+        <div className="p-5 sm:p-6">
+          {/* Service Title */}
+          <h3 className="text-lg font-bold leading-snug tracking-tight text-navy group-hover:text-primary-strong transition-colors">
+            <Link href={detailHref} className="focus:outline-none">
+              {name}
+            </Link>
+          </h3>
 
-        {/* Description */}
-        <p dir="auto" className="mt-2 line-clamp-2 text-sm leading-relaxed text-secondary">
-          {service.description}
-        </p>
+          {/* Description */}
+          <p dir="auto" className="mt-2 line-clamp-2 text-sm leading-relaxed text-secondary">
+            {service.description}
+          </p>
 
-        {/* Specs Strip */}
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted">
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1 font-medium text-slate-600">
-            <Clock3 className="size-3.5 text-slate-400" aria-hidden="true" />
-            {formatDuration(service.expectedDurationMin, locale)}
-          </span>
-
-          {service.warrantyDays > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1 font-medium text-slate-600">
-              <ShieldCheck className="size-3.5 text-slate-400" aria-hidden="true" />
-              {dict.catalogue.warranty.replace("{days}", String(service.warrantyDays))}
+          {/* Specs Strip */}
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2.5 py-1 font-medium text-slate-600 border border-slate-100">
+              <Clock3 className="size-3.5 text-slate-400" aria-hidden="true" />
+              {formatDuration(service.expectedDurationMin, locale)}
             </span>
-          )}
 
-          {service.visitFeePaisa > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2 py-1 font-medium text-slate-600">
-              <span>{dict.catalogue.visitFee}: {price.visitFee}</span>
-            </span>
-          )}
+            {service.warrantyDays > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2.5 py-1 font-medium text-slate-600 border border-slate-100">
+                <ShieldCheck className="size-3.5 text-slate-400" aria-hidden="true" />
+                {dict.catalogue.warranty.replace("{days}", String(service.warrantyDays))}
+              </span>
+            )}
+
+            {service.visitFeePaisa > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2.5 py-1 font-medium text-slate-600 border border-slate-100">
+                <span>{dict.catalogue.visitFee}: {price.visitFee}</span>
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Pricing & Call to Action Footer */}
-      <div className="mt-5 border-t border-slate-100 pt-4">
+      <div className="border-t border-slate-100 px-5 py-4 sm:px-6">
         <div className="flex items-end justify-between gap-3">
           {/* Price Block */}
           <div>
@@ -869,7 +836,7 @@ export function ServiceCard({
 
             <Link
               href={bookHref}
-              className="inline-flex items-center justify-center gap-1 rounded-lg bg-navy px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-navy-950 transition-all focus:outline-none"
+              className="inline-flex items-center justify-center gap-1 rounded-lg bg-navy px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-primary-strong transition-all focus:outline-none"
             >
               <span>{locale === "ur" ? "بک کریں" : "Book"}</span>
               <ArrowRight className="size-3.5 rtl:rotate-180" aria-hidden="true" />

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Gavel, Loader2, Scale } from 'lucide-react';
 import { Button, Card, PageHeader } from '@/components/ui';
+import { SelectField } from '@/components/select-field';
 import type { DisputeRuling, DisputeStatus } from '@/features/admin/cases-api';
 import { useDisputes, useResolveDispute } from '@/features/admin/cases-queries';
 import { detailOf, toastSuccess } from '@/features/auth/auth-feedback';
@@ -44,23 +45,24 @@ export function AdminDisputes({ locale, dict }: { locale: Locale; dict: Dictiona
       <PageHeader eyebrow={dict.portal.admin} title={dict.admin.disputes} description={dict.admin.disputesText} />
 
       <div className="mt-6 flex flex-wrap items-end gap-3">
-        <div>
-          <label htmlFor="dispute-status" className="text-[11.5px] font-semibold text-slate-800">
+        <div className="min-w-[170px]">
+          <label htmlFor="dispute-status" className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
             {dict.common.status}
           </label>
-          <select
+          <SelectField
             id="dispute-status"
             value={status ?? ''}
-            onChange={(event) => setStatus(event.target.value === '' ? undefined : (event.target.value as DisputeStatus))}
-            className="mt-1 min-h-11 rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
-          >
-            <option value="">{dict.admin.anyStatus}</option>
-            {STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {dict.admin.disputeStates[value]}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setStatus(val === '' ? undefined : (val as DisputeStatus))}
+            options={[
+              { value: '', label: dict.admin.anyStatus },
+              ...STATUSES.map((value) => ({
+                value,
+                label: dict.admin.disputeStates[value],
+              })),
+            ]}
+            placeholder={dict.admin.anyStatus}
+            size="sm"
+          />
         </div>
         <p className="text-sm text-secondary">{dict.admin.openDisputes.replace('{count}', String(open))}</p>
       </div>
@@ -195,14 +197,14 @@ function DisputeCard({
       ) : open ? (
         <div className="mt-4 grid gap-3 border-t border-line pt-4">
           <div>
-            <label htmlFor={`ruling-${row.id}`} className="text-[11.5px] font-semibold text-slate-800">
+            <label htmlFor={`ruling-${row.id}`} className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
               {dict.admin.ruling}
             </label>
             <select
               id={`ruling-${row.id}`}
               value={ruling}
               onChange={(event) => setRuling(event.target.value as DisputeRuling)}
-              className="mt-1 min-h-11 w-full rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
+              className="mt-1 min-h-[42px] w-full rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-medium text-navy shadow-none outline-none focus:border-slate-400"
             >
               {RULINGS.map((value) => (
                 <option key={value} value={value}>

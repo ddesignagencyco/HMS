@@ -115,6 +115,27 @@ The frontend (`apps/web`) has been stabilized to 100% test pass rate (45/45 suit
 
 ---
 
+### P0.7 — Online Payment Re-Initiation & Payment State Projection on Existing Bookings
+* **Endpoints:**
+  - `GET /api/v1/bookings/:id`
+  - `POST /api/v1/bookings/:id/checkout` (or `POST /api/v1/bookings/:id/payment`)
+* **Controller:** `apps/api/src/booking/booking.controller.ts`, `apps/api/src/booking/booking.service.ts`
+* **Current Behavior:**
+  - `GET /api/v1/bookings/:id` projects basic booking row details, line items, and cancellation quotes, but omits payment tracking fields (`paymentId`, `paymentExpiresAt`, `gatewayRef`, or `redirectUrl`).
+  - When an online booking is created via `POST /api/v1/bookings`, the initial response returns `{ ...booking, payment: { paymentId, redirectUrl, returnUrl } }`.
+  - However, if the customer's browser window closes, navigation occurs, session storage expires, or checkout fails at the payment gateway, the booking remains in `PENDING_PAYMENT` until timed out.
+  - There is currently **zero endpoint** on the backend allowing a customer to re-request a payment checkout session for that existing held booking. The only existing checkout endpoint is `POST /api/v1/bookings/checkout`, which creates an entirely *new* booking and conflicts with the held slot (`409 SLOT_TAKEN`).
+* **Required Backend Enhancement:**
+  1. In `GET /api/v1/bookings/:id`:
+     - If `booking.status === 'PENDING_PAYMENT'`, query active `payments` row where `booking_id = :id AND purpose = 'BOOKING' AND status = 'INITIATED'`.
+     - Project `{ paymentId, paymentExpiresAt, redirectUrl }`.
+  2. Implement `POST /api/v1/bookings/:id/checkout`:
+     - Validates that caller is the booking's customer and booking is in `PENDING_PAYMENT`.
+     - Generates a fresh payment session with `PaymentsService.startCheckout()` if expired, or returns existing active checkout URL.
+     - Returns `{ paymentId, redirectUrl, returnUrl }` so the customer can seamlessly complete or retry their payment without abandoning the booked time window.
+
+---
+
 ## 2. P1 — Provider Search Engine Gaps (`GET /search/providers`)
 
 ### P1.1 — Requirement for All 3 Mandatory Parameters (`serviceSlug`, `lat`, `lng`)

@@ -165,6 +165,7 @@ export function PopularServicesSection({ locale, dict }: { locale: Locale; dict:
                      the name and the slug come from the same response. */
                     category={locale === 'ur' ? service.categoryNameUr : service.categoryNameEn}
                     categoryIcon={service.categorySlug}
+                    serviceSlug={service.slug}
                     title={locale === 'ur' ? service.nameUr : service.nameEn}
                     duration={formatDuration(service.expectedDurationMin, locale)}
                     warranty={dict.common.warranty.replace('{days}', formatNumber(service.warrantyDays, locale))}

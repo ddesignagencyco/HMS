@@ -305,7 +305,7 @@ export function FinancePayoutBatches({ locale, dict }: { locale: Locale; dict: D
 
             <form className="mt-5 grid gap-4" onSubmit={submit}>
               <div>
-                <label className="text-xs font-semibold text-secondary" htmlFor="batch-start">
+                <label className="block mb-2 text-xs font-semibold text-secondary" htmlFor="batch-start">
                   {dict.reports.periodStart}
                 </label>
                 <input
@@ -318,7 +318,7 @@ export function FinancePayoutBatches({ locale, dict }: { locale: Locale; dict: D
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-secondary" htmlFor="batch-end">
+                <label className="block mb-2 text-xs font-semibold text-secondary" htmlFor="batch-end">
                   {dict.reports.periodEnd}
                 </label>
                 <input

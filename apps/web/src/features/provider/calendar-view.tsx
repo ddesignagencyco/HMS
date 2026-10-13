@@ -3,6 +3,7 @@
 import { CalendarDays, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button, Card, Input, Label, PageHeader, Textarea } from '@/components/ui';
+import { SelectField } from '@/components/select-field';
 import { WEEKDAYS, isValidTimeOfDay } from '@/features/provider/limits';
 import { useAddTimeOff, useAvailability, useRemoveTimeOff, useSetAvailability, useTimeOff } from '@/features/provider/queries';
 import type { Dictionary } from '@/lib/dictionaries';
@@ -166,24 +167,23 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
             <ul className="mt-4 grid gap-2">
               {blocks.map((block, index) => (
                 <li key={`${blockKey(block)}-${index}`} className="flex flex-wrap items-end gap-3 rounded-[10px] border border-line p-3">
-                  <div className="grid gap-1">
+                  <div className="grid gap-1 min-w-[140px]">
                     <Label htmlFor={`day-${index}`}>{dict.portal.dayLabel}</Label>
-                    <select
+                    <SelectField
                       id={`day-${index}`}
-                      className="min-h-11 rounded-[9px] border border-line bg-white px-3 text-sm"
-                      value={block.weekday}
-                      onChange={(event) => {
+                      value={String(block.weekday)}
+                      onChange={(val) => {
                         const next = [...blocks];
-                        next[index] = { ...block, weekday: Number(event.target.value) };
+                        next[index] = { ...block, weekday: Number(val) };
                         setDraft(next);
                       }}
-                    >
-                      {WEEKDAYS.map((day) => (
-                        <option key={day.value} value={day.value}>
-                          {dict.portal.weekdays[day.key]}
-                        </option>
-                      ))}
-                    </select>
+                      options={WEEKDAYS.map((day) => ({
+                        value: String(day.value),
+                        label: dict.portal.weekdays[day.key],
+                      }))}
+                      placeholder={dict.portal.dayLabel}
+                      size="sm"
+                    />
                   </div>
                   <div className="grid gap-1">
                     <Label htmlFor={`start-${index}`}>{dict.portal.fromLabel}</Label>

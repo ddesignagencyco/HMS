@@ -196,7 +196,7 @@ export function AdminOverview({ locale, dict }: { locale: Locale; dict: Dictiona
       <ul className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {sections.map((section) => (
           <li key={section.href}>
-            <Link href={localizedPath(locale, section.href)} className="flex items-center justify-between gap-3 rounded-[12px] border border-line bg-white p-5 transition hover:border-primary">
+            <Link href={localizedPath(locale, section.href)} className="flex items-center justify-between gap-3 rounded-[12px] border border-line bg-white p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-soft">
               <span className="text-sm font-semibold text-navy">{section.label}</span>
               {/* A dash, not a zero: a queue that failed to load has no count, and
                   "0" would read as "nothing to do". */}

@@ -101,7 +101,10 @@ export function AccountSecurityView({ locale, dict }: { locale: Locale; dict: Di
       <div aria-busy="true" aria-live="polite" className="grid gap-4">
         <span className="skeleton h-9 w-64 rounded-[9px]" />
         <span className="skeleton h-4 w-full max-w-md rounded-[9px]" />
-        <span className="skeleton h-48 w-full rounded-[14px]" />
+        <div className="mt-2 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <span className="skeleton h-56 w-full rounded-[14px]" />
+          <span className="skeleton h-56 w-full rounded-[14px]" />
+        </div>
       </div>
     );
   }
@@ -111,83 +114,85 @@ export function AccountSecurityView({ locale, dict }: { locale: Locale; dict: Di
   return (
     <div>
       <PageHeader eyebrow={dict.portal.customer} title={dict.auth.accountSecurityTitle} description={dict.auth.accountSecurityText} />
-      <Card className="mt-6 p-5 sm:p-6">
-        <h2 className="text-base font-semibold text-navy">{dict.auth.securityTwoFactorTitle}</h2>
-        <p className="mt-1.5 text-sm leading-6 text-secondary">{dict.auth.securityTwoFactorText}</p>
 
-        {enabled ? (
-          <div className="mt-4 grid gap-4">
-            <Notice tone="success" icon={ShieldCheck}>
-              {dict.auth.totpEnabledText}
-            </Notice>
-            <Button type="button" variant="secondary" disabled={disabling} onClick={onDisable} className="w-full sm:w-auto">
-              <ShieldOff className="size-4" aria-hidden="true" />
-              {dict.auth.totpDisable}
-            </Button>
-          </div>
-        ) : secret === null ? (
-          <div className="mt-4 grid gap-4">
-            <Notice tone="info">{dict.auth.totpSetupText}</Notice>
-            <Button type="button" disabled={starting} onClick={start} className="w-full sm:w-auto">
-              {starting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <KeyRound className="size-4" aria-hidden="true" />}
-              {dict.auth.totpSetupTitle}
-            </Button>
-          </div>
-        ) : (
-          <form onSubmit={onSubmit} className="mt-4 grid gap-4" noValidate>
-            <div className="grid gap-3">
-              <p className="flex items-center gap-2 text-sm font-semibold text-navy">
-                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
-                  1
-                </span>
-                {dict.auth.totpStepOne}
-              </p>
-              <TotpQrCode uri={secret.otpauthUri} label={dict.auth.totpQrAlt} />
-              <p className="text-[13px] leading-6 text-secondary">{dict.auth.totpStepOneText}</p>
-              <details className="rounded-[9px] border border-line bg-surface-2 p-3">
-                <summary className="cursor-pointer text-[13px] font-semibold text-secondary">{dict.auth.totpManualTitle}</summary>
-                <p className="mt-2 text-[13px] leading-6 text-secondary">{dict.auth.totpManualText}</p>
-                <div className="mt-2 flex items-stretch gap-2">
-                  <p dir="ltr" className="min-w-0 flex-1 select-all break-all rounded-[9px] border border-line bg-white p-3 text-start font-mono text-sm tracking-[0.12em] text-navy">
-                    {secret.secret}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={copyKey}
-                    className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-[8px] border border-line bg-white px-3 py-2 text-[13px] font-semibold text-navy transition-colors duration-200 hover:bg-slate-50"
-                  >
-                    {copied ? <Check className="size-4 text-emerald-600" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
-                    {dict.auth.totpCopyKey}
-                  </button>
-                </div>
-              </details>
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2 items-start">
+        {/* Two-factor authentication section */}
+        <Card className="p-5 sm:p-6">
+          <h2 className="text-base font-semibold text-navy">{dict.auth.securityTwoFactorTitle}</h2>
+          <p className="mt-1.5 text-sm leading-6 text-secondary">{dict.auth.securityTwoFactorText}</p>
+
+          {enabled ? (
+            <div className="mt-4 grid gap-4">
+              <Notice tone="success" icon={ShieldCheck}>
+                {dict.auth.totpEnabledText}
+              </Notice>
+              <Button type="button" variant="secondary" disabled={disabling} onClick={onDisable} className="w-full sm:w-auto">
+                <ShieldOff className="size-4" aria-hidden="true" />
+                {dict.auth.totpDisable}
+              </Button>
             </div>
-
-            <div className="grid gap-3 border-t border-line pt-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-navy">
-                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
-                  2
-                </span>
-                {dict.auth.totpStepTwo}
-              </p>
-              <Controller
-                control={form.control}
-                name="code"
-                render={({ field }) => <OtpField value={field.value} onChange={field.onChange} onBlur={field.onBlur} label={dict.auth.totpCode} error={form.formState.errors.code?.message} />}
-              />
+          ) : secret === null ? (
+            <div className="mt-4 grid gap-4">
+              <Notice tone="info">{dict.auth.totpSetupText}</Notice>
+              <Button type="button" disabled={starting} onClick={start} className="w-full sm:w-auto">
+                {starting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <KeyRound className="size-4" aria-hidden="true" />}
+                {dict.auth.totpSetupTitle}
+              </Button>
             </div>
+          ) : (
+            <form onSubmit={onSubmit} className="mt-4 grid gap-4" noValidate>
+              <div className="grid gap-3">
+                <p className="flex items-center gap-2 text-sm font-semibold text-navy">
+                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
+                    1
+                  </span>
+                  {dict.auth.totpStepOne}
+                </p>
+                <TotpQrCode uri={secret.otpauthUri} label={dict.auth.totpQrAlt} />
+                <p className="text-[13px] leading-6 text-secondary">{dict.auth.totpStepOneText}</p>
+                <details className="rounded-[9px] border border-line bg-surface-2 p-3">
+                  <summary className="cursor-pointer text-[13px] font-semibold text-secondary">{dict.auth.totpManualTitle}</summary>
+                  <p className="mt-2 text-[13px] leading-6 text-secondary">{dict.auth.totpManualText}</p>
+                  <div className="mt-2 flex items-stretch gap-2">
+                    <p dir="ltr" className="min-w-0 flex-1 select-all break-all rounded-[9px] border border-line bg-white p-3 text-start font-mono text-sm tracking-[0.12em] text-navy">
+                      {secret.secret}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={copyKey}
+                      className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-[8px] border border-line bg-white px-3 py-2 text-[13px] font-semibold text-navy transition-colors duration-200 hover:bg-slate-50"
+                    >
+                      {copied ? <Check className="size-4 text-emerald-600" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+                      {dict.auth.totpCopyKey}
+                    </button>
+                  </div>
+                </details>
+              </div>
 
-            <SubmitButton pending={form.formState.isSubmitting} pendingLabel={dict.auth.verifyBusy} className="mt-1 sm:w-auto">
-              {dict.auth.totpConfirm}
-            </SubmitButton>
-          </form>
-        )}
-      </Card>
+              <div className="grid gap-3 border-t border-line pt-4">
+                <p className="flex items-center gap-2 text-sm font-semibold text-navy">
+                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">
+                    2
+                  </span>
+                  {dict.auth.totpStepTwo}
+                </p>
+                <Controller
+                  control={form.control}
+                  name="code"
+                  render={({ field }) => <OtpField value={field.value} onChange={field.onChange} onBlur={field.onBlur} label={dict.auth.totpCode} error={form.formState.errors.code?.message} />}
+                />
+              </div>
 
-      {/* Below the two-factor card rather than inside it: a lost phone is recovered
-          with a password change, and someone who cannot see the TOTP section should
-          not have to find it to get to this one. */}
-      <ChangePasswordCard locale={locale} dict={dict} />
+              <SubmitButton pending={form.formState.isSubmitting} pendingLabel={dict.auth.verifyBusy} className="mt-1 sm:w-auto">
+                {dict.auth.totpConfirm}
+              </SubmitButton>
+            </form>
+          )}
+        </Card>
+
+        {/* Password change section */}
+        <ChangePasswordCard locale={locale} dict={dict} />
+      </div>
     </div>
   );
 }

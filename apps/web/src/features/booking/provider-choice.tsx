@@ -20,7 +20,7 @@
    Pretending an auto-assign booking has a confirmed slot would be the single
    most misleading thing this flow could do, so it says so on screen instead. */
 
-import { CalendarDays, Sparkles, Users } from "lucide-react";
+import { BadgeCheck, CalendarDays, Sparkles, Star, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, type Locale } from "@/lib/utils";
@@ -174,21 +174,28 @@ export function ProviderChoiceStep({
                 <label
                   key={provider.providerId}
                   className={cn(
-                    /* Same card treatment as the auto-assign option above it and
-                       as the payment step: 2px border in both states, hover as a
-                       background wash. These three lists are the same control
-                       three times over, so they look the same three times over. */
-                    "flex cursor-pointer items-start gap-4 rounded-[12px] border-2 bg-white p-4 transition-colors duration-150",
-                    selected ? "border-primary bg-blue-50/60" : "border-line hover:bg-slate-50",
+                    "flex cursor-pointer items-start gap-3.5 rounded-[12px] border-2 bg-white p-4 transition-all duration-150",
+                    selected ? "border-primary bg-blue-50/60 shadow-xs" : "border-line hover:border-slate-300 hover:bg-slate-50/50",
                   )}
                 >
-                  {/* Relative, because the stretched link inside needs an anchor —
-                      without it the overlay covers unrelated UI. See
-                      PROJECT_PROGRESS.md §9 trap 5. */}
                   <RadioGroupItem value={provider.providerId} className="mt-1" />
+                  <span
+                    aria-hidden="true"
+                    className="grid size-10 shrink-0 place-items-center rounded-lg bg-navy text-sm font-bold text-white shadow-sm"
+                  >
+                    {provider.qualification?.trim()[0]?.toUpperCase() ?? "•"}
+                  </span>
                   <span className="relative min-w-0 flex-1">
-                    <span className="block font-semibold text-navy">{provider.qualification ?? dict.booking.professionalFallback}</span>
-                    <span className="mt-1 block text-xs text-secondary">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="block font-semibold text-navy">{provider.qualification ?? dict.booking.professionalFallback}</span>
+                      {provider.badge ? (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                          <BadgeCheck className="size-3 text-blue-600" aria-hidden="true" />
+                          {provider.badge}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-1 block text-xs text-secondary line-clamp-2">
                       {provider.bio ?? dict.booking.noBio}
                     </span>
                     <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium text-muted">
@@ -198,16 +205,15 @@ export function ProviderChoiceStep({
                         </span>
                       ) : null}
                       <span>{formatDistance(provider.distanceM, labelTag(locale))}</span>
-                      <span className="font-semibold text-navy">{money(provider.pricePaisa, locale)}</span>
+                      <span className="font-semibold text-navy tabular-nums">{money(provider.pricePaisa, locale)}</span>
                     </span>
                     {rating.rated ? (
-                      <span className="mt-1 block text-xs text-muted">
-                        {dict.booking.ratingSummary} · {rating.score.toFixed(1)} / 5 ({provider.ratingCount})
+                      <span className="mt-1.5 flex items-center gap-1 text-xs text-secondary">
+                        <Star className="size-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
+                        <span className="font-semibold text-navy tabular-nums">{rating.score.toFixed(2)}</span>
+                        <span className="text-muted">({provider.ratingCount})</span>
                       </span>
                     ) : (
-                      /* `ratingScore` is null for an unrated professional and the
-                         API still ranks them on it, so there is no score to print
-                         here — not 0, and not the ranking prior. */
                       <span className="mt-1 block text-xs text-muted">{dict.booking.noRatingsYet}</span>
                     )}
                   </span>

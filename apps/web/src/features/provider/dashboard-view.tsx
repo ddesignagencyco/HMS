@@ -316,7 +316,7 @@ export function ProviderDashboardScreen({ locale, dict }: { locale: Locale; dict
             <ul className="mt-4 grid gap-2">
               {(profile.data?.status === 'APPROVED'
                 ? ([
-                    { href: '/provider/availability', label: dict.portal.weeklyAvailability },
+                    { href: '/provider/calendar', label: dict.portal.weeklyAvailability },
                     { href: '/provider/areas', label: dict.portal.areasTitle },
                     { href: '/provider/documents', label: dict.portal.documents },
                     { href: '/provider/payouts', label: dict.portal.payouts }

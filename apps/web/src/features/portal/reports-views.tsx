@@ -45,6 +45,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { Button, Card, EmptyState, PageHeader, StatCard } from "@/components/ui";
+import { SelectField } from "@/components/select-field";
 import { downloadFile } from "@/lib/api/download";
 import { financeKeys, FRESHNESS, publicRetry } from "@/lib/api/keys";
 import type { Dictionary } from "@/lib/dictionaries";
@@ -228,45 +229,41 @@ function ReportRequestForm({ locale, dict }: { locale: Locale; dict: Dictionary 
 
       <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={submit}>
         <div>
-          <label className="text-xs font-semibold text-secondary" htmlFor="report-type">
+          <label className="block mb-2 text-xs font-semibold text-secondary" htmlFor="report-type">
             {dict.reports.reportType}
           </label>
-          <select
+          <SelectField
             id="report-type"
-            className={field}
             value={form.type}
-            onChange={(event) => setForm((state) => ({ ...state, type: event.target.value as ReportType }))}
-          >
-            {REPORT_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {dict.reports.types[type]}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setForm((state) => ({ ...state, type: val as ReportType }))}
+            options={REPORT_TYPES.map((type) => ({
+              value: type,
+              label: dict.reports.types[type],
+            }))}
+            placeholder={dict.reports.reportType}
+          />
           <p className="mt-1.5 text-xs leading-5 text-muted">{dict.reports.typesNote}</p>
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-secondary" htmlFor="report-format">
+          <label className="block mb-2 text-xs font-semibold text-secondary" htmlFor="report-format">
             {dict.reports.reportFormat}
           </label>
-          <select
+          <SelectField
             id="report-format"
-            className={field}
             value={form.format}
-            onChange={(event) => setForm((state) => ({ ...state, format: event.target.value as ReportFormat }))}
-          >
-            {REPORT_FORMATS.map((format) => (
-              <option key={format} value={format}>
-                {dict.reports.formats[format]}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setForm((state) => ({ ...state, format: val as ReportFormat }))}
+            options={REPORT_FORMATS.map((format) => ({
+              value: format,
+              label: dict.reports.formats[format],
+            }))}
+            placeholder={dict.reports.reportFormat}
+          />
           <p className="mt-1.5 text-xs leading-5 text-muted">{dict.reports.formatNote}</p>
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-secondary" htmlFor="period-start">
+          <label className="block mb-2 text-xs font-semibold text-secondary" htmlFor="period-start">
             {dict.reports.periodStart}
           </label>
           <input
@@ -280,7 +277,7 @@ function ReportRequestForm({ locale, dict }: { locale: Locale; dict: Dictionary 
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-secondary" htmlFor="period-end">
+          <label className="block mb-2 text-xs font-semibold text-secondary" htmlFor="period-end">
             {dict.reports.periodEnd}
           </label>
           <input

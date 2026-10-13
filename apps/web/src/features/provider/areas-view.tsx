@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Button, Card, Label, PageHeader } from '@/components/ui';
+import { SelectField } from '@/components/select-field';
 import { useCities, useCityAreas } from '@/features/places/queries';
 import { useProviderServiceAreas, useSetServiceAreas } from '@/features/provider/queries';
 import { MAX_SERVICE_AREAS } from '@/features/provider/api';
@@ -95,26 +96,25 @@ export function ProviderAreasScreen({ locale, dict }: { locale: Locale; dict: Di
     <div>
       <PageHeader eyebrow={dict.portal.provider} title={dict.portal.serviceArea} description={dict.portal.serviceAreaText} />
 
-      <Card className="mt-6 p-6">
+      <Card className="mt-6 p-6 max-w-4xl">
         <p className="text-sm text-secondary">{dict.portal.areasSaved.replace('{count}', formatNumber(savedCount, locale))}</p>
 
         {cities.data !== undefined && cities.data.items.length > 1 ? (
           /* The places API is city-scoped, so with more than one city on the
-               platform the picker has to say which one these areas belong to. */
-          <div className="mt-4 grid max-w-xs gap-2">
+                platform the picker has to say which one these areas belong to. */
+          <div className="mt-4 grid max-w-xs gap-1.5">
             <Label htmlFor="areas-city">{dict.booking.cityLabel}</Label>
-            <select
+            <SelectField
               id="areas-city"
-              className="min-h-11 rounded-[9px] border border-line bg-white px-3 text-sm"
-              value={effectiveCityId ?? ''}
-              onChange={(event) => setCityId(Number(event.target.value))}
-            >
-              {cities.data.items.map((city) => (
-                <option key={city.id} value={city.id}>
-                  {city.name}
-                </option>
-              ))}
-            </select>
+              value={effectiveCityId !== null && effectiveCityId !== undefined ? String(effectiveCityId) : ''}
+              onChange={(val) => setCityId(val ? Number(val) : 0)}
+              options={cities.data.items.map((city) => ({
+                value: String(city.id),
+                label: city.name,
+              }))}
+              placeholder={dict.booking.cityLabel}
+              size="sm"
+            />
           </div>
         ) : null}
 

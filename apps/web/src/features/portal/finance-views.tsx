@@ -21,10 +21,10 @@ import {
 import toast from "react-hot-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import Link from "next/link";
 import type { Dictionary } from "@/lib/dictionaries";
-import { formatDate, formatDateTime, formatMoney, type Locale } from "@/lib/utils";
+import { formatDate, formatDateTime, formatMoney, formatNumber, localizedPath, type Locale } from "@/lib/utils";
 import { Card, PageHeader, StatCard, StatusBadge, ButtonLink } from "@/components/ui";
-import { localizedPath } from "@/lib/utils";
 import {
   financeApi,
   type FinanceLedgerEntry,
@@ -864,6 +864,16 @@ export function FinanceOverviewView({ locale, dict }: { locale: Locale; dict: Di
   const releasedTotal = released.reduce((sum, item) => sum + item.amountPaisa, 0);
   const debtsTotal = (debtsData?.items ?? []).reduce((sum, item) => sum + item.debtPaisa, 0);
 
+  const modules = [
+    { href: "/finance/escrow", label: dict.portal.escrow, count: heldCount, desc: dict.portal.escrowDescription },
+    { href: "/finance/releases", label: dict.finance.releases, count: released.length, desc: dict.finance.releases },
+    { href: "/finance/refunds", label: dict.finance.refunds, count: null, desc: dict.finance.refunds },
+    { href: "/finance/payouts", label: dict.portal.payouts, count: null, desc: dict.portal.payouts },
+    { href: "/finance/cash", label: dict.finance.cash, count: null, desc: dict.finance.cash },
+    { href: "/finance/debts", label: dict.finance.debts, count: debtsData?.items?.length ?? null, desc: dict.finance.debts },
+    { href: "/finance/ledger", label: dict.finance.ledger, count: ledgerData?.items?.length ?? null, desc: dict.finance.ledger },
+  ];
+
   return (
     <div>
       <PageHeader eyebrow={dict.portal.finance} title={dict.portal.overview} description={dict.portal.escrowDescription} />
@@ -872,6 +882,33 @@ export function FinanceOverviewView({ locale, dict }: { locale: Locale; dict: Di
         <StatCard icon={BadgeCheck} label={dict.portal.released} value={formatMoney(releasedTotal, locale)} />
         <StatCard icon={ClipboardCheck} label={dict.portal.heldCount} value={isLoading ? "..." : String(heldCount)} />
         <StatCard icon={AlertTriangle} label={dict.finance.debts} value={formatMoney(debtsTotal, locale)} />
+      </div>
+
+      <div className="mt-8">
+        <h2 className="text-base font-bold text-navy">{dict.portal.finance} Modules</h2>
+        <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {modules.map((mod) => (
+            <li key={mod.href}>
+              <Link
+                href={localizedPath(locale, mod.href)}
+                className="group flex flex-col justify-between rounded-[12px] border border-line bg-white p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-soft"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm font-bold text-navy group-hover:text-primary transition-colors">{mod.label}</span>
+                  {mod.count !== null ? (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 tabular-nums">
+                      {formatNumber(mod.count, locale)}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-secondary line-clamp-2">{mod.desc}</p>
+                <span className="mt-4 text-xs font-semibold text-primary inline-flex items-center gap-1 group-hover:underline">
+                  Open →
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

@@ -98,7 +98,17 @@ export default async function HowVerificationWorksPage({ params }: { params: Pro
             <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(58%_78%_at_50%_0%,rgba(37,99,235,0.32),transparent_68%)]" />
             <div className="relative mx-auto flex max-w-2xl flex-col items-center">
               <h2 className="title-lead text-white">
-                {dict.verifyPage.ctaTitle}
+                {(() => {
+                  const words = dict.verifyPage.ctaTitle.trim().split(/\s+/);
+                  if (words.length <= 1) return dict.verifyPage.ctaTitle;
+                  const lead = words.slice(0, -1).join(" ");
+                  const last = words[words.length - 1];
+                  return (
+                    <>
+                      {lead} <span className="text-yellow-400 font-bold">{last}</span>
+                    </>
+                  );
+                })()}
               </h2>
               <p className="mt-4 max-w-xl text-pretty text-base leading-7 text-slate-300">{dict.verifyPage.ctaText}</p>
               <div className="mt-8 flex w-full flex-col items-center gap-3 sm:w-auto sm:flex-row sm:justify-center">

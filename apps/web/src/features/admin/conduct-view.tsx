@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Gavel, Loader2, Scale, ShieldAlert } from 'lucide-react';
 import { Button, Card, PageHeader } from '@/components/ui';
+import { SelectField } from '@/components/select-field';
 import type { AppealStatus, PenaltyStatus } from '@/features/admin/cases-api';
 import { useAppeals, useApplyPenalty, useDecideAppeal, usePenalties, useWithdrawPenalty } from '@/features/admin/cases-queries';
 import { detailOf, toastSuccess } from '@/features/auth/auth-feedback';
@@ -44,23 +45,24 @@ export function AdminPenalties({ locale, dict }: { locale: Locale; dict: Diction
       <PageHeader eyebrow={dict.portal.admin} title={dict.admin.penalties} description={dict.admin.penaltiesText} />
 
       <div className="mt-6 flex flex-wrap items-end gap-3">
-        <div>
-          <label htmlFor="penalty-status" className="text-[11.5px] font-semibold text-slate-800">
+        <div className="min-w-[170px]">
+          <label htmlFor="penalty-status" className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
             {dict.common.status}
           </label>
-          <select
+          <SelectField
             id="penalty-status"
             value={status ?? ''}
-            onChange={(event) => setStatus(event.target.value === '' ? undefined : (event.target.value as PenaltyStatus))}
-            className="mt-1 min-h-11 rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
-          >
-            <option value="">{dict.admin.anyStatus}</option>
-            {PENALTY_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {dict.admin.penaltyStates[value]}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setStatus(val === '' ? undefined : (val as PenaltyStatus))}
+            options={[
+              { value: '', label: dict.admin.anyStatus },
+              ...PENALTY_STATUSES.map((value) => ({
+                value,
+                label: dict.admin.penaltyStates[value],
+              })),
+            ]}
+            placeholder={dict.admin.anyStatus}
+            size="sm"
+          />
         </div>
         <p className="text-sm text-secondary">{dict.admin.proposedCount.replace('{count}', String(proposed))}</p>
       </div>
@@ -273,23 +275,24 @@ export function AdminAppeals({ locale, dict }: { locale: Locale; dict: Dictionar
       <PageHeader eyebrow={dict.portal.admin} title={dict.admin.appeals} description={dict.admin.appealsText} />
 
       <div className="mt-6 flex flex-wrap items-end gap-3">
-        <div>
-          <label htmlFor="appeal-status" className="text-[11.5px] font-semibold text-slate-800">
+        <div className="min-w-[170px]">
+          <label htmlFor="appeal-status" className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
             {dict.common.status}
           </label>
-          <select
+          <SelectField
             id="appeal-status"
             value={status ?? ''}
-            onChange={(event) => setStatus(event.target.value === '' ? undefined : (event.target.value as AppealStatus))}
-            className="mt-1 min-h-11 rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
-          >
-            <option value="">{dict.admin.anyStatus}</option>
-            {APPEAL_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {dict.admin.appealStates[value]}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setStatus(val === '' ? undefined : (val as AppealStatus))}
+            options={[
+              { value: '', label: dict.admin.anyStatus },
+              ...APPEAL_STATUSES.map((value) => ({
+                value,
+                label: dict.admin.appealStates[value],
+              })),
+            ]}
+            placeholder={dict.admin.anyStatus}
+            size="sm"
+          />
         </div>
         <p className="text-sm text-secondary">{dict.admin.openAppeals.replace('{count}', String(open))}</p>
       </div>
@@ -412,14 +415,14 @@ function AppealCard({
         open ? (
           <div className="mt-4 grid gap-3 border-t border-line pt-4">
             <div>
-              <label htmlFor={`decision-${row.id}`} className="text-[11.5px] font-semibold text-slate-800">
+              <label htmlFor={`decision-${row.id}`} className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
                 {dict.admin.decision}
               </label>
               <select
                 id={`decision-${row.id}`}
                 value={decision}
                 onChange={(event) => setDecision(event.target.value as 'UPHELD' | 'REVERSED' | 'PARTIAL')}
-                className="mt-1 min-h-11 w-full rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
+                className="mt-1 min-h-[42px] w-full rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-medium text-navy shadow-none outline-none focus:border-slate-400"
               >
                 <option value="UPHELD">{dict.admin.appealDecisions.UPHELD}</option>
                 <option value="REVERSED">{dict.admin.appealDecisions.REVERSED}</option>

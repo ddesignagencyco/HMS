@@ -55,11 +55,24 @@ export function PageBanner({
           <div className="max-w-2xl">
             {eyebrow ? <p className="eyebrow eyebrow-dark">{eyebrow}</p> : null}
             <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:mt-2.5 sm:text-3xl lg:text-[32px] text-balance leading-tight">
-              {title}
-              {titleAccent ? <span className="text-yellow-400 font-bold"> {titleAccent}</span> : null}
+              {titleAccent ? (
+                <>
+                  {title} <span className="text-yellow-400 font-bold">{titleAccent}</span>
+                </>
+              ) : (() => {
+                const words = title.trim().split(/\s+/);
+                if (words.length <= 1) return title;
+                const lead = words.slice(0, -1).join(' ');
+                const last = words[words.length - 1];
+                return (
+                  <>
+                    {lead} <span className="text-yellow-400 font-bold">{last}</span>
+                  </>
+                );
+              })()}
             </h1>
             {description ? (
-              <p className="mt-2 max-w-xl text-pretty text-xs leading-relaxed text-slate-300/85 sm:text-sm lg:max-w-2xl lg:text-[15px] font-normal">
+              <p className="mt-2 max-w-xl text-pretty text-xs leading-relaxed text-slate-300 sm:text-sm lg:max-w-2xl lg:text-[15px] font-normal">
                 {description}
               </p>
             ) : null}

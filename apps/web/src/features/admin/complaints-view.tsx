@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AlertTriangle, ArrowRight, Clock, Loader2, ShieldAlert } from 'lucide-react';
 import { Button, Card, PageHeader, StatCard } from '@/components/ui';
+import { SelectField } from '@/components/select-field';
 import { RESOLUTIONS, type ComplaintQueueFilters, type ComplaintStatus, type ComplaintTarget, type Resolution } from '@/features/admin/cases-api';
 import { useAssignComplaint, useComplaintDetail, useComplaintQueue, useOpenDispute, useTransitionComplaint } from '@/features/admin/cases-queries';
 import { detailOf, toastError, toastSuccess } from '@/features/auth/auth-feedback';
@@ -212,23 +213,18 @@ function FilterSelect({
   anyLabel: string;
 }) {
   return (
-    <div>
-      <label htmlFor={id} className="text-[11.5px] font-semibold text-slate-800">
+    <div className="min-w-[170px]">
+      <label htmlFor={id} className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
         {label}
       </label>
-      <select
+      <SelectField
         id={id}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 min-h-11 rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
-      >
-        <option value="">{anyLabel}</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+        options={[{ value: '', label: anyLabel }, ...options]}
+        placeholder={anyLabel}
+        size="sm"
+      />
     </div>
   );
 }
@@ -387,7 +383,7 @@ function ComplaintDetailPanel({ locale, dict, id, onBack }: { locale: Locale; di
                 </Button>
 
                 <div className="border-t border-line pt-3">
-                  <label htmlFor="complaint-target" className="text-[11.5px] font-semibold text-slate-800">
+                  <label htmlFor="complaint-target" className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
                     {dict.admin.moveTo}
                   </label>
                   {/* OPEN is absent because the server only accepts these four as
@@ -396,11 +392,11 @@ function ComplaintDetailPanel({ locale, dict, id, onBack }: { locale: Locale; di
                     id="complaint-target"
                     value={target}
                     onChange={(event) => setTarget(event.target.value as ComplaintTarget)}
-                    className="mt-1 min-h-11 w-full rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
+                    className="min-h-[42px] w-full rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-medium text-navy shadow-none outline-none focus:border-slate-400"
                   >
-                    {(['UNDER_REVIEW', 'AWAITING_RESPONSE', 'RESOLVED', 'REJECTED'] as ComplaintTarget[]).map((value) => (
-                      <option key={value} value={value}>
-                        {dict.admin.complaintStates[value]}
+                    {(['UNDER_REVIEW', 'AWAITING_RESPONSE', 'RESOLVED', 'REJECTED'] as ComplaintTarget[]).map((val) => (
+                      <option key={val} value={val}>
+                        {dict.admin.complaintStates[val]}
                       </option>
                     ))}
                   </select>
@@ -409,19 +405,19 @@ function ComplaintDetailPanel({ locale, dict, id, onBack }: { locale: Locale; di
                 {(target === 'RESOLVED' || target === 'REJECTED') && (
                   <div className="grid gap-3">
                     <div>
-                      <label htmlFor="complaint-resolution" className="text-[11.5px] font-semibold text-slate-800">
+                      <label htmlFor="complaint-resolution" className="block mb-1.5 text-[11.5px] font-semibold text-slate-800">
                         {dict.admin.resolution}
                       </label>
                       <select
                         id="complaint-resolution"
                         value={resolution}
                         onChange={(event) => setResolution(event.target.value as Resolution | '')}
-                        className="mt-1 min-h-11 w-full rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
+                        className="min-h-[42px] w-full rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-medium text-navy shadow-none outline-none focus:border-slate-400"
                       >
                         <option value="">{dict.admin.chooseResolution}</option>
-                        {RESOLUTIONS.map((value) => (
-                          <option key={value} value={value}>
-                            {dict.admin.resolutions[value]}
+                        {RESOLUTIONS.map((val) => (
+                          <option key={val} value={val}>
+                            {dict.admin.resolutions[val]}
                           </option>
                         ))}
                       </select>

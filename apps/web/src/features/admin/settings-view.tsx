@@ -47,7 +47,7 @@ export function AdminSettings({ locale, dict }: { locale: Locale; dict: Dictiona
         }}
       >
         <div className="min-w-[260px] flex-1">
-          <label htmlFor="settings-search" className="text-[11.5px] font-semibold text-slate-800">
+          <label htmlFor="settings-search" className="block mb-2 text-[11.5px] font-semibold text-slate-800">
             {dict.admin.searchSettings}
           </label>
           <div className="relative mt-1">

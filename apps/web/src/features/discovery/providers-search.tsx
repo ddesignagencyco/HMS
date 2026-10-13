@@ -12,7 +12,7 @@ import { SelectField } from "@/components/select-field";
 import { useAllServices, useCategories, useCategoryServices } from "@/features/catalogue/queries";
 import { useCities, useCityAreas } from "@/features/places/queries";
 import { useProviderSearch } from "@/features/search/queries";
-import { searchApi } from "@/features/search/api";
+import { searchApi, type ProviderDetail, type ProviderSearchResult } from "@/features/search/api";
 import { publicKeys, FRESHNESS } from "@/lib/api/keys";
 import { areaCentroid, cityCentre, ratingOf, requestDeviceLocation } from "@/features/search/location";
 import {
@@ -30,22 +30,8 @@ import { EmptyState, InlineError, RefreshingNote } from "./states";
 import { LocationMap } from "@/components/location-map";
 import { SearchRefinements } from "./search-refinements";
 
-/* Provider search, backed by `GET /search/providers`.
-
-   That endpoint is `.strict()` and takes a service, **one** way of saying
-   where (`addressId` or `lat`+`lng`) and five optional refinements. There is no
-   `page` and no `sort` — a pager or a sorter comes back 422 — so this screen
-   offers neither, and the result order is the API's ranking, unmodified.
-
-   **The five refinements are the server's, not the browser's.** `SearchRefinements`
-   holds them and they are sent with the query, because the alternative this
-   screen already had — filtering the returned array by rating and badge after the
-   fact — cannot answer "only people free today" or "under PKR 2,000" at all: the
-   response does not carry availability or a price for a different service, so
-   those questions were not answerable no matter how the client worked.
-
-   Service and place live in the URL so a search can be shared; the refinements
-   do not, so a link is not carrying somebody's half-closed filter sheet. */
+/* Provider search backed by `GET /search/providers`.
+   Handles service, location coordinates, and server refinements. */
 
 type ServiceOption = { value: string; label: string; group: string };
 type SortKey = "default" | "distance" | "rating" | "price_asc" | "price_desc" | "experience";
@@ -81,14 +67,7 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
      list. Which category is being browsed is temporary UI state; the chosen
      *service* is what belongs in the URL, so only that is persisted. */
   const categories = useCategories(locale);
-  /* "All categories" is the default view, mirroring `/services`, where the
-     catalogue opens showing everything.
-   *
-   * It used to default to `categories.items[0]`, so the first category was
-   * silently pre-selected before anyone touched anything — the service list
-   * showed one trade's worth of services and looked like that was the whole
-   * marketplace. `ALL` is a real state here, not a placeholder, and the picker
-   * is labelled as such. */
+  /* "All categories" is the default view, mirroring /services. */
   const [browseCategory, setBrowseCategory] = useState<string>("ALL");
   const ALL_CATEGORIES = "ALL";
   /* `null` disables the query; `useCategoryServices` is enabled on a non-empty
@@ -184,6 +163,10 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   /* A price band the server would reject (422) is not sent at all: the request is
      simply not made, and the panel says why. Sending it would produce an error
      page over a state a person can reach by typing. */
+  const defaultCity = cities.data?.items?.[0] ?? null;
+  const effectiveLat = state.lat ?? (cityCentre(defaultCity)?.lat ?? 31.5204);
+  const effectiveLng = state.lng ?? (cityCentre(defaultCity)?.lng ?? 74.3587);
+
   const filters = useMemo(() => {
     if (!isSearchable(state)) return null;
     if (!isPriceBandValid(refinement)) return null;
@@ -191,7 +174,77 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   }, [state, refinement]);
   const results = useProviderSearch(filters, locale);
 
-  const rawResults = results.data?.items ?? [];
+  /* When no specific service is selected in URL, fetch initial providers across representative services of active categories */
+  const representativeServices = useMemo(() => {
+    if (state.serviceSlug !== "") return [];
+    if (browseCategory !== ALL_CATEGORIES) {
+      const catServices = listed.data?.items ?? [];
+      return catServices.length > 0 ? catServices.slice(0, 3).map((s) => s.slug) : [];
+    }
+    const all = everything.data?.items ?? [];
+    if (!all.length) return ["leak-repair"];
+    const seen = new Set<number>();
+    const slugs: string[] = [];
+    for (const s of all) {
+      if (s.categoryId && !seen.has(s.categoryId)) {
+        seen.add(s.categoryId);
+        slugs.push(s.slug);
+      }
+      if (slugs.length >= 6) break;
+    }
+    return slugs.length > 0 ? slugs : ["leak-repair"];
+  }, [state.serviceSlug, browseCategory, listed.data, everything.data]);
+
+  const initialProviderQueries = useQueries({
+    queries: representativeServices.map((slug) => ({
+      queryKey: publicKeys.providerSearch({
+        serviceSlug: slug,
+        lat: effectiveLat,
+        lng: effectiveLng,
+        ...refinement,
+      }),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        searchApi.searchProviders(
+          {
+            serviceSlug: slug,
+            lat: effectiveLat,
+            lng: effectiveLng,
+            ...refinement,
+          },
+          { signal, locale },
+        ),
+      staleTime: FRESHNESS.search.staleTime,
+      enabled: state.serviceSlug === "",
+    })),
+  });
+
+  const rawResults = useMemo(() => {
+    if (state.serviceSlug !== "") {
+      return results.data?.items ?? [];
+    }
+    const seen = new Set<string>();
+    const combined: ProviderSearchResult[] = [];
+    for (const q of initialProviderQueries) {
+      for (const item of q.data?.items ?? []) {
+        if (!seen.has(item.providerId)) {
+          seen.add(item.providerId);
+          combined.push(item);
+        }
+      }
+    }
+    return combined;
+  }, [state.serviceSlug, results.data, initialProviderQueries]);
+
+  const isSearchPending =
+    state.serviceSlug !== ""
+      ? results.isPending
+      : (everything.isPending && representativeServices.length === 0) ||
+        (representativeServices.length > 0 && initialProviderQueries.some((q) => q.isPending));
+
+  const isSearchError =
+    state.serviceSlug !== ""
+      ? results.isError
+      : representativeServices.length > 0 && initialProviderQueries.every((q) => q.isError);
 
   /** Filters out bulk-loaded providers with numeric IDs instead of UUIDs. */
   const isUuid = (id: string): boolean =>
@@ -217,7 +270,7 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
 
     if (state.areaId !== null && !detailsLoading) {
       items = items.filter((p, index) => {
-        const detail = providerDetails[index]?.data;
+        const detail = providerDetails[index]?.data as ProviderDetail | undefined;
         if (!detail) return true;
         if (detail.areas && Array.isArray(detail.areas) && detail.areas.length > 0) {
           return detail.areas.some((area) => area.areaId === state.areaId);
@@ -427,17 +480,6 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
             {notice}
           </p>
         ) : null}
-        <div className="mt-2">
-          <LocationMap
-            center={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : (city?.lat != null && city?.lng != null ? { lat: city.lat, lng: city.lng } : undefined)}
-            selectedLocation={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : null}
-            onSelectLocation={(pt) => {
-              push({ ...state, lat: pt.lat, lng: pt.lng, source: "device" });
-            }}
-            height="180px"
-            hint={locale === "ur" ? "نقشے پر پن لگائیں" : "Pin location to search"}
-          />
-        </div>
       </div>
 
       <SearchRefinements
@@ -456,340 +498,259 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
   );
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-12">
-      <aside className="hidden lg:sticky lg:top-[calc(var(--demo-bar-h,0px)+1.5rem)] lg:block lg:self-start">
-        <h2 className="eyebrow eyebrow-light">{dict.search.filtersHeading}</h2>
-        <div className="mt-4">{filterBody}</div>
-      </aside>
-
-      <div className="min-w-0">
-        {/* Category chips, mirroring `/services`: "All categories" first, then
-            each one, with the count of professionals each holds. On `/services`
-            these chips sit above the fold as the primary way in; here they were
-            buried in the filter sidebar behind a dropdown, so the page opened
-            with no way to see what trades existed at all.
-
-            The count is `serviceOptions.length` for the chosen view rather than a
-            number of professionals: `GET /search/providers` is scoped to one
-            service and one point, so a per-category *provider* count is not a
-            figure this page can know. Labelled accordingly — the chip count says
-            how many services, not how many people. */}
-        {categories.data !== undefined && categories.data.items.length > 0 ? (
-          <div className="mb-6 flex items-center gap-2 overflow-x-auto border-b border-slate-100 pb-3 pt-1 no-scrollbar">
-            {[{ slug: ALL_CATEGORIES, nameEn: dict.catalogue.allCategories, nameUr: dict.catalogue.allCategories }, ...categories.data.items].map(
-              (cat) => {
-                const isActive = browseCategory === cat.slug;
-                const label = locale === "ur" && cat.slug !== ALL_CATEGORIES ? cat.nameUr : cat.nameEn;
-                return (
-                  <button
-                    key={cat.slug}
-                    type="button"
-                    aria-pressed={isActive}
-                    onClick={() => setBrowseCategory(cat.slug)}
-                    className={cn(
-                      /* 44px min target: these are the primary control on the
-                         page and were `py-1.5` chips — about 28px tall. */
-                      "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-[10px] px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100",
-                      isActive
-                        ? "bg-navy text-white shadow-sm"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-navy",
-                    )}
-                  >
-                    {label}
-                  </button>
-                );
-              },
+    <div className="relative">
+      {/* Top Search & Controls Bar (Matching catalogue-explorer.tsx) */}
+      <div className="mb-8 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          {/* Real-time Search Box */}
+          <div className="relative flex-1">
+            <label htmlFor="provider-search-input" className="sr-only">
+              {locale === "ur" ? "پیشہ ور تلاش کریں" : "Search professionals"}
+            </label>
+            <div className="pointer-events-none absolute inset-y-0 start-0 flex items-center ps-3.5 text-slate-400">
+              <Search className="size-4.5" aria-hidden="true" />
+            </div>
+            <input
+              id="provider-search-input"
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={
+                locale === "ur"
+                  ? "پیشہ ور، ہنر، یا قابلیت تلاش کریں (مثلاً: پلمبر، الیکٹریشن، لائسنس یافتہ...)"
+                  : "Search professionals by name, skill, bio, or trade (e.g. Plumber, Electrician, Licensed...)"
+              }
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-2.5 pe-9 ps-10 text-sm font-medium text-navy placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-0 transition-colors"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="absolute inset-y-0 end-0 flex items-center pe-3 text-slate-400 hover:text-navy focus:outline-none"
+                aria-label={dict.common.clearFilters}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
             )}
           </div>
-        ) : null}
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-navy">
-              {state.serviceSlug === ""
-                ? dict.search.needsServiceTitle
-                : !isSearchable(state)
-                  ? dict.search.needsLocationTitle
-                  : results.data === undefined
-                    ? dict.search.filtersHeading
-                    : filteredResults.length === 0
-                      ? dict.search.noResultsTitle
-                      : filteredResults.length === 1
-                        ? dict.search.resultsHeadingOne
-                        : dict.search.resultsHeading.replace("{count}", formatNumber(filteredResults.length, locale))}
-            </h2>
-            {state.serviceSlug !== "" && results.data !== undefined && filteredResults.length > 0 ? (
-              <p className="mt-1 text-sm text-secondary">{dict.search.resultsFor.replace("{service}", serviceName)}</p>
-            ) : null}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {results.isFetching && !results.isPending ? <RefreshingNote dict={dict} /> : null}
+          {/* Quick Controls: Map View, Mobile Filter Toggle, and Sort Selector */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Map View Toggle Button */}
             <Button
               type="button"
               variant={showMap ? "primary" : "secondary"}
               size="sm"
               onClick={() => setShowMap(!showMap)}
-              className="gap-1.5"
+              className="gap-1.5 rounded-xl h-10 px-3.5 text-xs font-semibold"
             >
               <MapPin className="size-3.5" aria-hidden="true" />
               {showMap
                 ? (locale === "ur" ? "نقشہ چھپائیں" : "Hide Map")
                 : (locale === "ur" ? "نقشہ دیکھیں" : "Map View")}
             </Button>
-            <Button
+
+            {/* Mobile Filter Toggle */}
+            <button
               type="button"
-              variant="secondary"
-              size="sm"
-              className="lg:hidden"
               onClick={() => setSheetOpen(true)}
-              aria-expanded={sheetOpen}
+              className="inline-flex lg:hidden items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 h-10 text-xs font-semibold text-navy shadow-sm transition hover:bg-slate-50 focus:outline-none"
             >
-              <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-              {dict.search.openFilters}
-            </Button>
+              <SlidersHorizontal className="size-3.5 text-slate-600" aria-hidden="true" />
+              <span>{dict.search.openFilters}</span>
+              {activeFilterCount > 0 && (
+                <span className="grid size-5 place-items-center rounded-full bg-navy text-[11px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Sort Dropdown */}
+            <div className="flex items-center gap-2 ms-auto sm:ms-0">
+              <span className="hidden sm:inline text-xs font-semibold uppercase tracking-wider text-muted">
+                {dict.services.sort}:
+              </span>
+              <div className="w-[185px]">
+                <SelectField
+                  id="provider-sort-select"
+                  value={sortBy}
+                  onChange={(val) => setSortBy(val as SortKey)}
+                  options={sortOptions}
+                  placeholder={dict.services.sort}
+                  size="sm"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        {sheetOpen ? (
-          /* The project's own drawer rather than a second one written here:
-             it brings Escape-to-close, the body scroll lock, `aria-modal`, a
-             labelled close button and the reset/apply pair. The hand-rolled
-             version this replaced had none of those. */
-          <FilterDrawer
-            open={sheetOpen}
-            labels={labels}
-            activeCount={activeFilterCount}
-            onClose={() => setSheetOpen(false)}
-            onApply={() => setSheetOpen(false)}
-            onReset={reset}
-          >
-            {filterBody}
-          </FilterDrawer>
-        ) : null}
+        {/* Quick Filter Bar: Rating & Badges */}
+        <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted me-1">
+              {locale === "ur" ? "ریٹنگ:" : "Rating:"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setMinRating(0)}
+              className={cn(
+                "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                minRating === 0 ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
+              )}
+            >
+              {locale === "ur" ? "تمام" : "All"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMinRating(4.0)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                minRating === 4.0 ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
+              )}
+            >
+              <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden="true" />
+              4.0+
+            </button>
+            <button
+              type="button"
+              onClick={() => setMinRating(4.5)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                minRating === 4.5 ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
+              )}
+            >
+              <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden="true" />
+              4.5+
+            </button>
 
-        {showMap ? (
-          <div className="my-5 overflow-hidden rounded-[14px] border border-line bg-white p-3 shadow-xs">
-            <div className="mb-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-navy">
-                <MapPin className="size-4 text-primary" />
-                <span>{locale === "ur" ? "انٹرایکٹو تلاش کا نقشہ" : "Interactive Search Map"}</span>
-              </div>
-              <span className="text-xs text-muted">
-                {locale === "ur" ? "مقام تبدیل کرنے کے لیے نقشے پر کلک کریں" : "Click or drag pin to adjust search location"}
-              </span>
-            </div>
-            <LocationMap
-              center={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : (city?.lat != null && city?.lng != null ? { lat: city.lat, lng: city.lng } : undefined)}
-              selectedLocation={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : null}
-              onSelectLocation={(pt) => {
-                push({ ...state, lat: pt.lat, lng: pt.lng, source: "device" });
-              }}
-              height="320px"
-              hint={locale === "ur" ? "نئے مقام کے لیے نقشے پر کلک کریں" : "Click or drag pin to update your search area"}
-            />
+            <button
+              type="button"
+              onClick={() => setBadgeOnly(!badgeOnly)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ms-1.5",
+                badgeOnly ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
+              )}
+            >
+              <BadgeCheck className="size-3.5 text-blue-500" aria-hidden="true" />
+              {locale === "ur" ? "صرف تصدیق شدہ بیج" : "Verified Badge Only"}
+            </button>
           </div>
-        ) : null}
 
-        <div className="mt-6">
-          {state.serviceSlug === "" ? (
-            <EmptyState
-              title={dict.search.needsServiceTitle}
-              body={dict.search.needsServiceText}
-              icon={<SearchX className="size-8" aria-hidden="true" />}
-              action={
-                <a href={localizedPath(locale, "/services")} className={buttonStyles()}>
-                  {dict.search.browseCatalogue}
-                </a>
-              }
-            />
-          ) : !isSearchable(state) ? (
-            /* The service is chosen but the API still needs a point, so this is
-               a different ask from "choose a service" and gets its own copy. */
-            <div className="space-y-4">
+          {hasResultFilters ? (
+            <Button type="button" variant="ghost" size="sm" onClick={resetResultFilters} className="h-7 text-xs text-muted hover:text-navy">
+              <RotateCcw className="size-3 me-1" aria-hidden="true" />
+              {locale === "ur" ? "فلٹرز صاف کریں" : "Reset filters"}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid gap-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-12">
+        <aside className="hidden lg:sticky lg:top-[calc(var(--demo-bar-h,0px)+1.5rem)] lg:block lg:self-start">
+          <h2 className="eyebrow eyebrow-light">{dict.search.filtersHeading}</h2>
+          <div className="mt-4">{filterBody}</div>
+        </aside>
+
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-navy">
+                {state.serviceSlug === ""
+                  ? (locale === "ur" ? "تمام دستیاب تصدیق شدہ پیشہ ور" : "All Available Verified Professionals")
+                  : filteredResults.length === 0
+                    ? dict.search.noResultsTitle
+                    : filteredResults.length === 1
+                      ? dict.search.resultsHeadingOne
+                      : dict.search.resultsHeading.replace("{count}", formatNumber(filteredResults.length, locale))}
+              </h2>
+              <p className="mt-1 text-sm text-secondary">
+                {state.serviceSlug !== ""
+                  ? dict.search.resultsFor.replace("{service}", serviceName)
+                  : (locale === "ur"
+                      ? "فہرست میں سے پیشہ ور چنیں یا فلٹرز سے تلاش محدود کریں"
+                      : `Showing ${formatNumber(processedProviders.length, locale)} verified specialists ready to book`)}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {results.isFetching && !results.isPending ? <RefreshingNote dict={dict} /> : null}
+            </div>
+          </div>
+
+          {sheetOpen ? (
+            <FilterDrawer
+              open={sheetOpen}
+              labels={labels}
+              activeCount={activeFilterCount}
+              onClose={() => setSheetOpen(false)}
+              onApply={() => setSheetOpen(false)}
+              onReset={reset}
+            >
+              {filterBody}
+            </FilterDrawer>
+          ) : null}
+
+          {showMap ? (
+            <div className="my-5 overflow-hidden rounded-[14px] border border-line bg-white p-3 shadow-xs">
+              <div className="mb-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-navy">
+                  <MapPin className="size-4 text-primary" />
+                  <span>{locale === "ur" ? "انٹرایکٹو تلاش کا نقشہ" : "Interactive Search Map"}</span>
+                </div>
+                <span className="text-xs text-muted">
+                  {locale === "ur" ? "مقام تبدیل کرنے کے لیے نقشے پر کلک کریں" : "Click or drag pin to adjust search location"}
+                </span>
+              </div>
+              <LocationMap
+                center={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : (city?.lat != null && city?.lng != null ? { lat: city.lat, lng: city.lng } : undefined)}
+                selectedLocation={state.lat !== null && state.lng !== null ? { lat: state.lat, lng: state.lng } : null}
+                onSelectLocation={(pt) => {
+                  push({ ...state, lat: pt.lat, lng: pt.lng, source: "device" });
+                }}
+                height="320px"
+                hint={locale === "ur" ? "نئے مقام کے لیے نقشے پر کلک کریں" : "Click or drag pin to update your search area"}
+              />
+            </div>
+          ) : null}
+
+          <div className="mt-6">
+            {isSearchPending ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {Array.from({ length: 4 }, (_, index) => (
+                  <ProviderCardSkeleton key={index} />
+                ))}
+              </div>
+            ) : isSearchError ? (
+              <InlineError
+                title={dict.search.loadError}
+                actionLabel={dict.catalogue.retry}
+                onRetry={() => {
+                  if (state.serviceSlug !== "") void results.refetch();
+                  else initialProviderQueries.forEach((q) => void q.refetch());
+                }}
+              />
+            ) : processedProviders.length === 0 ? (
               <EmptyState
-                title={dict.search.needsLocationTitle}
-                body={dict.search.needsLocationText}
-                icon={<MapPin className="size-8" aria-hidden="true" />}
+                title={dict.search.noResultsTitle}
+                body={dict.search.noResultsText}
+                icon={<SearchX className="size-8" aria-hidden="true" />}
                 action={
-                  <Button type="button" onClick={() => void applyDeviceLocation()} disabled={locating}>
-                    {locating ? dict.search.locating : dict.search.useMyLocation}
+                  <Button type="button" variant="secondary" onClick={() => void applyDeviceLocation()} disabled={locating}>
+                    {dict.search.useMyLocation}
                   </Button>
                 }
               />
-              <div className="mx-auto max-w-xl rounded-[14px] border border-line bg-white p-4 shadow-xs">
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-navy">
-                  <MapPin className="size-3.5 text-primary" />
-                  <span>{locale === "ur" ? "یا نقشے پر مقام چنیں" : "Or pick location directly on map"}</span>
-                </div>
-                <LocationMap
-                  center={city?.lat != null && city?.lng != null ? { lat: city.lat, lng: city.lng } : undefined}
-                  onSelectLocation={(pt) => {
-                    push({ ...state, lat: pt.lat, lng: pt.lng, source: "device" });
-                  }}
-                  height="260px"
-                  hint={locale === "ur" ? "تلاش شروع کرنے کے لیے نقشے پر کلک کریں" : "Click anywhere on map to set your search location"}
-                />
-              </div>
-            </div>
-          ) : results.isPending ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {Array.from({ length: 4 }, (_, index) => (
-                <ProviderCardSkeleton key={index} />
-              ))}
-            </div>
-          ) : results.isError ? (
-            <InlineError
-              title={dict.search.loadError}
-              actionLabel={dict.catalogue.retry}
-              onRetry={() => void results.refetch()}
-            />
-          ) : filteredResults.length === 0 ? (
-            <EmptyState
-              title={dict.search.noResultsTitle}
-              body={dict.search.noResultsText}
-              icon={<SearchX className="size-8" aria-hidden="true" />}
-              action={
-                <Button type="button" variant="secondary" onClick={() => void applyDeviceLocation()} disabled={locating}>
-                  {dict.search.useMyLocation}
-                </Button>
-              }
-            />
-          ) : (
-            <>
-              {/* In-results Sort & Filter Toolbar */}
-              <div className="mb-5 grid gap-3 rounded-[12px] border border-line bg-surface-2/60 p-3 sm:p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-                    {/* Placeholder is not an accessible name, so this box had
-                        none. `catalogue-explorer.tsx` supplies an `sr-only`
-                        label for its identical search field; this one now
-                        matches. */}
-                    <label htmlFor="provider-keyword" className="sr-only">
-                      {locale === "ur" ? "مہارت یا تفصیل میں تلاش کریں" : "Filter by skill or keyword"}
-                    </label>
-                    <Input
-                      id="provider-keyword"
-                      type="text"
-                      placeholder={locale === "ur" ? "مہارت یا تفصیل میں تلاش کریں..." : "Filter by skill or keyword…"}
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      className="h-9 ps-9 pe-8 text-xs"
-                    />
-                    {query.trim() !== "" ? (
-                      <button
-                        type="button"
-                        onClick={() => setQuery("")}
-                        className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-navy"
-                        aria-label={locale === "ur" ? "صاف کریں" : "Clear search"}
-                      >
-                        <X className="size-3.5" aria-hidden="true" />
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <div className="w-full sm:w-64 shrink-0">
-                    <SelectField
-                      id="results-sort"
-                      value={sortBy}
-                      onChange={(val) => setSortBy(val as SortKey)}
-                      options={sortOptions}
-                      placeholder={locale === "ur" ? "ترتیب منتخب کریں" : "Sort results"}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line/60 pt-2.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted me-1">
-                      {locale === "ur" ? "ریٹنگ:" : "Rating:"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setMinRating(0)}
-                      className={cn(
-                        "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                        minRating === 0 ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
-                      )}
-                    >
-                      {locale === "ur" ? "تمام" : "All"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMinRating(4.0)}
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                        minRating === 4.0 ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
-                      )}
-                    >
-                      <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden="true" />
-                      4.0+
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMinRating(4.5)}
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                        minRating === 4.5 ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
-                      )}
-                    >
-                      <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden="true" />
-                      4.5+
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setBadgeOnly(!badgeOnly)}
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ms-1.5",
-                        badgeOnly ? "bg-navy text-white" : "bg-white text-secondary hover:bg-slate-100 border border-line"
-                      )}
-                    >
-                      <BadgeCheck className="size-3.5 text-blue-500" aria-hidden="true" />
-                      {locale === "ur" ? "صرف تصدیق شدہ بیج" : "Verified Badge Only"}
-                    </button>
-                  </div>
-
-                  {hasResultFilters ? (
-                    <Button type="button" variant="ghost" size="sm" onClick={resetResultFilters} className="h-7 text-xs text-muted hover:text-navy">
-                      <RotateCcw className="size-3 me-1" aria-hidden="true" />
-                      {locale === "ur" ? "فلٹرز صاف کریں" : "Reset filters"}
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-
-              {hasResultFilters ? (
-                <p className="mb-4 text-xs font-medium text-secondary">
-                  {locale === "ur"
-                    ? `${formatNumber(filteredResults.length, locale)} میں سے ${formatNumber(processedProviders.length, locale)} پیشہ ور دکھائی جا رہے ہیں`
-                    : `Showing ${formatNumber(processedProviders.length, locale)} of ${formatNumber(filteredResults.length, locale)} professionals matching criteria`}
-                </p>
-              ) : null}
-
-              {processedProviders.length === 0 ? (
-                <EmptyState
-                  title={locale === "ur" ? "کوئی پیشہ ور فلٹر پر پورا نہیں اترا" : "No professionals match your filter criteria"}
-                  body={locale === "ur" ? "براہ کرم فلٹرز صاف کریں یا تلاش کا لفظ تبدیل کریں۔" : "Try clearing your filters or using different keywords to see all available professionals."}
-                  icon={<SearchX className="size-8" aria-hidden="true" />}
-                  action={
-                    <Button type="button" variant="secondary" onClick={resetResultFilters}>
-                      <RotateCcw className="size-3.5 me-1.5" aria-hidden="true" />
-                      {locale === "ur" ? "فلٹرز ختم کریں" : "Reset result filters"}
-                    </Button>
-                  }
-                />
-              ) : (
+            ) : (
+              <>
                 <div className={cn("grid gap-4 sm:grid-cols-2")}>
                   {processedProviders.map((provider) => (
                     <ProviderCard key={provider.providerId} locale={locale} dict={dict} provider={provider} serviceName={serviceName} />
                   ))}
                 </div>
-              )}
-              <p className="mt-6 text-xs text-muted">{dict.search.resultCountNote}</p>
-            </>
-          )}
+                <p className="mt-6 text-xs text-muted">{dict.search.resultCountNote}</p>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1,9 +1,11 @@
-﻿"use client";
+"use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { AlertTriangle, ArrowUpRight, Banknote, Camera, CheckCircle2, Clock3, ShieldCheck, Sparkles } from "lucide-react";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, formatDuration, localizedPath, type Locale } from "@/lib/utils";
+import { getServicePhoto } from "@/lib/service-images";
 import { ApiError } from "@/lib/api/problem";
 import { buttonStyles } from "@/components/ui";
 import { useCategories, useService } from "@/features/catalogue/queries";
@@ -108,14 +110,35 @@ export function ServiceDetail({ locale, dict, slug }: { locale: Locale; dict: Di
               {value.description}
             </p>
 
+            {/* Photographic Service Media */}
+            <div className="relative mt-6 aspect-[16/7] w-full overflow-hidden rounded-2xl bg-slate-900 shadow-soft">
+              <Image
+                src={getServicePhoto(value.slug || (category?.slug ?? ''))}
+                alt={name}
+                fill
+                priority
+                sizes="(max-width: 1024px) 100vw, 65vw"
+                className="object-cover"
+              />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-navy-950/70 via-navy-950/20 to-transparent" />
+              {categoryName ? (
+                <span className="absolute bottom-4 start-4 inline-flex items-center gap-2 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-semibold text-navy shadow-xs backdrop-blur-xs">
+                  <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
+                  {categoryName}
+                </span>
+              ) : null}
+            </div>
+
             {facts.length > 0 ? (
-              <dl className="mt-8 divide-y divide-line border-y border-line">
+              <dl className="mt-8 grid gap-3 sm:grid-cols-2">
                 {facts.map(({ icon: Icon, label, value: factValue }) => (
-                  <div key={label} className="flex items-start gap-4 py-4">
-                    <Icon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                  <div key={label} className="flex items-start gap-3.5 rounded-[12px] border border-line bg-white p-4 shadow-xs">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-blue-50 text-primary">
+                      <Icon className="size-4" aria-hidden="true" />
+                    </span>
                     <div className="min-w-0 flex-1">
                       <dt className="text-sm font-semibold text-navy">{label}</dt>
-                      {factValue !== "" ? <dd className="mt-0.5 text-sm leading-6 text-secondary">{factValue}</dd> : null}
+                      {factValue !== "" ? <dd className="mt-0.5 text-xs leading-5 text-secondary">{factValue}</dd> : null}
                     </div>
                   </div>
                 ))}
@@ -158,7 +181,7 @@ export function ServiceDetail({ locale, dict, slug }: { locale: Locale; dict: Di
             <div className="rounded-[16px] border border-line bg-white p-5 shadow-soft sm:p-6">
               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted">{dict.catalogue.pricingHeading}</p>
 
-              <p className="mt-2 text-[40px] font-semibold leading-none tracking-[-0.045em] text-navy tabular-nums">{price.primary}</p>
+              <p className="mt-2 text-[36px] font-semibold leading-none tracking-[-0.04em] text-navy tabular-nums">{price.primary}</p>
               <p className="mt-2 text-sm text-secondary">
                 {price.basis === "flat" ? dict.catalogue.priceFlat : price.basis === "rate" ? dict.catalogue.priceRate : dict.catalogue.priceEstimate}
                 {price.perUnit !== undefined ? ` · ${dict.catalogue[price.perUnit]}` : ""}
@@ -186,6 +209,11 @@ export function ServiceDetail({ locale, dict, slug }: { locale: Locale; dict: Di
                 <Link href={localizedPath(locale, `/book/${value.slug}`)} className={buttonStyles({ variant: "secondary", className: "w-full" })}>
                   {dict.catalogue.checkAvailability}
                 </Link>
+              </div>
+
+              <div className="mt-4 rounded-[10px] bg-slate-50 p-3 text-xs leading-5 text-secondary flex items-start gap-2">
+                <ShieldCheck className="size-4 shrink-0 text-emerald-600 mt-0.5" aria-hidden="true" />
+                <span>Verified professionals, escrow protection, and guaranteed quotes.</span>
               </div>
 
               <Link

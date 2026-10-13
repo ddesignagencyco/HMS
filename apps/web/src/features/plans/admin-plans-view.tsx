@@ -40,6 +40,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Badge, Button, Card, PageHeader } from '@/components/ui';
+import { SelectField } from '@/components/select-field';
 import { useAllServices } from '@/features/catalogue/queries';
 import type { CatalogueService } from '@/features/catalogue/api';
 import { adminKeys } from '@/lib/api/keys';
@@ -160,37 +161,37 @@ function CreateForm({ services, dict, onDone }: { services: CatalogueService[]; 
   };
 
   return (
-    <Card className="mt-4 p-5">
+    <Card className="mt-4 p-5 max-w-4xl">
       <h2 className="font-semibold text-navy">{dict.admin.plansCreateTitle}</h2>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="text-xs font-medium text-secondary" htmlFor="np-name-en">
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor="np-name-en">
             {dict.admin.plansNameEn}
           </label>
           <input id="np-name-en" value={state.nameEn} onChange={(e) => patch({ nameEn: e.target.value })} className={fieldClass} />
         </div>
         <div>
-          <label className="text-xs font-medium text-secondary" htmlFor="np-name-ur">
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor="np-name-ur">
             {dict.admin.plansNameUr}
           </label>
           <input id="np-name-ur" value={state.nameUr} onChange={(e) => patch({ nameUr: e.target.value })} className={fieldClass} dir="rtl" />
         </div>
         <div className="sm:col-span-2">
-          <label className="text-xs font-medium text-secondary" htmlFor="np-desc">
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor="np-desc">
             {dict.admin.plansDescription}
           </label>
           <textarea id="np-desc" rows={3} value={state.description} onChange={(e) => patch({ description: e.target.value })} className={fieldClass} />
         </div>
         <div>
-          <label className="text-xs font-medium text-secondary" htmlFor="np-price">
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor="np-price">
             {dict.admin.plansPricePaisa}
           </label>
           <input id="np-price" inputMode="numeric" value={state.pricePaisa} onChange={(e) => patch({ pricePaisa: e.target.value })} className={fieldClass} />
           <p className="mt-1 text-xs text-muted">{dict.admin.plansPriceHint}</p>
         </div>
         <div>
-          <label className="text-xs font-medium text-secondary" htmlFor="np-months">
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor="np-months">
             {dict.admin.plansDurationMonths}
           </label>
           <input id="np-months" inputMode="numeric" value={state.durationMonths} onChange={(e) => patch({ durationMonths: e.target.value })} className={fieldClass} />
@@ -203,19 +204,18 @@ function CreateForm({ services, dict, onDone }: { services: CatalogueService[]; 
           <div key={row.rowKey} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_9rem_auto]">
             {/* The row number is folded into each control's name so the three
                 fields of one service are distinguishable from the next row's. */}
-            <select
+            <SelectField
+              id={`service-${row.rowKey}`}
               value={row.serviceId}
-              onChange={(e) => patchService(row.rowKey, { serviceId: e.target.value })}
-              className={fieldClass}
-              aria-label={`${dict.admin.plansService} ${state.services.indexOf(row) + 1}`}
-            >
-              <option value="">{dict.admin.plansService}</option>
-              {pool.map((service) => (
-                <option key={service.id} value={service.id}>
-                  {service.nameEn}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => patchService(row.rowKey, { serviceId: val })}
+              options={pool.map((service) => ({
+                value: String(service.id),
+                label: service.nameEn,
+              }))}
+              placeholder={dict.admin.plansService}
+              ariaLabel={`${dict.admin.plansService} ${state.services.indexOf(row) + 1}`}
+              size="sm"
+            />
             <input
               inputMode="numeric"
               value={row.visitsIncluded}
@@ -290,35 +290,35 @@ function EditForm({ plan, dict, onDone }: { plan: AdminPlan; dict: Dictionary; o
   };
 
   return (
-    <Card className="mt-4 p-5">
+    <Card className="mt-4 p-5 max-w-4xl">
       <h2 className="font-semibold text-navy">{dict.admin.plansEditTitle}</h2>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="text-xs font-medium text-secondary" htmlFor={`ep-name-en-${plan.id}`}>
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor={`ep-name-en-${plan.id}`}>
             {dict.admin.plansNameEn}
           </label>
           <input id={`ep-name-en-${plan.id}`} value={state.nameEn} onChange={(e) => setState((c) => ({ ...c, nameEn: e.target.value }))} className={fieldClass} />
         </div>
         <div>
-          <label className="text-xs font-medium text-secondary" htmlFor={`ep-name-ur-${plan.id}`}>
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor={`ep-name-ur-${plan.id}`}>
             {dict.admin.plansNameUr}
           </label>
           <input id={`ep-name-ur-${plan.id}`} value={state.nameUr} onChange={(e) => setState((c) => ({ ...c, nameUr: e.target.value }))} className={fieldClass} dir="rtl" />
         </div>
         <div className="sm:col-span-2">
-          <label className="text-xs font-medium text-secondary" htmlFor={`ep-desc-${plan.id}`}>
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor={`ep-desc-${plan.id}`}>
             {dict.admin.plansDescription}
           </label>
           <textarea id={`ep-desc-${plan.id}`} rows={3} value={state.description} onChange={(e) => setState((c) => ({ ...c, description: e.target.value }))} className={fieldClass} />
         </div>
         <div>
-          <label className="text-xs font-medium text-secondary" htmlFor={`ep-price-${plan.id}`}>
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor={`ep-price-${plan.id}`}>
             {dict.admin.plansPricePaisa}
           </label>
           <input id={`ep-price-${plan.id}`} inputMode="numeric" value={state.pricePaisa} onChange={(e) => setState((c) => ({ ...c, pricePaisa: e.target.value }))} className={fieldClass} />
         </div>
         <div>
-          <label className="text-xs font-medium text-secondary" htmlFor={`ep-months-${plan.id}`}>
+          <label className="block mb-2 text-xs font-medium text-secondary" htmlFor={`ep-months-${plan.id}`}>
             {dict.admin.plansDurationMonths}
           </label>
           <input id={`ep-months-${plan.id}`} inputMode="numeric" value={state.durationMonths} onChange={(e) => setState((c) => ({ ...c, durationMonths: e.target.value }))} className={fieldClass} />

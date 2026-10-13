@@ -9,23 +9,25 @@ export function SelectField({
   value,
   onChange,
   options,
-  placeholder,
+  placeholder = "Select...",
   ariaLabel,
   isDisabled = false,
   isClearable = false,
   className,
   size = "md",
+  isSearchable = false,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   options: SelectOption[];
-  placeholder: string;
+  placeholder?: string;
   ariaLabel?: string;
   isDisabled?: boolean;
   isClearable?: boolean;
   className?: string;
   size?: "sm" | "md";
+  isSearchable?: boolean;
 }) {
   const isSm = size === "sm";
 
@@ -41,8 +43,10 @@ export function SelectField({
       value={options.find((option) => option.value === value) ?? null}
       onChange={(option) => onChange(option ? (option as SelectOption).value : "")}
       placeholder={placeholder}
-      isSearchable={false}
+      isSearchable={isSearchable}
       unstyled={false}
+      menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
+      menuPosition="fixed"
       styles={{
         control: (base, state) => ({
           ...base,
@@ -104,11 +108,11 @@ export function SelectField({
           borderRadius: 12,
           border: "1px solid #e2e8f0",
           boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04)",
-          zIndex: 50,
+          zIndex: 9999,
           maxHeight: 280,
           overflow: "hidden",
         }),
-        menuPortal: (base) => ({ ...base, zIndex: 60 }),
+        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
         menuList: (base) => ({
           ...base,
           padding: 4,

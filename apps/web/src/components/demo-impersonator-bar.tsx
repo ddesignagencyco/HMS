@@ -10,7 +10,7 @@ import {
   Home,
   ShieldCheck,
   UserCheck,
-  } from "lucide-react";
+} from "lucide-react";
 import type { Locale } from "@/lib/utils";
 
 interface DemoImpersonatorBarProps {
@@ -46,48 +46,48 @@ export function DemoImpersonatorBar({ locale }: DemoImpersonatorBarProps) {
   const onAuthRoute = pathname.includes("/auth/");
   if (onAuthRoute) return null;
 
-  const roles = [    {
-      name: "Home",
-      path: `/${locale}`,
-      roleBadge: "Home Page",
-      icon: Home,
-      color: "bg-amber-600 text-white",
-    },
-    {
-      name: "Customer",
-      path: `/${locale}/account`,
-      roleBadge: "Ayesha Khan (Customer)",
-      icon: UserCheck,
-      color: "bg-blue-600 text-white",
-    },
-    {
-      name: "Provider (Tradesman)",
-      path: `/${locale}/provider`,
-      roleBadge: "Ahmad Plumber (PWA Pro)",
-      icon: BriefcaseBusiness,
-      color: "bg-amber-600 text-white",
-    },
-    {
-      name: "Verification Agent",
-      path: `/${locale}/agent`,
-      roleBadge: "Agent Desk (SLA Telephony)",
-      icon: ClipboardCheck,
-      color: "bg-purple-600 text-white",
-    },
-    {
-      name: "Finance Officer",
-      path: `/${locale}/finance/escrow`,
-      roleBadge: "Finance Ledger (Double Entry)",
-      icon: CircleDollarSign,
-      color: "bg-emerald-600 text-white",
-    },
-    {
-      name: "Administrator",
-      path: `/${locale}/admin`,
-      roleBadge: "Admin Ops Control Room",
-      icon: ShieldCheck,
-      color: "bg-navy-950 text-yellow-400",
-    },
+  const roles = [{
+    name: "Home",
+    path: `/${locale}`,
+    roleBadge: "Home Page",
+    icon: Home,
+    color: "bg-amber-600 text-white",
+  },
+  {
+    name: "Customer",
+    path: `/${locale}/account`,
+    roleBadge: "Ayesha Khan (Customer)",
+    icon: UserCheck,
+    color: "bg-blue-600 text-white",
+  },
+  {
+    name: "Provider (Tradesman)",
+    path: `/${locale}/provider`,
+    roleBadge: "Ahmad Plumber (PWA Pro)",
+    icon: BriefcaseBusiness,
+    color: "bg-amber-600 text-white",
+  },
+  {
+    name: "Verification Agent",
+    path: `/${locale}/agent`,
+    roleBadge: "Agent Desk (SLA Telephony)",
+    icon: ClipboardCheck,
+    color: "bg-purple-600 text-white",
+  },
+  {
+    name: "Finance Officer",
+    path: `/${locale}/finance/escrow`,
+    roleBadge: "Finance Ledger (Double Entry)",
+    icon: CircleDollarSign,
+    color: "bg-emerald-600 text-white",
+  },
+  {
+    name: "Administrator",
+    path: `/${locale}/admin`,
+    roleBadge: "Admin Ops Control Room",
+    icon: ShieldCheck,
+    color: "bg-navy-950 text-yellow-400",
+  },
   ];
 
   const currentRole = roles.find((r) => pathname.includes(r.path.split("/")[2])) ?? roles[0];

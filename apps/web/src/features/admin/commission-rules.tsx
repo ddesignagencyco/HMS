@@ -30,6 +30,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { Button, Card, Label } from "@/components/ui";
+import { SelectField } from "@/components/select-field";
 import {
   adminApi,
   type CommissionRule,
@@ -146,25 +147,23 @@ function CommissionRuleForm({ locale, dict }: { locale: Locale; dict: Dictionary
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-5 max-w-3xl">
       <h2 className="font-semibold text-navy">{dict.admin.commissionNewTitle}</h2>
       <p className="mt-1 text-sm leading-6 text-secondary">{dict.admin.commissionNewText}</p>
 
       <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={submit}>
         <div>
           <Label htmlFor="commission-scope">{dict.admin.commissionScope}</Label>
-          <select
+          <SelectField
             id="commission-scope"
-            className={field}
             value={draft.scope}
-            onChange={(event) => setDraft((state) => ({ ...state, scope: event.target.value as Draft["scope"] }))}
-          >
-            {SCOPES.map((scope) => (
-              <option key={scope} value={scope}>
-                {dict.admin.commissionScopes[scope]}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setDraft((state) => ({ ...state, scope: val as Draft["scope"] }))}
+            options={SCOPES.map((scope) => ({
+              value: scope,
+              label: dict.admin.commissionScopes[scope],
+            }))}
+            placeholder={dict.admin.commissionScope}
+          />
         </div>
 
         <div>

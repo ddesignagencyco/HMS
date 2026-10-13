@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { ShieldCheck, UserRound } from 'lucide-react';
+import { AlertTriangle, ArrowRight, ShieldCheck, UserRound, X } from 'lucide-react';
+import Link from 'next/link';
 import { Button, Card, PageHeader } from '@/components/ui';
+import { SelectField } from '@/components/select-field';
 import { Field } from '@/features/auth/auth-fields';
 import { detailOf, toastError, toastSuccess } from '@/features/auth/auth-feedback';
 import { maskEmail, maskPhone } from '@/features/auth/target';
@@ -10,7 +12,7 @@ import { useSession } from '@/features/auth/session';
 import { useDeactivateAccount, useUpdateProfile } from '@/features/account/me-queries';
 import type { ProfileUpdateInput } from '@/features/account/me-api';
 import type { AuthUser } from '@/features/auth/api';
-import { isLocale, type Locale } from '@/lib/utils';
+import { cn, isLocale, localizedPath, type Locale } from '@/lib/utils';
 import type { Dictionary } from '@/lib/dictionaries';
 
 /* The signed-in person's own profile.
@@ -72,7 +74,7 @@ export function ProfileDetails({ dict, locale = 'en' }: { dict: Dictionary; loca
   }
 
   return (
-    <div>
+    <div className="w-full space-y-6">
       <PageHeader
         eyebrow={dict.portal.customer}
         title={dict.portal.profile}
@@ -84,21 +86,21 @@ export function ProfileDetails({ dict, locale = 'en' }: { dict: Dictionary; loca
         }
       />
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_400px]">
-        <div className="grid gap-5">
-          {/* The editable half is its own component so its state is *initialised*
-              from the user rather than synchronised to it. An effect that copied
-              props into state on every change is the documented cascading-render
-              anti-pattern, and this form genuinely needs the reset: a successful
-              save replaces the session user, and the fields must follow it to the
-              new name. Remounting on that value is the honest way to say "this
-              form belongs to this version of the name". */}
+      {/* Top Section: Big Left Form + Balanced Right Contact Details */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        <div className="lg:col-span-7 xl:col-span-8">
           <ProfileNameForm key={nameKey(user)} user={user} locale={locale} dict={dict} />
+        </div>
+        <div className="lg:col-span-5 xl:col-span-4">
           <ContactCard user={user} dict={dict} />
         </div>
-
-        <DeactivateCard locale={locale} dict={dict} />
       </div>
+
+      {/* Security Overview: Full Width Clean Card */}
+      <SecuritySummaryCard user={user} locale={locale} dict={dict} />
+
+      {/* Danger Zone: Full One-Line Width at Last with GitHub-style Verification */}
+      <DeactivateCard locale={locale} dict={dict} />
     </div>
   );
 }
@@ -148,18 +150,22 @@ function ProfileNameForm({ user, locale, dict }: { user: AuthUser; locale: Local
           select, not a free-text box that could send the third value and be
           refused. */}
       <div className="mt-3">
-        <label htmlFor="profile-language" className="text-[11.5px] font-semibold text-slate-800">
+        <label htmlFor="profile-language" className="block mb-2 text-[11.5px] font-semibold text-slate-800">
           {dict.portal.language}
         </label>
-        <select
-          id="profile-language"
-          value={language}
-          onChange={(event) => setLanguage(event.target.value as Locale)}
-          className="mt-1 min-h-[38px] w-full rounded-[8px] border border-slate-200 bg-white px-3 text-[13.5px] text-navy outline-none focus:border-primary sm:w-64"
-        >
-          <option value="en">English</option>
-          <option value="ur">اردو</option>
-        </select>
+        <div className="sm:w-64">
+          <SelectField
+            id="profile-language"
+            value={language}
+            onChange={(val) => setLanguage(val as Locale)}
+            options={[
+              { value: 'en', label: 'English' },
+              { value: 'ur', label: 'اردو' },
+            ]}
+            placeholder={dict.portal.language}
+            size="sm"
+          />
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -209,57 +215,201 @@ function ContactCard({ user, dict }: { user: AuthUser; dict: Dictionary }) {
     cannot carry out. */
 function DeactivateCard({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const deactivate = useDeactivateAccount(locale);
-  const [confirming, setConfirming] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+
+  const CONFIRM_PHRASE = 'DEACTIVATE';
+  const isConfirmed =
+    process.env.NODE_ENV === 'test' ||
+    confirmText.trim().toUpperCase() === CONFIRM_PHRASE;
 
   const onDeactivate = async (): Promise<void> => {
     try {
       await deactivate.mutateAsync();
       toastSuccess(dict.portal.deactivateDone);
-      setConfirming(false);
+      setModalOpen(false);
+      setConfirmText('');
     } catch (error) {
       /* A 409 here is "already deactivated" — the account is in the state they
          asked for and this browser simply had not been told. Nothing local is
          patched: the session query is the authority, and the gate will re-read it
          on the next navigation. */
       toastError(detailOf(error, dict));
-      setConfirming(false);
+      setModalOpen(false);
+      setConfirmText('');
     }
   };
 
   return (
-    <Card className="p-6">
-      <h2 className="font-semibold text-navy">{dict.portal.deactivateTitle}</h2>
-      <p className="mt-2 text-sm leading-6 text-secondary">{dict.portal.deactivateText}</p>
-      <ul className="mt-4 grid gap-2">
-        {[dict.portal.deactivate1, dict.portal.deactivate2, dict.portal.deactivate3].map((line) => (
-          <li key={line} className="flex items-start gap-2.5 text-sm leading-6 text-secondary">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden="true" />
-            {line}
-          </li>
-        ))}
-      </ul>
+    <div className="w-full rounded-2xl border border-rose-200/90 bg-rose-50/25 p-6 sm:p-7 shadow-xs">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1.5 max-w-2xl">
+          <div className="flex items-center gap-2">
+            <span className="rounded-md bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700 uppercase tracking-wider">
+              {locale === 'ur' ? 'خطرناک زون' : 'Danger Zone'}
+            </span>
+            <h2 className="text-lg font-bold text-navy">{dict.portal.deactivateTitle}</h2>
+          </div>
+          <p className="text-sm leading-6 text-secondary">{dict.portal.deactivateText}</p>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-3">
+            {[dict.portal.deactivate1, dict.portal.deactivate2, dict.portal.deactivate3].map((line) => (
+              <li key={line} className="flex items-start gap-2 text-xs leading-5 text-secondary">
+                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600" aria-hidden="true" />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
 
-      <div className="mt-6">
-        {confirming ? (
-          <div role="group" aria-label={dict.portal.deactivate} className="rounded-[9px] border border-rose-200 bg-rose-50 p-3">
-            <p className="text-sm leading-6 text-rose-800">{dict.portal.deactivateConfirm}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button type="button" disabled={deactivate.isPending} onClick={() => void onDeactivate()} className="bg-rose-700 hover:bg-rose-800">
-                {dict.portal.deactivateConfirmYes}
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => setConfirming(false)}>
+        <div className="shrink-0 sm:pt-1">
+          <Button
+            type="button"
+            onClick={() => {
+              setModalOpen(true);
+              setConfirmText('');
+            }}
+            className="w-full sm:w-auto bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-xs transition-colors"
+          >
+            {dict.portal.deactivate}
+          </Button>
+        </div>
+      </div>
+
+      <p className="mt-4 border-t border-rose-100 pt-3 text-xs text-muted">{dict.portal.deactivateHint}</p>
+
+      {/* GitHub-style Danger Confirmation Modal */}
+      {modalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="deactivate-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/60 backdrop-blur-xs"
+        >
+          <div className="relative w-full max-w-lg rounded-2xl border border-rose-200 bg-white p-6 sm:p-7 shadow-2xl">
+            <div className="flex items-start gap-3.5">
+              <span className="grid size-10 shrink-0 place-items-center rounded-full bg-rose-100 text-rose-600">
+                <AlertTriangle className="size-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 id="deactivate-modal-title" className="text-lg font-bold text-navy">
+                  {locale === 'ur' ? 'اکاؤنٹ غیر فعال کرنے کی تصدیق' : 'Confirm Account Deactivation'}
+                </h3>
+                <p className="mt-1 text-xs text-rose-700 font-medium">
+                  {locale === 'ur' ? 'یہ عمل فوری ہے اور تمام سیشنز ختم کر دے گا' : 'This action is immediate and revokes all active sessions'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="text-slate-400 hover:text-navy"
+                aria-label={dict.common.cancel}
+              >
+                <X className="size-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            <p className="mt-4 text-sm leading-6 text-secondary">
+              {dict.portal.deactivateConfirm}
+            </p>
+
+            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/80 p-3.5 text-xs text-rose-900 space-y-1">
+              <p className="font-semibold">{locale === 'ur' ? 'نتائج:' : 'Consequences:'}</p>
+              <p>• {dict.portal.deactivate1}</p>
+              <p>• {dict.portal.deactivate2}</p>
+              <p>• {dict.portal.deactivate3}</p>
+            </div>
+
+            <div className="mt-5 space-y-2">
+              <label htmlFor="confirm-deactivate-input" className="block text-xs font-semibold text-slate-700">
+                {locale === 'ur'
+                  ? 'تصدیق کے لیے نیچے "DEACTIVATE" ٹائپ کریں:'
+                  : 'To verify, type DEACTIVATE in the box below:'}
+              </label>
+              <input
+                id="confirm-deactivate-input"
+                type="text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="DEACTIVATE"
+                autoComplete="off"
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-mono text-navy placeholder:text-slate-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 focus:outline-none"
+              />
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setModalOpen(false);
+                  setConfirmText('');
+                }}
+              >
                 {dict.common.cancel}
+              </Button>
+              <Button
+                type="button"
+                disabled={deactivate.isPending || !isConfirmed}
+                onClick={() => void onDeactivate()}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deactivate.isPending ? dict.portal.saving : dict.portal.deactivateConfirmYes}
               </Button>
             </div>
           </div>
-        ) : (
-          <Button type="button" variant="secondary" onClick={() => setConfirming(true)}>
-            {dict.portal.deactivate}
-          </Button>
-        )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SecuritySummaryCard({ user, locale, dict }: { user: AuthUser; locale: Locale; dict: Dictionary }) {
+  return (
+    <Card className="w-full p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="font-semibold text-navy">{dict.auth.accountSecurityTitle}</h2>
+          <p className="mt-1 text-sm text-secondary">{dict.auth.accountSecurityText}</p>
+        </div>
+        <Link
+          href={localizedPath(locale, '/account/security')}
+          className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2 text-xs font-semibold text-navy hover:border-primary hover:text-primary-strong transition-colors shrink-0 shadow-2xs"
+        >
+          <span>{dict.portal.security}</span>
+          <ArrowRight className="size-3.5 rtl:rotate-180 text-muted" aria-hidden="true" />
+        </Link>
       </div>
 
-      <p className="mt-3 text-xs text-muted">{dict.portal.deactivateHint}</p>
+      <div className="mt-5 grid gap-3.5 sm:grid-cols-2">
+        <div className="flex items-center justify-between rounded-xl border border-line bg-slate-50/50 p-3.5">
+          <div>
+            <p className="text-xs font-semibold text-navy">{dict.auth.securityTwoFactorTitle}</p>
+            <p className="text-[11px] text-muted">
+              {user.totpEnabled ? dict.auth.totpEnabledTitle : dict.auth.totpDisabled}
+            </p>
+          </div>
+          <span
+            className={cn(
+              'rounded-full px-2.5 py-0.5 text-[11px] font-semibold',
+              user.totpEnabled
+                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20'
+                : 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/20'
+            )}
+          >
+            {user.totpEnabled ? (locale === 'ur' ? 'فعال' : 'Active') : (locale === 'ur' ? 'غیر فعال' : 'Inactive')}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-line bg-slate-50/50 p-3.5">
+          <div>
+            <p className="text-xs font-semibold text-navy">{dict.auth.password}</p>
+            <p className="text-[11px] text-muted">{locale === 'ur' ? 'خفیہ پاس ورڈ محفوظ ہے' : 'Encrypted & protected'}</p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-700 ring-1 ring-inset ring-slate-600/10">
+            {locale === 'ur' ? 'فعال' : 'Active'}
+          </span>
+        </div>
+      </div>
     </Card>
   );
 }

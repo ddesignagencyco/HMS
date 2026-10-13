@@ -383,17 +383,19 @@ export function CustomerPlansScreen({ locale, dict }: Props) {
                 </Link>
               </Card>
             ) : (
-              <div className="mt-3">
-                <label className="text-sm font-medium text-navy" htmlFor="plan-address">
+              <div className="mt-3 sm:max-w-md">
+                <label className="block mb-2 text-sm font-semibold text-navy" htmlFor="plan-address">
                   {dict.portal.planSelectAddress}
                 </label>
                 <select
                   id="plan-address"
                   value={addressId}
                   onChange={(event) => setAddressId(event.target.value)}
-                  className="mt-1.5 w-full rounded-[9px] border border-line bg-white px-3 py-2.5 text-sm text-navy sm:max-w-md"
+                  className="min-h-[42px] w-full rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-medium text-navy shadow-none outline-none focus:border-slate-400"
                 >
-                  <option value="">{dict.portal.planSelectAddress}</option>
+                  <option value="" disabled>
+                    {dict.portal.planSelectAddress}
+                  </option>
                   {saved.map((address) => (
                     <option key={address.id} value={address.id}>
                       {address.label} — {address.line1}

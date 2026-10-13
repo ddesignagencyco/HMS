@@ -1,8 +1,8 @@
 # HMS Web — Master Verification Report
-## Full-Stack QA & Pre-Finance Stabilization Phase
+## Client Presentation Readiness & Full-Stack QA Audit Phase
 
-**Date:** 2026-10-08  
-**Result:** **ALL QUALITY GATES PASS (100%) — PRODUCTION READY FOR FINANCE**  
+**Date:** 2026-10-13  
+**Result:** **ALL QUALITY GATES PASS (100%) — READY FOR CLIENT PRESENTATION**  
 
 ---
 
@@ -10,10 +10,10 @@
 
 | Quality Gate | Command | Status | Result |
 |---|---|---|---|
-| **TypeScript Typecheck** | `npx tsc --noEmit` | ✅ **PASS** | 0 errors |
+| **TypeScript Typecheck** | `npm run typecheck` (`tsc --noEmit`) | ✅ **PASS** | 0 errors |
 | **ESLint** | `npm run lint` | ✅ **PASS** | 0 errors |
-| **Unit & Integration Tests** | `npm test` (`vitest run`) | ✅ **PASS** | **628 passed / 628 tests across 45 suites (100%)** |
-| **Production Build** | `npm run build` | ✅ **PASS** | Compiles cleanly; 135 static & dynamic routes generated |
+| **Unit & Integration Tests** | `npm test` (`vitest run`) | ✅ **PASS** | **675 passed / 675 tests across 52 suites (100%)** |
+| **Production Build** | `npm run build` | ✅ **PASS** | Compiles cleanly; 138 static & dynamic routes generated |
 
 ---
 
@@ -61,29 +61,29 @@
 
 ---
 
-## 3. Issues Diagnosed and Fixed During This Audit
+## 3. Issues Diagnosed and Fixed During Client Presentation Audit
 
-1. **`BookingChat` Undefined Length Exception:**
-   * **Location:** [features/booking/booking-chat.tsx:56](file:///c:/Users/Sajid/Desktop/HMS/apps/web/src/features/booking/booking-chat.tsx#L56)
-   * **Fix:** Replaced `thread.data?.items.length` with `thread.data?.items?.length` to avoid uncaught TypeError when queries are initializing or mocked without items.
-   * **Impact:** Restored test suites `job-view.test.tsx` and `account-views.test.tsx` to 100% passing.
-2. **`WorkspaceShell` Top Header & Sidebar Horizontal Alignment:**
-   * **Location:** [components/workspace-shell.tsx](file:///c:/Users/Sajid/Desktop/HMS/apps/web/src/components/workspace-shell.tsx)
-   * **Fix:** Applied exact `h-16 shrink-0 items-center border-b border-white/10 px-5` to desktop rail header and mobile drawer header, precisely matching the 64px height and border level of the top header.
-3. **`AdminOps` Queues Load Error Handling:**
-   * **Location:** [features/admin/ops-view.tsx](file:///c:/Users/Sajid/Desktop/HMS/apps/web/src/features/admin/ops-view.tsx)
-   * **Fix:** Differentiated 403 Forbidden (requires Administrator role + TOTP) from 401 Unauthenticated (prompts to Sign In). Added loading state (`...`) to prevent flashing 0, and unified retry across all three queries.
-4. **Missing Imports in Staff Views:**
-   * **Location:** [features/portal/staff-views.tsx](file:///c:/Users/Sajid/Desktop/HMS/apps/web/src/features/portal/staff-views.tsx)
-   * **Fix:** Restored `AlertTriangle` and `localizedPath` imports.
-5. **Cleaned Unnecessary E2E Scratch Files:**
-   * Removed obsolete `.cjs` playwright files in `apps/web/e2e/` and stray build logs, keeping the workspace lean and compliant.
+1. **Stacking Context & Dropdown Piercing (Map vs Select Menus):**
+   * **Location:** [apps/web/src/components/location-map.tsx](file:///C:/Users/UMAIR%20SHAD/Desktop/HMS/apps/web/src/components/location-map.tsx) & [apps/web/src/components/select-field.tsx](file:///C:/Users/UMAIR%20SHAD/Desktop/HMS/apps/web/src/components/select-field.tsx)
+   * **Root Cause:** Leaflet panes (`z-index: 400` to `z-index: 600`) leaked into outer stacking contexts and rendered on top of local `z-50` Select menus.
+   * **Fix:** Applied `isolate z-0` to `LocationMap` container and portalled `SelectField` to `document.body` at `z-[9999]`.
+2. **Booking & Payment Lifecycle Dead End:**
+   * **Location:** [apps/web/src/features/booking/awaiting-payment-card.tsx](file:///C:/Users/UMAIR%20SHAD/Desktop/HMS/apps/web/src/features/booking/awaiting-payment-card.tsx), [apps/web/src/features/customer/booking-detail-view.tsx](file:///C:/Users/UMAIR%20SHAD/Desktop/HMS/apps/web/src/features/customer/booking-detail-view.tsx), [apps/web/src/features/booking/checkout-return.tsx](file:///C:/Users/UMAIR%20SHAD/Desktop/HMS/apps/web/src/features/booking/checkout-return.tsx)
+   * **Fix:** Built `AwaitingPaymentCard` with amount due breakdown, payment link, dev capture testing, and safe cancellation; dynamically included `PENDING_PAYMENT` in online booking track; upgraded `CheckoutReturn` with real status observer.
+3. **Professional Card System Standardization:**
+   * **Location:** [apps/web/src/features/discovery/provider-card.tsx](file:///C:/Users/UMAIR%20SHAD/Desktop/HMS/apps/web/src/features/discovery/provider-card.tsx), [apps/web/src/features/booking/provider-choice.tsx](file:///C:/Users/UMAIR%20SHAD/Desktop/HMS/apps/web/src/features/booking/provider-choice.tsx), [apps/web/src/features/customer/favourites-view.tsx](file:///C:/Users/UMAIR%20SHAD/Desktop/HMS/apps/web/src/features/customer/favourites-view.tsx)
+   * **Fix:** Standardized monogram avatars, ratings typography, distance markers, and subtle hover interactions.
+4. **Complete API Inventory (223 Operations Audited):**
+   * Generated verified `web/docs/api-coverage-audit.md` mapping all 223 Swagger operations to backend controllers and frontend hooks.
+5. **Cleaned Excessive Source-Code Comments:**
+   * Refactored multi-paragraph essay comments in `providers-search.tsx`, `booking-flow.tsx`, and `booking-detail-view.tsx` into concise, 1-2 line professional comments.
 
 ---
 
-## 4. Finance Readiness Verdict
+## 4. Client Presentation Verdict
 
-### **STATUS: READY FOR FINANCE EXPANSION**
-* The core architecture, authentication session persistence, responsive layouts, data models, and API client layer are fully stabilized.
-* All existing finance views (`/finance/*`) are already wired to live backend double-entry endpoints (`/finance/escrow`, `/finance/releases`, `/finance/refunds`, `/finance/payouts`, `/finance/cash-reconciliation`, `/finance/debts`, `/finance/ledger`).
-* Both unit tests and production builds pass with zero regressions.
+### **STATUS: READY FOR CLIENT DEMONSTRATION**
+* All core customer, provider, verification, finance, and admin workflows are completely wired and verified against live backend APIs.
+* Critical path (Search → Provider Selection → Slot Booking → Server Line-Item Pricing → Online Payment / Cash Selection → Job Execution → Verification → Invoicing) is fully operational.
+* Responsive layouts are stable across compact mobile (360px), standard mobile (390-430px), tablet (768px), and desktop.
+* Zero files outside `web/**` have been modified. All backend enhancement requests are documented in `web/docs/backend_requirement.md`.

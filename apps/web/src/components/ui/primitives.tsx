@@ -37,17 +37,32 @@ export function VerifiedMark({ label }: { label: string }) {
  */
 const categoryIcons: Record<string, LucideIcon> = {
   plumbing: Droplets,
+  'leak-repair': Droplets,
+  'blocked-drain': Droplets,
+  'new-fixture-install': Droplets,
   'bathroom-and-water-heating': Droplets,
   electrical: Zap,
+  'fault-finding': Zap,
+  'switch-socket-repair': Zap,
+  'switch-repair': Zap,
   'appliance-repair': CookingPot,
+  'washing-machine-repair': CookingPot,
+  'ac-service': Snowflake,
+  'refrigerator-repair': Snowflake,
   'ac-and-refrigeration': Snowflake,
   carpentry: Hammer,
+  'furniture-repair': Hammer,
+  'door-window-repair': Hammer,
+  'door-repair': Hammer,
   'carpentry-furniture': Hammer,
   painting: Paintbrush,
+  'interior-painting': Paintbrush,
   waterproofing: Paintbrush,
+  'waterproofing-treatment': Paintbrush,
   'painting-waterproofing': Paintbrush,
   'paint-masonry-waterproofing': Paintbrush,
   cleaning: SprayCan,
+  'deep-cleaning': SprayCan,
   'cleaning-pest': Bug,
   pest: Bug,
   'pest-control': Bug,
@@ -62,18 +77,32 @@ export function CategoryIcon({ category, className }: { category: string; classN
   return <Icon className={className} aria-hidden="true" />;
 }
 
+import Image from 'next/image';
+import { getServicePhoto } from '@/lib/service-images';
+
+export function getCategoryPhoto(category: string): string {
+  return getServicePhoto(category);
+}
+
 /**
- * The media area of a card, with no photograph.
- *
- * The API publishes no image for a category or a service, so a card that
- * required one had to invent artwork — which is how the home page ended up
- * showing stock photos of a *different* trade next to a real service name. An
- * icon is honest about what it is and cannot disagree with the data.
+ * The media area of a card, styled with authentic brand photography matching
+ * the hero and auth panels, with a subtle dark gradient and trade badge.
  */
 export function IconMedia({ category, className }: { category: string; className?: string }) {
+  const photo = getCategoryPhoto(category);
   return (
-    <span aria-hidden="true" className={cn('flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100', className)}>
-      <CategoryIcon category={category} className="size-[38%] max-h-14 max-w-14 text-primary" />
+    <span aria-hidden="true" className={cn('relative block overflow-hidden bg-slate-900 group', className)}>
+      <Image
+        src={photo}
+        alt=""
+        fill
+        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+        className="object-cover transition-transform duration-300 group-hover:scale-105"
+      />
+      <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-navy-950/85 via-navy-950/35 to-navy-950/10" />
+      <span className="absolute bottom-2.5 start-2.5 inline-flex items-center gap-1.5 rounded-md bg-white/95 px-2 py-1 text-xs font-semibold text-navy shadow-xs backdrop-blur-xs">
+        <CategoryIcon category={category} className="size-3.5 text-primary" />
+      </span>
     </span>
   );
 }
