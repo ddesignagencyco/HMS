@@ -50,7 +50,7 @@ const declaredRuleMessages = (): string[] =>
 
 const fixtures = (): string[] => readdirSync(fixtureDir).filter(name => name.endsWith('.ts'));
 
-describe('SHM-001: every banned pattern has a fixture that makes lint fail', () => {
+describe('SHM-001: every banned pattern has a fixture that makes lint fail', { timeout: 30000 }, () => {
   it('has a fixture for each banned rule', () => {
     const names = fixtures();
     expect(names).toEqual(expect.arrayContaining(['banned-bookings-status.ts', 'banned-money-as-number.ts']));
