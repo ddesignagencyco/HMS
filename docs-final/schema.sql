@@ -776,7 +776,10 @@ CREATE TABLE verification_calls (
          OR (coalesce(extra_charge_demanded,false) = false AND coalesce(work_completed,'FULL') <> 'NONE')),
   CHECK (outcome IS NULL OR outcome NOT IN ('VERIFIED_SATISFIED','VERIFIED_WITH_ISSUE') OR consent_to_release IS TRUE),
   -- Only a customer's own confirmation arrives through a transport; an agent's submission and the 72-hour sweep leave it null.
-  CHECK (confirmed_via IS NULL OR outcome IN ('LINK_CONFIRMED','AUTO_RELEASED'))
+  -- Named to match the migration that added it (20261013120000): unnamed CHECKs get auto-named
+  -- verification_calls_checkN, which is drift the schema-fidelity check catches.
+  CONSTRAINT verification_confirmed_via_matches_outcome
+    CHECK (confirmed_via IS NULL OR outcome IN ('LINK_CONFIRMED','AUTO_RELEASED'))
 );
 CREATE INDEX verification_queue_idx ON verification_calls(priority, sla_due_at) WHERE status = 'QUEUED';
 CREATE INDEX verification_calls_status_idx ON verification_calls(status, tier);

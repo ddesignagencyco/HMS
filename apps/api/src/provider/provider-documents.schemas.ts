@@ -7,7 +7,15 @@ import { z } from 'zod';
  * upload would let anything be parked in the documents bucket and later be served
  * back from a signed link as if it were a CNIC scan.
  */
-export const documentContentTypes = ['image/jpeg', 'image/png', 'application/pdf'] as const;
+export const documentContentTypes = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime'
+] as const;
 
 const contentType = z.enum(documentContentTypes, { errorMap: () => ({ message: `A document must be one of ${documentContentTypes.join(', ')}` }) });
 

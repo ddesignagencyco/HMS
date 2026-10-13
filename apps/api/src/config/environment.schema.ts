@@ -74,6 +74,11 @@ export const environmentSchema = z
     TELEPHONY_PROVIDER: z.string().min(1).default('mock'),
     WHATSAPP_PROVIDER: z.string().min(1).default('mock'),
     STORAGE_PROVIDER: z.string().min(1).default('mock'),
+    SUPABASE_URL: z.string().url().optional(),
+    SUPABASE_SECRET_KEY: z.string().min(1).optional(),
+    SUPABASE_STORAGE_BUCKET: z.string().min(1).default('verification-documents'),
+    SUPABASE_PUBLISHABLE_KEY: z.string().min(1).optional(),
+    SUPABASE_JWKS_URL: z.string().url().optional(),
     MOCK_PAYMENT_WEBHOOK_SECRET: z.string().min(16),
 
     STORAGE_BUCKETS: csv.default('evidence,documents,recordings,reports'),
@@ -114,8 +119,15 @@ export const environmentSchema = z
       if (value.OTP_PEPPER === value.JWT_ACCESS_SECRET) add('OTP_PEPPER', 'The OTP pepper must not reuse a JWT secret');
       if (value.CNIC_ENCRYPTION_KEY === value.TOTP_ENCRYPTION_KEY) add('CNIC_ENCRYPTION_KEY', 'The CNIC key must not reuse the TOTP key');
     }
-    for (const key of ['PAYMENT_PROVIDER', 'SMS_PROVIDER', 'EMAIL_PROVIDER', 'MAPS_PROVIDER', 'TELEPHONY_PROVIDER', 'WHATSAPP_PROVIDER', 'STORAGE_PROVIDER'] as const) {
+    for (const key of ['PAYMENT_PROVIDER', 'SMS_PROVIDER', 'EMAIL_PROVIDER', 'MAPS_PROVIDER', 'TELEPHONY_PROVIDER', 'WHATSAPP_PROVIDER'] as const) {
       if (value[key] !== 'mock') add(key, `Only the mock adapter is wired in this increment; ${key} must be "mock"`);
+    }
+    if (value.STORAGE_PROVIDER !== 'mock' && value.STORAGE_PROVIDER !== 'supabase') {
+      add('STORAGE_PROVIDER', 'STORAGE_PROVIDER must be "mock" or "supabase"');
+    }
+    if (value.STORAGE_PROVIDER === 'supabase') {
+      if (!value.SUPABASE_URL) add('SUPABASE_URL', 'SUPABASE_URL is required when STORAGE_PROVIDER is "supabase"');
+      if (!value.SUPABASE_SECRET_KEY) add('SUPABASE_SECRET_KEY', 'SUPABASE_SECRET_KEY is required when STORAGE_PROVIDER is "supabase"');
     }
     if (value.STORAGE_BUCKETS.length === 0) add('STORAGE_BUCKETS', 'At least one storage bucket is required');
 

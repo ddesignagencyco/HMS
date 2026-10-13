@@ -15,7 +15,10 @@ const BUCKET = 'documents';
 /** SHM-022: "viewing via 5-min signed URLs". The storage mock rejects a TTL outside 1..900. */
 const SIGNED_URL_SECONDS = 300;
 const MAX_DOCUMENT_BYTES = 5_242_880;
+const MAX_VIDEO_BYTES = 52_428_800;
 const PRISMA_UNIQUE_VIOLATION = 'P2002';
+
+const maxBytesFor = (contentType: string): number => (contentType.startsWith('video/') ? MAX_VIDEO_BYTES : MAX_DOCUMENT_BYTES);
 
 export type ProviderDocumentRow = {
   id: string;
@@ -65,8 +68,9 @@ export class ProviderDocumentsService {
    */
   async presign(providerId: string, input: DocumentPresignInput): Promise<{ storageKey: string; url: string; method: 'PUT'; expiresAt: string; maxBytes: number }> {
     const storageKey = this.storageKeyFor(providerId, input.docType, randomUUID());
-    const upload = await this.storage.presignPut({ key: storageKey, bucket: BUCKET, contentType: input.contentType, maxBytes: MAX_DOCUMENT_BYTES });
-    return { storageKey, url: upload.url, method: upload.method, expiresAt: upload.expiresAt, maxBytes: MAX_DOCUMENT_BYTES };
+    const maxBytes = maxBytesFor(input.contentType);
+    const upload = await this.storage.presignPut({ key: storageKey, bucket: BUCKET, contentType: input.contentType, maxBytes });
+    return { storageKey, url: upload.url, method: upload.method, expiresAt: upload.expiresAt, maxBytes };
   }
 
   /**
@@ -213,7 +217,8 @@ export class ProviderDocumentsService {
     if (contentType === undefined || contentBase64 === undefined) throw new DomainError('VALIDATION_FAILED', 'An inline upload needs contentType and contentBase64');
     const content = Buffer.from(contentBase64, 'base64');
     if (content.byteLength === 0) throw new DomainError('UPLOAD_REJECTED', 'The document is empty');
-    if (content.byteLength > MAX_DOCUMENT_BYTES) throw new DomainError('UPLOAD_REJECTED', `The document is larger than the ${MAX_DOCUMENT_BYTES} byte limit`);
+    const maxBytes = maxBytesFor(contentType);
+    if (content.byteLength > maxBytes) throw new DomainError('UPLOAD_REJECTED', `The document is larger than the ${maxBytes} byte limit`);
     const storageKey = this.storageKeyFor(providerId, input.docType, input.clientUuid ?? randomUUID());
     await this.storage.put({ key: storageKey, bucket: BUCKET, content, contentType });
     return storageKey;
