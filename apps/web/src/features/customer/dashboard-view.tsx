@@ -1,12 +1,13 @@
 'use client';
 
-import { AlertTriangle, ClipboardCheck, ReceiptText, ShieldCheck, Wallet } from 'lucide-react';
+import { AlertTriangle, ArrowRight, ClipboardCheck, ReceiptText, ShieldCheck, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { Card, PageHeader, StatCard, StatusBadge } from '@/components/ui';
 import { useMyBookings } from '@/features/booking/queries';
 import type { Booking, BookingStatus } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
+import { CONFIRM_WORK_ANCHOR } from '@/features/verification/confirm-work-card';
 import { useMyComplaints } from '@/features/complaints/queries';
 import type { Dictionary } from '@/lib/dictionaries';
 import { formatDateTime, formatMoney, formatNumber, localizedPath, type Locale } from '@/lib/utils';
@@ -63,7 +64,12 @@ export function CustomerDashboardScreen({ locale, dict }: { locale: Locale; dict
   /** Later than now — the old screen compared against a literal date string. */
   const upcoming = rows.filter((row) => new Date(row.scheduledStart).getTime() >= now && LIVE.has(row.status));
 
-  const heldPaisa = rows.filter((row) => HELD.has(row.paymentStatus)).reduce((sum, row) => sum + row.quotedAmountPaisa, 0);
+  /* What is actually held: the closing figure once the job is done, the approved
+     total before that. The quote alone ignores any revision the customer took. */
+  const heldPaisa = rows.filter((row) => HELD.has(row.paymentStatus)).reduce((sum, row) => sum + (row.finalAmountPaisa ?? row.approvedTotalPaisa), 0);
+
+  /* FR-VC-16: finished jobs waiting on the customer's own answer. */
+  const toConfirm = rows.filter((row) => row.canSelfVerify);
 
   const raised = complaints.data?.items ?? [];
   /* `raisedBy` null means it came from the receipt link, where nobody signed in —
@@ -81,6 +87,8 @@ export function CustomerDashboardScreen({ locale, dict }: { locale: Locale; dict
           {dict.portal.complaintSlaBreached.replace('{count}', formatNumber(breached.length, locale))}
         </p>
       ) : null}
+
+      <ConfirmWorkCallout locale={locale} dict={dict} items={toConfirm} names={names} />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={ClipboardCheck} label={dict.portal.activeBookings} value={formatNumber(live.length, locale)} />
@@ -121,6 +129,42 @@ export function CustomerDashboardScreen({ locale, dict }: { locale: Locale; dict
         </Card>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Finished jobs waiting for the customer's "confirm the work" answer (FR-VC-16).
+ *
+ * The form lives on the booking page; this is the way to it. There is no push or
+ * SMS for it yet, so without this a customer has to stumble on the form.
+ */
+export function ConfirmWorkCallout({ locale, dict, items, names }: { locale: Locale; dict: Dictionary; items: Booking[]; names: Map<number, string> }) {
+  if (items.length === 0) return null;
+  return (
+    <section aria-labelledby="confirm-work-callout" className="mt-6 rounded-[14px] border border-primary/25 bg-blue-50/60 p-5">
+      <h2 id="confirm-work-callout" className="flex items-center gap-2 font-semibold text-navy">
+        <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+        {dict.confirmWork.calloutTitle}
+      </h2>
+      <p className="mt-1 text-sm leading-6 text-secondary">{dict.confirmWork.calloutText}</p>
+      <ul className="mt-4 grid gap-2">
+        {items.map((booking) => (
+          <li key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-line bg-white p-3">
+            <div className="min-w-0">
+              <p className="font-medium text-navy">{names.get(booking.serviceId) ?? booking.code}</p>
+              <p className="mt-0.5 font-mono text-xs text-muted">{booking.code}</p>
+            </div>
+            <Link
+              href={localizedPath(locale, `/account/bookings/${booking.id}#${CONFIRM_WORK_ANCHOR}`)}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-[9px] bg-primary px-3.5 text-sm font-semibold text-white hover:bg-primary-strong"
+            >
+              {dict.confirmWork.calloutAction}
+              <ArrowRight className="size-4 rtl:rotate-180" aria-hidden="true" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -178,6 +222,14 @@ export function BookingTable({ locale, dict, items, names, total = items.length 
               <td className="p-4 text-secondary">{formatDateTime(booking.scheduledStart, locale)}</td>
               <td className="p-4">
                 <StatusBadge status={booking.status} label={dict.bookingStatus[booking.status]} />
+                {booking.canSelfVerify ? (
+                  <Link
+                    href={localizedPath(locale, `/account/bookings/${booking.id}#${CONFIRM_WORK_ANCHOR}`)}
+                    className="mt-1.5 block text-xs font-semibold text-primary-strong underline"
+                  >
+                    {dict.confirmWork.pill}
+                  </Link>
+                ) : null}
               </td>
               <td className="p-4 font-semibold text-navy tabular-nums">{formatMoney(booking.finalAmountPaisa ?? booking.approvedTotalPaisa, locale)}</td>
             </tr>

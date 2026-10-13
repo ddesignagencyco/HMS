@@ -50,6 +50,19 @@ All frontend modules in `apps/web` have undergone complete verification, field-b
 | **Emergency Booking** | Blocked with "No start times are free on this day" when emergency was checked. | Automatically assigns immediate 60-minute dispatch slot, allowing instant checkout continuation. |
 | **Time Slot Organization** | Unorganized flat grid of dozens of time buttons. | Grouped into clean 30-minute intervals by period (Morning, Afternoon, Evening). |
 
+### 2026-10-14 — FR-VC-16 "Confirm the work" (backend `618c471`)
+
+| Area | Prior Behavior | Updated Behavior |
+|---|---|---|
+| **Confirm the work** | A finished job waited on an agent's call (or a 72-hour auto-release); the customer had no way to confirm or rate it. | `ConfirmWorkSection` on `/account/bookings/:id` (shown from `canSelfVerify`): server-driven questionnaire, four required 1–5 radio ratings, explicit release consent, "no work"/"extra charge" force the problem path, `422` → field errors, `409` → re-read + `detail`, `ESCALATED` as reassurance with no retry, cash never shown as paid. Full `en` + `ur`. |
+| **Entry points** | Dashboard counted `AWAITING_VERIFICATION` as neither live nor anything; nothing pointed at the form. | "Finished jobs waiting for you" callout on `/account` and `/account/bookings`, plus a per-row "Confirm the work" link, all deep-linking to `#confirm-work` (scrolled to and focused). |
+| **Bookings tabs** | `PENDING_PAYMENT`, `ACCEPTED`, `WORK_COMPLETED`, `REWORK_REQUIRED`, `VERIFIED`, `DISPUTED` fell into "Closed". | Grouped as live / finishing, so jobs needing action aren't filed with history. |
+| **Booking detail** | Raw `paymentStatus` (`CASH_DUE`), hardcoded en/ur ternary for the profile link, provider UUID read to screen readers, warranty offered at every status, complaint/warranty panels opened off-screen. | Localized payment-status labels, dictionary string, UUID removed, warranty only at `PAYMENT_RELEASED`, panels scroll into view. |
+| **Dashboard money held** | Summed `quotedAmountPaisa`, ignoring revisions and the final figure. | Sums `finalAmountPaisa ?? approvedTotalPaisa`. |
+| **Provider job** | Auto-release notice was a hardcoded en/ur ternary; `Date.now()` read during render (lint error). | Dictionary string; clock seeded once. Cash hint now says the customer can confirm in their app. |
+
+Backend gaps found while building this (form reopens after `ESCALATED`, English-only server sentences, no notification, no read-back) are logged in `backend_requirement.md` §5.
+
 ---
 
 ## 3. Documentation Structure

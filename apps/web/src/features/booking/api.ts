@@ -144,6 +144,16 @@ export type Booking = {
    * Added in API commit f66ef03 (booking.row.ts).
    */
   canConfirmCashReceived: boolean;
+  /**
+   * Whether the customer may fill in their own "confirm the work" form (FR-VC-16).
+   *
+   * Derived server-side from the transition table, exactly like
+   * `canConfirmCashReceived`: it decides whether the card is *shown*. Whether a
+   * submission will be *accepted* is `canSubmit` on
+   * `GET /bookings/:id/verification/confirmation` — an agent can claim the call
+   * between the two reads, so the two may disagree in that one direction.
+   */
+  canSelfVerify: boolean;
 };
 
 /**

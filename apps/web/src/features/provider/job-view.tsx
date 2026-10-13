@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, Navigation, PhoneCall, TrendingUp } from 'lucide-react';
+import { ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, Navigation, PhoneCall, TrendingUp } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Button, Card, FileInput, Input, Label, PageHeader, Textarea } from '@/components/ui';
@@ -895,6 +895,10 @@ function ActionsCard({
   onCash: () => void;
   onRevision: () => void;
 }) {
+  /* Seeded once: reading the clock in the render body is impure, and a
+     half-hour threshold needs no ticker. */
+  const [now] = useState(() => Date.now());
+
   if (TERMINAL.has(booking.status)) {
     return (
       <Card className="p-6">
@@ -912,7 +916,7 @@ function ActionsCard({
      button is gated on it. The checklist gate is separate and invisible to them
      (§3.11), which the screen says rather than hides. */
   const photosReady = hasBefore && hasAfter;
-  const isTooEarly = new Date(booking.scheduledStart).getTime() > Date.now() + 30 * 60 * 1000;
+  const isTooEarly = new Date(booking.scheduledStart).getTime() > now + 30 * 60 * 1000;
 
   return (
     <Card className="p-6">
@@ -1042,9 +1046,7 @@ function ActionsCard({
           <p className="text-sm leading-6 text-secondary">{dict.job.cashExplainer}</p>
           {booking.status === 'AUTO_RELEASED' ? (
             <p className="rounded-[6px] border border-emerald-200 bg-emerald-50 p-2.5 text-xs leading-5 text-emerald-800">
-              {locale === 'ur'
-                ? "گاہک سے رابطہ ممکن نہیں ہو سکا۔ سسٹم نے خودکار طور پر نقد رقم وصول کرنے کی منظوری دے دی ہے۔ براہ کرم رقم وصول کریں اور نیچے تصدیق کریں۔"
-                : "Customer was unreachable for phone verification — payment collection has been automatically authorised by the platform. Please collect cash and confirm receipt below."}
+              {dict.job.cashAutoReleased}
             </p>
           ) : null}
           <Button type="button" onClick={onCash} disabled={pending || !booking.canConfirmCashReceived}>

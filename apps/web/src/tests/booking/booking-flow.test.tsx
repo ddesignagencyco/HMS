@@ -111,7 +111,8 @@ const created: Booking = {
   issueOptionId: null,
   isOnBehalf: false,
   onBehalfName: null,
-  canConfirmCashReceived: false
+  canConfirmCashReceived: false,
+  canSelfVerify: false
 };
 
 type Routes = {

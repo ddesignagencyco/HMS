@@ -2,15 +2,16 @@
 
 import { AlertTriangle, ArrowRight, CalendarDays, FileWarning, Receipt, ShieldCheck, UserRound } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Label, PageHeader, Textarea } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
 import { ProblemPhotos, canAttachProblemPhotos } from '@/features/booking/booking-detail';
-import { BookingInvoiceCard, InvoiceDownload, isInvoiceReady } from '@/features/booking/invoice-download';
+import { InvoiceDownload, isInvoiceReady } from '@/features/booking/invoice-download';
 import { BookingChat } from '@/features/booking/booking-chat';
 import { StartCodeCard } from '@/features/booking/start-code-card';
 import { RevisionCard } from '@/features/booking/revision-card';
 import { AwaitingPaymentCard } from '@/features/booking/awaiting-payment-card';
+import { ConfirmWorkSection } from '@/features/verification/confirm-work-card';
 import { useBooking, useOnBehalfContact, useWarrantyClaim } from '@/features/booking/queries';
 import type { BookingStatus } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
@@ -44,6 +45,18 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
   const [localError, setLocalError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+
+  /* Both panels open at the foot of the main column while their buttons sit in
+     the side column, so on a long page opening one used to change nothing the
+     customer could see. Bring the panel to them. */
+  const complaintRef = useRef<HTMLDivElement>(null);
+  const warrantyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (raising) complaintRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [raising]);
+  useEffect(() => {
+    if (warrantyOpen) warrantyRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [warrantyOpen]);
 
   const service = useMemo(() => services.data?.items.find((entry) => entry.id === booking.data?.serviceId), [services.data, booking.data?.serviceId]);
 
@@ -150,6 +163,11 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
           {/* Awaiting online payment action card */}
           <AwaitingPaymentCard locale={locale} dict={dict} booking={current} />
 
+          {/* FR-VC-16: the customer confirms and rates their own finished job. First
+              in the column because it is the one thing on the page waiting on
+              them, and it is the only way some jobs ever get paid out. */}
+          <ConfirmWorkSection locale={locale} dict={dict} booking={current} onRaiseComplaint={() => setRaising(true)} />
+
           {/* Where it is, read off the row. A status the track does not name — a
               cancellation, a no-show, a dispute — is reported as itself rather than
               forced into a step it never reached. */}
@@ -216,10 +234,9 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
                           href={localizedPath(locale, `/providers/${current.providerId}`)}
                           className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-strong hover:underline pt-0.5"
                         >
-                          <span>{locale === 'ur' ? 'پروفائل اور جائزے دیکھیں' : 'View Profile & Reviews'}</span>
+                          <span>{dict.portal.viewProfileReviews}</span>
                           <ArrowRight className="size-3" aria-hidden="true" />
                         </Link>
-                        <span className="sr-only">{current.providerId}</span>
                       </div>
                     )}
                   </div>
@@ -241,6 +258,7 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
 
           {/* Raising a complaint. Real categories, real floor, real endpoint. */}
           {raising ? (
+            <div ref={complaintRef} className="scroll-mt-24">
             <Card className="p-5">
               <h2 className="font-semibold text-navy">{dict.portal.raiseComplaint}</h2>
               <p className="mt-1.5 text-sm leading-6 text-secondary">{dict.portal.raiseComplaintText}</p>
@@ -290,9 +308,11 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
                 </div>
               </div>
             </Card>
+            </div>
           ) : null}
 
           {warrantyOpen ? (
+            <div ref={warrantyRef} className="scroll-mt-24">
             <Card className="p-5">
               <h2 className="font-semibold text-navy">{dict.portal.claimWarranty}</h2>
               <p className="mt-1.5 text-sm leading-6 text-secondary">{dict.portal.claimWarrantyText}</p>
@@ -314,6 +334,7 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
                 </div>
               </div>
             </Card>
+            </div>
           ) : null}
         </div>
 
@@ -341,7 +362,7 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
                   which would read as "the work was free". */}
               <Row label={dict.portal.finalAmount} value={current.finalAmountPaisa === null ? dict.portal.notYetCharged : formatMoney(current.finalAmountPaisa, locale)} />
               <Row label={dict.portal.paymentMode} value={dict.job.paymentModes[current.paymentMode]} />
-              <Row label={dict.portal.paymentState} value={current.paymentStatus} />
+              <Row label={dict.portal.paymentState} value={dict.portal.paymentStatuses[current.paymentStatus] ?? current.paymentStatus} />
             </dl>
             {current.verificationTier !== null ? <p className="mt-4 text-xs leading-5 text-muted">{dict.portal.verificationTier.replace('{tier}', current.verificationTier)}</p> : null}
           </Card>
@@ -366,9 +387,13 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
                 <FileWarning className="size-4" aria-hidden="true" />
                 {dict.portal.raiseComplaint}
               </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => setWarrantyOpen(true)} disabled={busy}>
-                {dict.portal.claimWarranty}
-              </Button>
+              {/* `warrantyClaim` is legal from PAYMENT_RELEASED only; offering it on a
+                  job still in progress only led to a 409. */}
+              {current.status === 'PAYMENT_RELEASED' ? (
+                <Button type="button" variant="secondary" size="sm" onClick={() => setWarrantyOpen(true)} disabled={busy}>
+                  {dict.portal.claimWarranty}
+                </Button>
+              ) : null}
             </div>
           </Card>
         </div>

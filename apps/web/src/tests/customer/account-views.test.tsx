@@ -274,23 +274,33 @@ describe('the customer dashboard', () => {
 
 describe('the bookings list', () => {
   it('groups the tabs locally, over one response', async () => {
-    rows = [booking({ id: 'a', status: 'SCHEDULED' }), booking({ id: 'b', status: 'VERIFIED' }), booking({ id: 'c', status: 'CANCELLED_CUSTOMER' })];
+    rows = [
+      booking({ id: 'a', status: 'SCHEDULED' }),
+      booking({ id: 'b', status: 'PAYMENT_RELEASED' }),
+      booking({ id: 'c', status: 'CANCELLED_CUSTOMER' }),
+      booking({ id: 'd', status: 'VERIFIED' })
+    ];
     renderList();
 
     /* "In play" is the default: only the SCHEDULED one. The tabs are a grouping
        of the single unfiltered response rather than five server queries, so a
-       verified booking is reachable from "Closed" without a filter round trip. */
+       settled booking is reachable from "Closed" without a filter round trip. */
     expect(await screen.findByText(dict.bookingStatus.SCHEDULED)).toBeDefined();
-    expect(screen.queryByText(dict.bookingStatus.VERIFIED)).toBeNull();
+    expect(screen.queryByText(dict.bookingStatus.PAYMENT_RELEASED)).toBeNull();
 
     fireEvent.click(screen.getByRole('tab', { name: dict.portal.bookingsClosed }));
-    await waitFor(() => expect(screen.getByText(dict.bookingStatus.VERIFIED)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(dict.bookingStatus.PAYMENT_RELEASED)).toBeDefined());
     expect(screen.queryByText(dict.bookingStatus.SCHEDULED)).toBeNull();
+    /* VERIFIED on a cash job is still waiting for the handover — not history. */
+    expect(screen.queryByText(dict.bookingStatus.VERIFIED)).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: dict.portal.bookingsFinishing }));
+    await waitFor(() => expect(screen.getByText(dict.bookingStatus.VERIFIED)).toBeDefined());
 
     /* "All" shows history and what is in play together. */
     fireEvent.click(screen.getByRole('tab', { name: dict.portal.bookingsAll }));
     await waitFor(() => expect(screen.getByText(dict.bookingStatus.SCHEDULED)).toBeDefined());
-    expect(screen.getByText(dict.bookingStatus.VERIFIED)).toBeDefined();
+    expect(screen.getByText(dict.bookingStatus.PAYMENT_RELEASED)).toBeDefined();
   });
 
   it('groups the tabs in the browser, over one response', async () => {
@@ -397,7 +407,15 @@ describe('one booking, from the customer side', () => {
     expect(screen.queryByText(dict.portal.complaintUrgent)).toBeNull();
   });
 
+  it('does not offer a warranty claim on a job that is not yet paid out', async () => {
+    renderDetail();
+    expect(await screen.findByRole('button', { name: dict.portal.raiseComplaint })).toBeDefined();
+    expect(screen.queryByRole('button', { name: dict.portal.claimWarranty })).toBeNull();
+  });
+
   it('refuses a warranty claim under the same floor', async () => {
+    /* Warranty is offered only once the job is paid out — the one status the API accepts a claim from. */
+    rows = [booking({ status: 'PAYMENT_RELEASED' })];
     renderDetail();
     fireEvent.click(await screen.findByRole('button', { name: dict.portal.claimWarranty }));
     fireEvent.change(await screen.findByLabelText(dict.portal.warrantyReasonLabel), { target: { value: 'again' } });

@@ -203,7 +203,9 @@ export const bookingKeys = {
   list: (status?: BookingListStatus) => ['account', 'bookings', 'list', status ?? 'all'] as const,
   detail: (bookingId: string) => ['account', 'bookings', 'detail', bookingId] as const,
   checklist: (bookingId: string) => ['account', 'bookings', bookingId, 'checklist'] as const,
-  serviceAddress: (bookingId: string) => ['account', 'bookings', bookingId, 'service-address'] as const
+  serviceAddress: (bookingId: string) => ['account', 'bookings', bookingId, 'service-address'] as const,
+  /** FR-VC-16: the customer's own "confirm the work" form. Under `all`, so every booking action refreshes it. */
+  selfConfirmation: (bookingId: string) => ['account', 'bookings', bookingId, 'self-confirmation'] as const
 } as const;
 
 /**

@@ -17,6 +17,7 @@
 
 import { apiRequest } from "@/lib/api/client";
 import type { Locale } from "@/lib/utils";
+import type { Booking } from "@/features/booking/api";
 
 export type VerificationQuestion =
   | { key: "workCompleted"; label: string; answers: string[] }
@@ -76,4 +77,108 @@ export const verificationApi = {
       locale,
       refreshOnExpiry: false,
     }),
+};
+/* ---- FR-VC-16: the customer confirms their own job, signed in -------------
+
+   `GET`/`POST /bookings/:bookingId/verification/confirmation`
+   (verification-self.controller.ts). Bearer auth, CUSTOMER role, no OTP and no
+   token — the session is the credential.
+
+   This is not the texted link above with the code removed. It answers three ways
+   rather than two, it takes the customer's own choice of outcome (which the
+   server may overrule), and its GET is **always 200 for your own booking**: the
+   form being unavailable comes back as `canSubmit: false` plus a sentence written
+   for the customer, never as an error. */
+
+export type WorkCompleted = "FULL" | "PARTIAL" | "NONE";
+export type SelfConfirmationChoice = "SATISFIED" | "WITH_ISSUE" | "NOT_ACCEPTABLE";
+export type SelfConfirmationOutcome = "CONFIRMED" | "CONFIRMED_WITH_ISSUE" | "ESCALATED";
+
+/**
+ * The server's questionnaire. Same idea as the link's `questions`, with one
+ * difference worth knowing: the outcome question is keyed `choice` here but the
+ * body field it fills is `outcome`.
+ */
+export type SelfConfirmationQuestion =
+  | { key: "workCompleted"; label: string; answers: WorkCompleted[] }
+  | { key: "ratings"; label: string }
+  | { key: "extraChargeDemanded"; label: string; answers: boolean[] }
+  | { key: "choice"; label: string; answers: SelfConfirmationChoice[] };
+
+export type SelfConfirmationForm = {
+  bookingCode: string;
+  serviceName: string;
+  /** Null while the job has no provider name on file. */
+  providerFirstName: string | null;
+  paymentMode: "ONLINE" | "CASH";
+  /** Integer paisa. Null until the job's final figure is set. */
+  amountPaisa: number | null;
+  canSubmit: boolean;
+  /** Written for the customer to read. Rendered, never pattern-matched. */
+  blockedReason: string | null;
+  questions: SelfConfirmationQuestion[];
+};
+
+export type SelfConfirmationAnswers = {
+  workCompleted: WorkCompleted;
+  quality: number;
+  punctuality: number;
+  conduct: number;
+  cleanliness: number;
+  extraChargeDemanded: boolean;
+  consentToRelease: boolean;
+  outcome: SelfConfirmationChoice;
+  /** Optional, max 1000. Published under first name and initial only (FR-RT-06). */
+  remark?: string;
+};
+
+export type SelfConfirmationResult = {
+  outcome: SelfConfirmationOutcome;
+  bookingId: string;
+  bookingStatus: string;
+  /** Rendered verbatim — the only wording checked against what happened to the money. */
+  message: string;
+  booking: Booking;
+};
+
+/** The cap the server's schema enforces on `remark`. */
+export const MAX_SELF_CONFIRMATION_REMARK = 1000;
+
+const confirmationPath = (bookingId: string) => `/bookings/${encodeURIComponent(bookingId)}/verification/confirmation`;
+
+export const selfConfirmationApi = {
+  /** Always 200 for your own booking; 404 for one that is not yours. */
+  describe: (bookingId: string, options?: { locale?: Locale; signal?: AbortSignal }) =>
+    apiRequest<SelfConfirmationForm>(confirmationPath(bookingId), {
+      method: "GET",
+      locale: options?.locale,
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+    }),
+
+  /**
+   * `.strict()` on the server, so the body is built key by key rather than spread
+   * — an empty remark is left out rather than sent as `""`.
+   *
+   * 422 names the contradicting field in `errors[].path`; 409 means the state
+   * moved (an agent picked up, the job settled, the switch is off) and the
+   * reason is in `detail`.
+   */
+  submit: (bookingId: string, answers: SelfConfirmationAnswers, locale?: Locale) => {
+    const remark = answers.remark?.trim();
+    return apiRequest<SelfConfirmationResult>(confirmationPath(bookingId), {
+      method: "POST",
+      locale,
+      body: {
+        workCompleted: answers.workCompleted,
+        quality: answers.quality,
+        punctuality: answers.punctuality,
+        conduct: answers.conduct,
+        cleanliness: answers.cleanliness,
+        extraChargeDemanded: answers.extraChargeDemanded,
+        consentToRelease: answers.consentToRelease,
+        outcome: answers.outcome,
+        ...(remark === undefined || remark === "" ? {} : { remark }),
+      },
+    });
+  },
 };

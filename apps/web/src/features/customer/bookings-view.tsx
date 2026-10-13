@@ -5,7 +5,7 @@ import { Card, PageHeader } from '@/components/ui';
 import { useMyBookings } from '@/features/booking/queries';
 import type { BookingStatus } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
-import { BookingTable } from '@/features/customer/dashboard-view';
+import { BookingTable, ConfirmWorkCallout } from '@/features/customer/dashboard-view';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, type Locale } from '@/lib/utils';
 
@@ -29,9 +29,13 @@ import { cn, type Locale } from '@/lib/utils';
    returns history in one request. Filtering the same full list client-side keeps
    all four tabs on one response and one cache entry, and switching tabs cannot
    disagree with what "All" shows. */
+/* Everything not in these two is "closed". PENDING_PAYMENT and ACCEPTED are live,
+   and WORK_COMPLETED, REWORK_REQUIRED, VERIFIED (a cash job waiting for the
+   handover) and DISPUTED are still being finished — they used to fall through to
+   "closed", so a job the customer had to act on was filed with their history. */
 const GROUPS = {
-  live: ['REQUESTED', 'SCHEDULED', 'EN_ROUTE', 'IN_PROGRESS'] as const,
-  finishing: ['QUOTE_REVISION', 'AWAITING_VERIFICATION'] as const
+  live: ['PENDING_PAYMENT', 'REQUESTED', 'ACCEPTED', 'SCHEDULED', 'EN_ROUTE', 'IN_PROGRESS'] as const,
+  finishing: ['QUOTE_REVISION', 'WORK_COMPLETED', 'AWAITING_VERIFICATION', 'REWORK_REQUIRED', 'VERIFIED', 'DISPUTED'] as const
 } as const;
 
 type Tab = 'all' | 'live' | 'finishing' | 'closed';
@@ -49,7 +53,8 @@ export function CustomerBookingsScreen({ locale, dict }: { locale: Locale; dict:
     return map;
   }, [services.data, locale]);
 
-  const rows = bookings.data?.items ?? [];
+  const rows = useMemo(() => bookings.data?.items ?? [], [bookings.data]);
+  const toConfirm = useMemo(() => rows.filter((row) => row.canSelfVerify), [rows]);
 
   const filtered = useMemo(() => {
     const sorted = [...rows].sort((a, b) => b.scheduledStart.localeCompare(a.scheduledStart));
@@ -71,6 +76,8 @@ export function CustomerBookingsScreen({ locale, dict }: { locale: Locale; dict:
   return (
     <div>
       <PageHeader eyebrow={dict.portal.customer} title={dict.portal.bookings} description={dict.portal.bookingsDescription} />
+
+      <ConfirmWorkCallout locale={locale} dict={dict} items={toConfirm} names={names} />
 
       <div role="tablist" aria-label={dict.portal.bookings} className="mt-6 flex flex-wrap gap-2">
         {tabs.map((entry) => (

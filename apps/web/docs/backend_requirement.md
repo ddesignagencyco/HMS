@@ -1,6 +1,6 @@
 # Backend Requirements & API Contract Audit — HMS Platform
 
-**Last Updated:** 2026-10-08  
+**Last Updated:** 2026-10-14  
 **Scope:** Full-Stack QA, Media Architecture, Search Engine & TASKS_FRONTEND.md Gap Audit  
 **Author:** Frontend Engineering & Full-Stack QA Team  
 **Target:** Backend Development Team (`apps/api`)  
@@ -319,10 +319,48 @@ Used for Double-Entry Ledger, Notifications, and Audit Logs:
 
 ---
 
+## 5. FR-VC-16 "Confirm the work" — gaps found while building the customer form
+
+**Added:** 2026-10-14 · **Backend commit:** `618c471` · **Brief:** `docs-final/DIRECTION_FRONTEND_CONFIRM_THE_WORK.md`
+
+The frontend now ships the in-app form on `/account/bookings/:id` (card shown from `canSelfVerify`), plus entry points on the customer dashboard and bookings list that link to `#confirm-work`. Building it against `verification-self.service.ts` turned up the following.
+
+### VC.1 (P0) — The form reopens after an `ESCALATED` answer, and a second submission is accepted
+* **Endpoint:** `GET` / `POST /api/v1/bookings/:bookingId/verification/confirmation`
+* **Service:** `apps/api/src/verification/verification-self.service.ts` → `availability()`, `submit()`
+* **Current behaviour:**
+  - On `NOT_ACCEPTABLE`, "no work done" or "extra charge", `submit()` re-queues the open `verification_calls` row (`status = QUEUED`, `locked_by = NULL`, `submitted_at` still `NULL`) and leaves the booking in `AWAITING_VERIFICATION` with `released_at` NULL.
+  - `availability()` checks only the kill switch, `released_at`, the booking status and `locked_by`. None of those change on an escalation, so the next `GET` answers **`canSubmit: true`**, and a second `POST` passes every check, including the `FOR UPDATE` re-read.
+  - So a customer who answers "not acceptable" can come back and submit `SATISFIED`, and that releases the money and publishes a rating on a case that is sitting at priority 0 in the agent queue. This contradicts the brief ("the form is single-use per job; the case belongs to someone at the platform now") and the commit message ("one job can never be confirmed twice"). The existing test *"will not let one job be confirmed twice"* covers the release path only. Nothing tests re-submitting after an escalation.
+* **Frontend stopgap (in place):** after an `ESCALATED` response the browser stores the outcome in `localStorage` (`shm.confirmWork.escalated.<bookingId>`) and shows the reassurance panel instead of a new form. This covers **one browser only**. Another device, a cleared cache or a direct API call still gets the form.
+* **Required backend change:**
+  1. In `availability()`, return `canSubmit: false` when the open call's `routing_reasons` contains `CUSTOMER_NOT_ACCEPTED` or `CUSTOMER_INTEGRITY_FLAG`, with a customer-readable reason, e.g. *"You've already told us about a problem with this job. One of our team will call you."*
+  2. Enforce the same check under the row lock in `submit()`, and return a `409` with that sentence as `detail`.
+  3. Add an integration test: escalate, then `GET` returns `canSubmit: false`, then a second `POST` returns `409`.
+  4. *(Nice to have)* Return `customerAnswer: { outcome: 'ESCALATED', answeredAt }` on the `GET`, so the client can show the right panel without remembering anything itself. The frontend will then remove the `localStorage` stopgap.
+
+### VC.2 (P1) — `blockedReason`, `message`, `questions[].label` and `serviceName` are English only
+* **Current behaviour:** All four come back in English whatever the `Accept-Language` header says. `serviceName` reads `s.name_en`. The brief says Urdu is *"a first-class locale here, not a translation afterthought"*, and it also says the client must render `message` and `blockedReason` **verbatim**. An Urdu customer therefore reads the most important sentence on the screen (what happened to their money) in English.
+* **Frontend handling:** Everything the client owns (labels, hints, buttons, titles, the "money still held" line) is fully translated in `en` and `ur`. Question labels come from the dictionary, keyed by `questions[].key`. The server's `message` and `blockedReason` are shown as they arrive, as the brief requires.
+* **Required backend change:** Honour `Accept-Language: ur` for `message`, `blockedReason` and `questions[].label`, and return `serviceNameUr` (or the localized `serviceName`), matching how the catalogue already publishes both languages.
+
+### VC.3 (P1) — No customer push/SMS when a job is ready to confirm
+* Already listed as "not built yet" in brief §8. Until it exists, the frontend surfaces the form through a **"Finished jobs waiting for you"** callout on `/account` and `/account/bookings`, and a "Confirm the work" link on each eligible booking row. A notification on `booking.linkConfirmed`-eligibility (i.e. on entering `AWAITING_VERIFICATION`) is still needed for customers who don't open the app.
+
+### VC.4 (P2) — The submitted answer cannot be read back
+* **Current behaviour:** Once confirmed, the `GET` returns `canSubmit: false` and *"This job has already been confirmed."* It does not return what the customer answered. The thank-you panel and rating summary are only shown in the session that submitted, so a customer who comes back sees a bare sentence.
+* **Required backend change:** Add `submission: { outcome, quality, punctuality, conduct, cleanliness, remark, submittedAt } | null` to the `GET` response for the customer's own booking, so the screen can show "your rating" again. It stays read-only, because ratings are insert-only.
+
+---
+
 ## 6. Summary Endpoint Action Checklist for Backend Team
 
 | Priority | Endpoint | Method | Status | Description |
 |---|---|---|---|---|
+| **P0** | `/api/v1/bookings/:id/verification/confirmation` | `GET`/`POST` | **Fix** | Close the form after an `ESCALATED` answer (`canSubmit: false` + `409`), see VC.1. |
+| **P1** | `/api/v1/bookings/:id/verification/confirmation` | `GET`/`POST` | Update | Localize `message`, `blockedReason`, question labels and service name for `ur` (VC.2). |
+| **P1** | Notifications | — | **New** | Customer push/SMS when a job enters `AWAITING_VERIFICATION` and can be confirmed (VC.3). |
+| **P2** | `/api/v1/bookings/:id/verification/confirmation` | `GET` | Update | Return the customer's submitted answers (`submission`) for read-back (VC.4). |
 | **P0** | `/api/v1/bookings` | `POST` | Update | Accept `photos` array directly on booking creation. |
 | **P0** | `/api/v1/me/avatar` | `POST` | **New** | Upload customer profile picture. |
 | **P0** | `/api/v1/provider/avatar` | `POST` | **New** | Upload provider professional portrait. |
