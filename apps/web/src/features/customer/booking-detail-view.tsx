@@ -13,7 +13,7 @@ import { RevisionCard } from '@/features/booking/revision-card';
 import { AwaitingPaymentCard } from '@/features/booking/awaiting-payment-card';
 import { ConfirmWorkSection } from '@/features/verification/confirm-work-card';
 import { useBooking, useOnBehalfContact, useWarrantyClaim } from '@/features/booking/queries';
-import type { BookingStatus } from '@/features/booking/api';
+import type { BookingStatus, PaymentMode } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
 import { CUSTOMER_CATEGORIES, MAX_COMPLAINT_DESCRIPTION, MIN_COMPLAINT_DESCRIPTION, URGENT_CATEGORIES, type ComplaintCategory } from '@/features/complaints/api';
 import { useRaiseComplaint } from '@/features/complaints/queries';
@@ -26,6 +26,21 @@ import { cn, formatDate, formatDateTime, formatMoney, localizedPath, type Locale
 /** The customer-facing tracks for online vs cash bookings. */
 const ONLINE_TRACK: readonly BookingStatus[] = ['PENDING_PAYMENT', 'REQUESTED', 'SCHEDULED', 'EN_ROUTE', 'IN_PROGRESS', 'QUOTE_REVISION', 'WORK_COMPLETED', 'AWAITING_VERIFICATION', 'VERIFIED', 'PAYMENT_RELEASED'];
 const CASH_TRACK: readonly BookingStatus[] = ['REQUESTED', 'SCHEDULED', 'EN_ROUTE', 'IN_PROGRESS', 'QUOTE_REVISION', 'WORK_COMPLETED', 'AWAITING_VERIFICATION', 'VERIFIED', 'PAYMENT_RELEASED'];
+
+/**
+ * The steps the progress card prints: every stage up to the current one.
+ *
+ * QUOTE_REVISION is a detour, not a stage every job passes through, and the row
+ * carries no history saying whether this one did. Printing it as a completed
+ * step told every customer they had "decided" on a revision that never existed,
+ * so it is shown only while it is the booking's actual status.
+ */
+export const progressSteps = (paymentMode: PaymentMode, status: BookingStatus): readonly BookingStatus[] => {
+  const track = paymentMode === 'ONLINE' ? ONLINE_TRACK : CASH_TRACK;
+  const stageIndex = track.indexOf(status);
+  if (stageIndex < 0) return [];
+  return track.slice(0, stageIndex + 1).filter((step) => step !== 'QUOTE_REVISION' || step === status);
+};
 
 export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { locale: Locale; bookingId: string; dict: Dictionary }) {
   const booking = useBooking(bookingId, locale);
@@ -87,9 +102,9 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
   }
 
   const current = booking.data;
-  const track = current.paymentMode === 'ONLINE' ? ONLINE_TRACK : CASH_TRACK;
-  const stageIndex = track.indexOf(current.status);
-  const onTrack = stageIndex >= 0;
+  const steps = progressSteps(current.paymentMode, current.status);
+  const stageIndex = steps.length - 1;
+  const onTrack = steps.length > 0;
   const urgent = URGENT_CATEGORIES.includes(category);
 
   const submitComplaint = async (): Promise<void> => {
@@ -174,7 +189,7 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
             <h2 className="font-semibold text-navy">{dict.portal.bookingProgress}</h2>
             {onTrack ? (
               <ol className="mt-5 grid gap-3">
-                {track.slice(0, stageIndex + 1).map((status, index) => (
+                {steps.map((status, index) => (
                   <li key={status} className="flex items-center gap-3 text-sm">
                     <span
                       className={cn('grid size-7 shrink-0 place-items-center rounded-full text-xs font-bold', index === stageIndex ? 'bg-primary text-white' : 'bg-emerald-100 text-emerald-700')}

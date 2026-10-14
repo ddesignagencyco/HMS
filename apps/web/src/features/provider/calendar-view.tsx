@@ -51,6 +51,10 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
   const [leaveDate, setLeaveDate] = useState('');
   const [leaveReason, setLeaveReason] = useState('');
   const [localError, setLocalError] = useState('');
+  /* Leave has its own error, shown in the leave card. It used to share the
+     availability card's slot, which renders only when there are weekly blocks —
+     so a professional with none never saw "Pick a date first" or an overlap. */
+  const [leaveError, setLeaveError] = useState('');
 
   const savedBlocks = useMemo<Draft[]>(
     () =>
@@ -67,7 +71,8 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
 
   const addBlock = (): void => {
     setLocalError('');
-    const weekday = blocks.find((block) => block.weekday === 0)?.weekday ?? 0;
+    /* The first day with no window at all; when every day has one, Sunday. */
+    const weekday = WEEKDAYS.find((day) => !blocks.some((block) => block.weekday === day.value))?.value ?? 0;
     /* Seed on the first day with no block at all, so a second block on the same
        day starts after the last one rather than on top of it. */
     const sameDay = blocks.filter((block) => block.weekday === weekday).sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -95,6 +100,12 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
         return;
       }
     }
+    /* `replaceMine` inserts whatever it is given, so two overlapping windows on
+       one day would be stored as they are. */
+    if (hasOverlap(blocks)) {
+      setLocalError(dict.portal.availabilityOverlap);
+      return;
+    }
     try {
       await saveAvailability.mutateAsync(blocks);
       setDraft(null);
@@ -104,9 +115,9 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
   };
 
   const recordLeave = async (): Promise<void> => {
-    setLocalError('');
+    setLeaveError('');
     if (leaveDate === '') {
-      setLocalError(dict.portal.leaveDateRequired);
+      setLeaveError(dict.portal.leaveDateRequired);
       return;
     }
     const { start, end } = singleDayRange(leaveDate);
@@ -117,7 +128,16 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
     } catch (error) {
       /* An overlap is a 409 from the exclusion constraint; the server's own
          sentence is clearer than anything invented here. */
-      setLocalError(error instanceof Error ? error.message : dict.portal.leaveSaveFailed);
+      setLeaveError(error instanceof Error ? error.message : dict.portal.leaveSaveFailed);
+    }
+  };
+
+  const cancelLeave = async (id: string): Promise<void> => {
+    setLeaveError('');
+    try {
+      await removeTimeOff.mutateAsync(id);
+    } catch (error) {
+      setLeaveError(error instanceof Error ? error.message : dict.portal.leaveCancelFailed);
     }
   };
 
@@ -230,7 +250,7 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
             </ul>
           )}
 
-          {localError !== '' && blocks.length > 0 ? (
+          {localError !== '' ? (
             <p role="alert" className="mt-4 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">
               {localError}
             </p>
@@ -241,7 +261,15 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
               {saveAvailability.isPending ? dict.portal.saving : dict.portal.saveAvailability}
             </Button>
             {isDirty ? (
-              <Button type="button" variant="secondary" onClick={() => setDraft(null)} disabled={saveAvailability.isPending}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setDraft(null);
+                  setLocalError('');
+                }}
+                disabled={saveAvailability.isPending}
+              >
                 {dict.common.cancel}
               </Button>
             ) : null}
@@ -262,6 +290,11 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
               <Label htmlFor="leave-reason">{dict.portal.leaveReasonLabel}</Label>
               <Textarea id="leave-reason" value={leaveReason} onChange={(event) => setLeaveReason(event.target.value)} placeholder={dict.portal.leaveReasonPlaceholder} />
             </div>
+            {leaveError !== '' ? (
+              <p role="alert" className="rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">
+                {leaveError}
+              </p>
+            ) : null}
             <Button type="button" onClick={() => void recordLeave()} disabled={addTimeOff.isPending}>
               {addTimeOff.isPending ? dict.portal.saving : dict.portal.recordLeave}
             </Button>
@@ -285,7 +318,8 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => void removeTimeOff.mutateAsync(period.id)}
+                    onClick={() => void cancelLeave(period.id)}
+                    disabled={removeTimeOff.isPending}
                     aria-label={`${dict.portal.cancelLeave}: ${formatDate(period.start, locale)}`}
                   >
                     <Trash2 className="size-4" aria-hidden="true" />
@@ -303,4 +337,13 @@ export function ProviderCalendarScreen({ locale, dict }: { locale: Locale; dict:
 /** Order-insensitive comparison, so a re-order alone is not treated as a change. */
 function blockKeySet(blocks: Draft[]): string {
   return blocks.map(blockKey).sort().join('|');
+}
+
+/** True when two windows on the same weekday overlap (touching end-to-start is fine). */
+export function hasOverlap(blocks: Draft[]): boolean {
+  const sorted = [...blocks].sort((a, b) => a.weekday - b.weekday || a.startTime.localeCompare(b.startTime));
+  return sorted.some((block, index) => {
+    const next = sorted[index + 1];
+    return next !== undefined && next.weekday === block.weekday && next.startTime < block.endTime;
+  });
 }

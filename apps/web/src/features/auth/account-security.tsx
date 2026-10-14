@@ -140,7 +140,7 @@ export function AccountSecurityView({ locale, dict }: { locale: Locale; dict: Di
               </Button>
             </div>
           ) : (
-            <form onSubmit={onSubmit} className="mt-4 grid gap-4" noValidate>
+            <form method="post" onSubmit={onSubmit} className="mt-4 grid gap-4" noValidate>
               <div className="grid gap-3">
                 <p className="flex items-center gap-2 text-sm font-semibold text-navy">
                   <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">

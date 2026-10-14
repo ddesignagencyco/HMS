@@ -81,6 +81,10 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
   const busy = step !== 'idle';
   const [localError, setLocalError] = useState('');
   const [done, setDone] = useState('');
+  /* Bumped after a successful submit so the picker remounts: it keeps the chosen
+     file's name in its own state, and clearing `file` here alone left
+     "Selected: cnic.png" on screen with nothing actually chosen. */
+  const [pickerKey, setPickerKey] = useState(0);
 
   const cnic = documents.data?.cnic;
   /* The onboarding "documents" step is satisfied by `providers.cnic_enc`, and the
@@ -145,6 +149,7 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
       });
       setDone(dict.portal.documentSubmitted);
       setFile(null);
+      setPickerKey((key) => key + 1);
       setCnicNumber('');
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : dict.portal.documentUploadFailed);
@@ -272,6 +277,7 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
               ) : null}
 
               <FileInput
+                key={pickerKey}
                 id="doc-file"
                 label={dict.portal.chooseFileLabel}
                 accept={DOCUMENT_ACCEPT}

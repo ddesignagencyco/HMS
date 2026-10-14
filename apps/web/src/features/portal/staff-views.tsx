@@ -3,6 +3,8 @@
 import { AlertTriangle, BadgeCheck, ClipboardCheck, Loader2, ArrowRight, PhoneCall, TriangleAlert, Smartphone, MessageSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { detailOf } from "@/features/auth/auth-feedback";
 import type { Dictionary } from "@/lib/dictionaries";
 import { formatDateTime, formatNumber, localizedPath, type Locale } from "@/lib/utils";
 import { agentApi, type AgentQueueEntry } from "@/features/portal/api";
@@ -29,19 +31,27 @@ export function AgentQueue({ locale, dict }: { locale: Locale; dict: Dictionary 
       const targetId = res?.item?.id ?? id;
       router.push(localizedPath(locale, `/agent/verification/${targetId}`));
     },
+    /* A 409 (held by someone else, not due yet) or 423 (outside calling hours)
+     * used to leave the button doing nothing at all. */
+    onError: (err: unknown) => {
+      queryClient.invalidateQueries({ queryKey: ["agent", "queue"] });
+      toast.error(`${dict.agent.claimFailed} ${detailOf(err, dict)}`);
+    },
   });
 
   const queue: AgentQueueEntry[] = data?.items ?? [];
   const attemptsCount = queue.reduce((sum, item) => sum + (item.attempts ?? 0), 0);
-  const breachedCount = queue.filter((item) => item.slaBreached || item.status === "DISPUTED").length;
+  const breachedCount = queue.filter((item) => item.slaBreached).length;
 
   return (
     <div>
       <PageHeader eyebrow={dict.portal.agent} title={dict.portal.queueTitle} description={dict.portal.queueDescription} />
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <StatCard icon={ClipboardCheck} label={dict.portal.callsToday} value={isLoading ? "..." : String(attemptsCount)} />
-        <StatCard icon={AlertTriangle} label={dict.portal.disputes} value={isLoading ? "..." : String(breachedCount)} />
-        <StatCard icon={BadgeCheck} label={dict.portal.passed} value={isLoading ? "..." : String(queue.length)} />
+        {/* These used to read "Calls today", "Disputes" and "Passed" over the
+            attempts on queued calls, the SLA-breached count and the queue length. */}
+        <StatCard icon={ClipboardCheck} label={dict.agent.attemptsLogged} value={isLoading ? "..." : formatNumber(attemptsCount, locale)} />
+        <StatCard icon={AlertTriangle} label={dict.agent.slaBreached} value={isLoading ? "..." : formatNumber(breachedCount, locale)} />
+        <StatCard icon={BadgeCheck} label={dict.agent.inQueue} value={isLoading ? "..." : formatNumber(queue.length, locale)} />
       </div>
 
       <Card className="mt-6 overflow-hidden">
@@ -123,7 +133,7 @@ export function AgentQueue({ locale, dict }: { locale: Locale; dict: Dictionary 
                           onClick={() => claimMutation.mutate(item.id)}
                           className="inline-flex items-center gap-1 rounded-[7px] bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-strong disabled:opacity-50"
                         >
-                          {claimMutation.isPending ? "Claiming..." : dict.portal.console}
+                          {claimMutation.isPending && claimMutation.variables === item.id ? "…" : dict.portal.console}
                           <ArrowRight className="size-3" />
                         </button>
                       </div>
@@ -156,9 +166,9 @@ export function AgentAttempts({ locale, dict }: { locale: Locale; dict: Dictiona
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={PhoneCall} label={dict.agent.attemptsLogged} value={String(totalAttempts)} />
-        <StatCard icon={TriangleAlert} label="SLA Breached" value={String(breachedCount)} />
+        <StatCard icon={TriangleAlert} label={dict.agent.slaBreached} value={formatNumber(breachedCount, locale)} />
         <StatCard icon={BadgeCheck} label="Calls with Attempts" value={String(itemsWithAttempts.length)} />
-        <StatCard icon={MessageSquare} label="Total in Queue" value={String(items.length)} />
+        <StatCard icon={MessageSquare} label={dict.agent.inQueue} value={formatNumber(items.length, locale)} />
       </div>
 
       <div className="mt-6 flex items-start gap-3 rounded-[12px] border border-blue-200 bg-blue-50 px-4 py-3">

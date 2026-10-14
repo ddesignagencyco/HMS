@@ -50,7 +50,10 @@ export function VerificationConsole({
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const [consent, setConsent] = useState(true);
+  /* Whether the agent read the recorded-call consent line aloud. It is posted as
+   * `consentLineRead` and the server refuses a submission without it, so it
+   * starts unticked: pre-ticking it recorded a reading nobody had done. */
+  const [consent, setConsent] = useState(false);
   const [callActive, setCallActive] = useState(false);
   /* The timer used to be a frozen `useState("01:24")` — a constant that never
    * ticked, displayed as a live call duration and posted to the API as
@@ -206,6 +209,22 @@ export function VerificationConsole({
     },
   });
 
+  /* `POST .../release-lock` — the only way to hand a claimed call back before the
+   * lock times out. The client had it (`agentApi.releaseLock`) and no screen
+   * offered it, so a claimed call stayed with the agent who opened it. */
+  const releaseMutation = useMutation({
+    mutationFn: () => agentApi.releaseLock(verificationId, { locale }),
+    onSuccess: () => {
+      setCallActive(false);
+      toast.success(dict.agent.callReleased);
+      queryClient.invalidateQueries({ queryKey: ["agent", "queue"] });
+      router.push(localizedPath(locale, "/agent"));
+    },
+    onError: (err: unknown) => {
+      toast.error(`${dict.agent.releaseFailed} ${detailOf(err, dict)}`);
+    },
+  });
+
   const submitMutation = useMutation({
     mutationFn: (payload: AgentSubmitPayload) => agentApi.submit(verificationId, payload, { locale }),
     onSuccess: (res) => {
@@ -302,6 +321,10 @@ export function VerificationConsole({
   const attempt = attempts.length + (hasAnswered ? 0 : 1);
 
   const handleCommit = async () => {
+    if (!consent) {
+      toast.error(dict.portal.consentLineRequired);
+      return;
+    }
     if (!outcome) {
       toast.error("Please select a decision outcome below (e.g., VERIFIED SATISFIED) first.");
       return;
@@ -368,13 +391,21 @@ export function VerificationConsole({
         title={serviceName}
         description={dict.portal.consoleDescription}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
               {dict.common.status}: {bookingStatus}
             </span>
             <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-primary-strong">
               {tierName}
             </span>
+            <button
+              type="button"
+              disabled={releaseMutation.isPending || submitMutation.isPending || attemptMutation.isPending}
+              onClick={() => releaseMutation.mutate()}
+              className="inline-flex min-h-8 items-center rounded-[8px] border border-line bg-white px-3 text-xs font-semibold text-navy transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              {releaseMutation.isPending ? dict.agent.releasingCall : dict.agent.releaseCall}
+            </button>
           </div>
         }
       />
@@ -585,7 +616,12 @@ export function VerificationConsole({
               <input
                 type="checkbox"
                 checked={consent}
-                onChange={(e) => setConsent(e.target.checked)}
+                onChange={(e) => {
+                  setConsent(e.target.checked);
+                  /* The outcome buttons are gated on consent; an outcome chosen
+                   * before unticking must not survive it. */
+                  if (!e.target.checked) setOutcome(null);
+                }}
                 className="mt-0.5 size-4 rounded border-line text-primary focus:ring-primary"
               />
               <span>

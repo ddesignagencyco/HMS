@@ -15,7 +15,11 @@ import { createHmac } from 'node:crypto';
 
 const BASE = process.env.API_ORIGIN ?? 'http://localhost:3000/api/v1';
 const IDENTIFIER = process.env.SEED_ADMIN ?? 'admin@smart-home.local';
-const PASSWORD = process.env.SEED_PASSWORD ?? 'DevPassword!2026';
+const PASSWORD = process.env.SEED_PASSWORD;
+if (!PASSWORD) {
+  process.stderr.write('Set SEED_PASSWORD (the seeded dev accounts password) — it is not stored in the repo\n');
+  process.exit(1);
+}
 
 /** RFC 6238, 30-second step, 6 digits — the same shape `totp.service.ts` verifies. */
 const codeFor = (base32Secret, atMs) => {

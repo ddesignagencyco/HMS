@@ -307,7 +307,24 @@ describe('state comes from the server', () => {
   });
 });
 
+/** Every checklist step ticked: the server's `outstanding` is zero. */
+const checklistAllDone = () => {
+  checklist = { ...checklist, items: checklist.items.map((item) => ({ ...item, done: true })), outstanding: 0 };
+};
+
 describe('the completion gate', () => {
+  /* Regression (booking journey audit): with both photos on file but a checklist
+     step still open, the button was enabled and the only feedback was the
+     server's 409 "Not every checklist item has been completed". */
+  it('keeps completion disabled while the checklist has open steps, and says how many', async () => {
+    row = booking({ status: 'IN_PROGRESS' });
+    evidence = [photo({ kind: 'BEFORE' }), photo({ id: 'e2', kind: 'AFTER' })];
+    renderScreen();
+    expect(await screen.findByText(dict.job.needChecklist.replace('{count}', '1'))).toBeDefined();
+    expect(((await screen.findByRole('button', { name: dict.job.completeJob })) as HTMLButtonElement).disabled).toBe(true);
+    expect(callsTo('/complete', 'POST')).toHaveLength(0);
+  });
+
   it('disables completion until both photos are on file, naming the missing one', async () => {
     row = booking({ status: 'IN_PROGRESS' });
     evidence = [photo({ kind: 'BEFORE' })];
@@ -327,6 +344,7 @@ describe('the completion gate', () => {
   it('enables completion once both are present', async () => {
     row = booking({ status: 'IN_PROGRESS' });
     evidence = [photo({ kind: 'BEFORE' }), photo({ id: 'e2', kind: 'AFTER' })];
+    checklistAllDone();
     renderScreen();
     expect(((await screen.findByRole('button', { name: dict.job.completeJob })) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText(dict.job.photosReadyNote)).toBeDefined();
@@ -335,6 +353,7 @@ describe('the completion gate', () => {
   it('sends no finalAmountPaisa when the box is left empty', async () => {
     row = booking({ status: 'IN_PROGRESS' });
     evidence = [photo({ kind: 'BEFORE' }), photo({ id: 'e2', kind: 'AFTER' })];
+    checklistAllDone();
     renderScreen();
     fireEvent.click(await screen.findByRole('button', { name: dict.job.completeJob }));
     await waitFor(() => expect(callsTo('/bookings/bk-1/complete', 'POST')).toHaveLength(1));
@@ -346,6 +365,7 @@ describe('the completion gate', () => {
   it('converts a typed rupee amount to paisa', async () => {
     row = booking({ status: 'IN_PROGRESS' });
     evidence = [photo({ kind: 'BEFORE' }), photo({ id: 'e2', kind: 'AFTER' })];
+    checklistAllDone();
     renderScreen();
     fireEvent.change(await screen.findByLabelText(dict.job.finalAmountInputLabel), { target: { value: '2000' } });
     fireEvent.click(screen.getByRole('button', { name: dict.job.completeJob }));

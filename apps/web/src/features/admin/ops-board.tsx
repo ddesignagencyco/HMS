@@ -68,9 +68,25 @@ export function useOpsBoard(locale: Locale) {
     queryFn: ({ signal }) => adminApi.opsBoard({ signal, locale }),
     staleTime: FRESHNESS.opsBoard.staleTime,
     gcTime: FRESHNESS.opsBoard.gcTime,
+    /* With the stream off, the REST read is what keeps the board current. The
+       server caches it for 15 s, so polling at that cadence costs one cached read. */
+    refetchInterval: LIVE_STREAM_AVAILABLE ? false : 15_000,
     retry: publicRetry
   });
 }
+
+/**
+ * Whether `GET /admin/ops-board/stream` may be opened.
+ *
+ * **Off until the backend fixes BE-016.** The controller combines `@Sse` with
+ * `@Res()`; Nest's SSE timer then writes headers on a response the handler has
+ * already started, throwing `ERR_HTTP_HEADERS_SENT` — uncaught, which **kills
+ * the whole API process**. Reproduced 2026-10-14: opening this board took the
+ * API down twice. Until the route is fixed the board polls the plain REST read
+ * instead, which shows the same snapshot at most 15 s late. Flip to `true` once
+ * BE-016 ships; nothing else needs to change.
+ */
+export const LIVE_STREAM_AVAILABLE = false;
 
 /* ---- the stream ------------------------------------------------------- */
 
@@ -237,8 +253,8 @@ function TileGrid({ tiles }: { tiles: Tile[] }) {
  */
 export function AdminOpsBoard({ locale, dict, eyebrow }: { locale: Locale; dict: Dictionary; /** The area it is shown in; FINANCE reaches it under `/finance`. */ eyebrow?: string }) {
   const snapshot = useOpsBoard(locale);
-  const [liveEnabled, setLiveEnabled] = useState(true);
-  const stream = useOpsBoardStream(locale, liveEnabled);
+  const [liveEnabled, setLiveEnabled] = useState(LIVE_STREAM_AVAILABLE);
+  const stream = useOpsBoardStream(locale, LIVE_STREAM_AVAILABLE && liveEnabled);
 
   /* The stream wins when it has something: it is the newer snapshot. Falling
      back to the REST read means the board is still correct the moment the page
@@ -296,8 +312,12 @@ export function AdminOpsBoard({ locale, dict, eyebrow }: { locale: Locale; dict:
      platform knows about them. */
   const statuses = board === null ? [] : Object.entries(board.bookingsToday.byStatus).sort((a, b) => b[1] - a[1]);
 
-  const connectionBadge =
-    stream.state === "live" ? (
+  const connectionBadge = !LIVE_STREAM_AVAILABLE ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+      <RefreshCcw className="size-3" aria-hidden="true" />
+      {dict.ops.pollingBadge}
+    </span>
+  ) : stream.state === "live" ? (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
         <CircleDot className="size-3" aria-hidden="true" />
         {dict.ops.live}
@@ -323,6 +343,14 @@ export function AdminOpsBoard({ locale, dict, eyebrow }: { locale: Locale; dict:
         action={
           <div className="flex items-center gap-2">
             {connectionBadge}
+            {!LIVE_STREAM_AVAILABLE ? (
+              <Button type="button" variant="secondary" size="sm" onClick={() => void snapshot.refetch()} disabled={snapshot.isFetching}>
+                <RefreshCcw className="size-3.5" aria-hidden="true" />
+                {dict.ops.refreshNow}
+              </Button>
+            ) : null}
+            {LIVE_STREAM_AVAILABLE ? (
+            <>
             <Button
               type="button"
               variant="secondary"
@@ -344,6 +372,8 @@ export function AdminOpsBoard({ locale, dict, eyebrow }: { locale: Locale; dict:
                 {dict.ops.resumeLive}
               </Button>
             )}
+            </>
+            ) : null}
           </div>
         }
       />

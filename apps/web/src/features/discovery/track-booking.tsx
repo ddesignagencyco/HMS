@@ -53,17 +53,7 @@ function moneyState(paymentStatus: string, releasedLabel: string) {
 }
 
 export function TrackBooking({ locale, dict }: { locale: Locale; dict: Dictionary }) {
-  const { status: sessionStatus } = useSession();
-  const bookings = useMyBookings(undefined, locale);
-  const [query, setQuery] = useState("");
-
-  const rows = useMemo(() => {
-    const sorted = [...(bookings.data?.items ?? [])].sort((a, b) => b.scheduledStart.localeCompare(a.scheduledStart));
-    const needle = query.trim().toUpperCase();
-    /* Filtering the real list by the code the customer typed. An empty box shows
-       the newest few rather than nothing, so the page is useful before typing. */
-    return needle === "" ? sorted.slice(0, 5) : sorted.filter((item) => item.code.toUpperCase().includes(needle));
-  }, [bookings.data, query]);
+  const { status: sessionStatus, roles } = useSession();
 
   /* An anonymous visitor cannot be answered here at all. Saying so beats a
      search box that always comes up empty and looks broken. */
@@ -89,6 +79,35 @@ export function TrackBooking({ locale, dict }: { locale: Locale; dict: Dictionar
     );
   }
 
+  /* The bookings list is a customer read. It is only *mounted* for a signed-in
+     customer: calling it for a visitor (or before the session has answered)
+     fired `GET /bookings` → 401 and a refused `POST /auth/refresh` from a
+     public page, and a provider or staff account has no customer bookings to
+     list here at all. */
+  if (!roles.includes("CUSTOMER")) {
+    return (
+      <Card className="p-6 sm:p-8">
+        <h2 className="text-xl font-semibold text-navy">{dict.trackPage.customerOnlyTitle}</h2>
+        <p className="mt-2 max-w-prose text-sm leading-6 text-secondary">{dict.trackPage.customerOnlyText}</p>
+      </Card>
+    );
+  }
+
+  return <CustomerTracker locale={locale} dict={dict} />;
+}
+
+function CustomerTracker({ locale, dict }: { locale: Locale; dict: Dictionary }) {
+  const bookings = useMyBookings(undefined, locale);
+  const [query, setQuery] = useState("");
+
+  const rows = useMemo(() => {
+    const sorted = [...(bookings.data?.items ?? [])].sort((a, b) => b.scheduledStart.localeCompare(a.scheduledStart));
+    const needle = query.trim().toUpperCase();
+    /* Filtering the real list by the code the customer typed. An empty box shows
+       the newest few rather than nothing, so the page is useful before typing. */
+    return needle === "" ? sorted.slice(0, 5) : sorted.filter((item) => item.code.toUpperCase().includes(needle));
+  }, [bookings.data, query]);
+
   if (bookings.isError) {
     return (
       <div role="alert" className="rounded-[12px] bg-rose-50 p-5 text-sm text-rose-800">
@@ -105,6 +124,9 @@ export function TrackBooking({ locale, dict }: { locale: Locale; dict: Dictionar
   return (
     <div>
       <Card className="p-6 sm:p-8">
+        {/* Filtering is live as the code is typed; the form only stops Enter or
+            the button from reloading the page. */}
+        <form role="search" onSubmit={(event) => event.preventDefault()}>
         <label htmlFor="track-code" className="text-sm font-semibold text-navy">{dict.trackPage.label}</label>
         <p className="mt-1.5 text-sm text-secondary">{dict.trackPage.hint}</p>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -123,6 +145,7 @@ export function TrackBooking({ locale, dict }: { locale: Locale; dict: Dictionar
             <ArrowRight className="size-4 rtl:rotate-180" aria-hidden="true" />
           </button>
         </div>
+        </form>
 
         {searched && rows.length === 0 && bookings.isSuccess ? (
           <p className="mt-5 rounded-[9px] border border-dashed border-line bg-slate-50 px-4 py-3 text-sm text-secondary">

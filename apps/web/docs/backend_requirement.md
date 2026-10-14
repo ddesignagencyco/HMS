@@ -29,7 +29,7 @@ The web app uses nearly every endpoint that exists (the complaint detail/reply r
 | [3.7](#37-no-confirm-your-job-notification) | P1 | No customer notification when a job can be confirmed | notifications | Missing |
 | [3.9](#39-rework-visits-cannot-show-a-start-code) | P1 | Rework visit: customer can never get a start code | `POST /bookings/:id/start-code` | Bug |
 | [3.10](#310-customer-approves-a-revision-blind) | P1 | Customer approves a price revision without seeing amount or reason | `GET /bookings/:id` | Missing |
-| [3.11](#311-ops-board-stream-logs-an-error-per-connection) | P1 | Ops-board SSE: `@Sse` + `@Res()` logs `INTERNAL_ERROR` per connection | `GET /admin/ops-board/stream` | Bug |
+| [3.11](#311-ops-board-stream-crashes-the-api-process--upgraded-to-p0) | **P0** | Ops-board SSE crashes the whole API process | `GET /admin/ops-board/stream` | Bug |
 | [3.8](#38-inline-document-upload-is-capped-at-1-mb) | P1 | Inline document upload capped at 1 MB | `POST /provider/documents` | Limit |
 | [4.1](#41-read-back-of-the-customers-confirmation) | P2 | Customer can't read back their submitted confirmation | `GET /verification/confirmation` | Missing |
 | [4.2](#42-provider-cannot-view-their-own-uploaded-documents) | P2 | Provider can't view their own uploaded documents | `GET /provider/documents` | Missing |
@@ -193,8 +193,8 @@ Already listed in the brief (§8). Nothing tells a customer their finished job i
 ### 3.10 Customer approves a revision blind
 `quote_revisions` holds `delta_paisa` and `reason`, but neither `GET /bookings/:id` nor any other read returns the pending revision. The customer is asked to approve an extra charge without being shown the amount or the reason, and the web can only show generic text. **Need:** `pendingRevision: { id, deltaPaisa, reason, raisedAt } | null` on `GET /bookings/:id`.
 
-### 3.11 Ops-board stream logs an error per connection
-`admin/ops-board.controller.ts` combines `@Sse('stream')` with `@Res()` and returns nothing. Nest's SSE handler expects an Observable and throws. The stream survives only because `problem-details.filter.ts` skips responses whose headers are already sent, and it logs an `INTERNAL_ERROR` on every connection. **Need:** a plain `@Get('stream')` with the manual response, or return an Observable from `@Sse`.
+### 3.11 Ops-board stream **crashes the API process** — upgraded to **P0**
+`admin/ops-board.controller.ts` combines `@Sse('stream')` with `@Res()` and returns nothing. Re-tested 2026-10-14: a few seconds after an admin opens `/admin/ops`, Nest's SSE timer calls `SseStream.commitHeaders` on a response the handler already wrote, throwing an **uncaught `ERR_HTTP_HEADERS_SENT`** (`@nestjs/core/router/sse-stream.js:80`, from `router-response-controller.js:175`), which **terminates the whole API process**. It happened twice during the audit and took the platform down for every user. **Web mitigation (in place):** the board no longer opens the stream (`LIVE_STREAM_AVAILABLE = false` in `features/admin/ops-board.tsx`); it polls `GET /admin/ops-board` every 15 s. Flip the flag back once this ships. **Need:** a plain `@Get('stream')` with the manual response, or return an Observable from `@Sse`.
 
 ---
 
@@ -271,3 +271,75 @@ Thank you. These were open in our previous list and are now live. The web uses e
 | Notification delivery log for admins | `GET /admin/notifications` |
 | Document upload backend | `POST /uploads/presign` + `POST /provider/documents` (now Supabase) |
 | Customer confirms their own job | `GET`/`POST /bookings/:id/verification/confirmation`, `canSelfVerify` — built in the web, apart from 2.2 |
+
+---
+
+## 7. Added by the pre-production browser audit (2026-10-14)
+
+Found while driving the live stack in a browser (playwright-core scripts, since removed). Each was ruled out as a frontend mapping or state problem first.
+
+### 7.1 API answers 500 under modest concurrency — P1
+**Update after the staff pass:** at least two of these outages were the API **process dying** from the ops-board stream crash (§3.11 / BE-016). While the API is down, the web's `/api/v1` proxy answers 500. Once BE-016 is fixed, re-run a load test to see whether any 500s remain on their own.
+
+**Observed:** with four headless browsers crawling at once (one machine, one IP), the API intermittently returned **500** on `POST /auth/login`, `GET /auth/session` and `GET /catalogue/categories`, and 429 on catalogue reads. The same requests succeeded immediately when retried alone. **Evidence:** crawl logs from the audit run (recorded in `pre-production-audit.md`). **Impact:** at launch-day traffic, sign-in and the home page could fail intermittently. **Need:** reproduce with the k6 scripts in `/k6` at ~4–8 concurrent users, and find what throws (connection-pool exhaustion or an unhandled rejection). A 500 must never be the answer to load. Also confirm the 300 req/min/IP rate limit counts the real client IP behind the production proxy (`trust proxy` is on in `http-app.ts`), or every user behind one NAT will share a single bucket.
+
+### 7.2 Two tabs can sign each other out — P2
+`apps/api/src/identity/session.service.ts:39-51` treats any second use of a refresh token as replay and revokes the whole session family, with no grace window. Two tabs that refresh at the same moment end the session in both. **Need:** a short grace window (e.g. 10 s) in which the *previous* token returns the already-issued successor instead of revoking. The web will also serialise refreshes across tabs (open frontend item FE-01), but only the server can make this safe.
+
+### 7.3 Seeded area centroids are invented — P2 (data)
+`packages/db/seed/places.ts:33` (`approximateCentroid`) places Gulberg at ≈ 31.325, 74.24. The real location is ≈ 31.52, 74.35. A provider who picks their area in the new "Where you work from" form is placed ~25 km away, and distances in search are wrong. **Need:** surveyed centroids for each area.
+
+### 7.4 Error messages in paisa and English — P3
+`payouts.service.ts:86,95` ("at most N paisa") and `provider-services.service.ts:38` ("pricePaisa must be between …") reach the user verbatim. The web now pre-checks these in rupees, but the server's own sentence should be in rupees and honour `Accept-Language`.
+
+### 7.5 Profile fields cannot be cleared — P3
+`profile.service.ts:42` uses `COALESCE`, so a provider can't remove their bio or qualification. The web now refuses the empty save honestly rather than pretending it worked. **Need:** accept `null` to clear (same pattern as §4.8 for addresses).
+
+### 7.6 Re-adding a service always needs re-approval — P3 (decision)
+`provider-services.service.ts:41` recreates a removed service as `PENDING`, even when it was approved minutes earlier. The web now warns before "Stop offering". Please confirm this is intended; if not, keep the previous approval when the price is unchanged.
+
+### 7.7 Malformed provider id answers 400 — P3
+`GET /search/providers/not-a-uuid` → 400. The web shows not-found either way; 404 would match how other customer-facing reads answer.
+
+---
+
+## Requirement index
+
+| ID | Section | Priority | Title |
+|---|---|---|---|
+| BE-001 | 2.1 | P0 | Evidence URLs 404 under Supabase |
+| BE-002 | 2.2 | P0 | Confirm-the-work form re-opens after escalation (can release money) |
+| BE-003 | 2.3 | P0 | No way to retry an online payment |
+| BE-004 | 2.4 | P0 | Public search resolves any `addressId` (location privacy) |
+| BE-005 | 2.5 | P0 | Plan subscriptions ACTIVE before payment |
+| BE-006 | 3.1 | P1 | Supabase buckets: existence, privacy, size/MIME limits |
+| BE-007 | 3.2 | P1 | Lists silently truncated, no paging |
+| BE-008 | 3.3 | P1 | Provider approval queue |
+| BE-009 | 3.4 | P1 | Platform-wide bookings for admin |
+| BE-010 | 3.5 | P1 | Search: required slug, no sort/rating/paging |
+| BE-011 | 3.6 | P1 | Server sentences English-only |
+| BE-012 | 3.7 | P1 | No "confirm your job" notification |
+| BE-013 | 3.8 | P1 | Inline document upload capped at 1 MB |
+| BE-014 | 3.9 | P1 | Rework visit can't show a start code |
+| BE-015 | 3.10 | P1 | Customer approves a revision blind |
+| BE-016 | 3.11 | **P0** | Ops-board SSE crashes the API process (web no longer opens it) |
+| BE-017 | 7.1 | P1 | 500s under modest concurrency |
+| BE-018 | 4.1 | P2 | Read-back of the customer's confirmation |
+| BE-019 | 4.2 | P2 | Provider can't view own documents |
+| BE-020 | 4.3 | P2 | Minimum payout not readable |
+| BE-021 | 4.4 | P2 | Booking list carries ids, not names |
+| BE-022 | 4.5 | P2 | Problem photos in the create call |
+| BE-023 | 4.6 | P2 | Audit log paging |
+| BE-024 | 4.7 | P2 | Evidence rows lack `visitNo` |
+| BE-025 | 4.8 | P2 | Address fields can't be cleared |
+| BE-026 | 4.9 | P2 | Smaller gaps (presign confirm, admin plan read, appeal note, decline reason, dispute names, time-off offsets, short-link locale, debt idempotency) |
+| BE-027 | 7.2 | P2 | Refresh reuse has no grace window (cross-tab sign-out) |
+| BE-028 | 7.3 | P2 | Seeded area centroids invented |
+| BE-029 | 7.4 | P3 | Error messages in paisa/English |
+| BE-030 | 7.5 | P3 | Provider profile fields can't be cleared |
+| BE-031 | 7.6 | P3 | Re-added service always PENDING |
+| BE-032 | 7.7 | P3 | Malformed provider id → 400 |
+| BE-033 | 5.1 | Decision | Provider name in public search |
+| BE-034 | 5.2–5.4 | Later | Avatars/imagery, reviews feed, Supabase adapter polish |
+
+**Verification when delivered:** each section names the endpoint, the observed behaviour and the expected result; re-test that flow in the browser against the fixed API.

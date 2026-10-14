@@ -44,7 +44,18 @@ const nextConfig: NextConfig = {
       { source: '/v/:token', destination: '/en/verification/:token', permanent: false },
       { source: '/:locale(en|ur)/v/:token', destination: '/:locale/verification/:token', permanent: false },
       { source: '/problem/:token', destination: '/en/receipt/:token', permanent: false },
-      { source: '/:locale(en|ur)/problem/:token', destination: '/:locale/receipt/:token', permanent: false }
+      { source: '/:locale(en|ur)/problem/:token', destination: '/:locale/receipt/:token', permanent: false },
+      /* Development payment simulator. The API's mock gateway sends the browser to
+         `/api/v1/dev/payments/:id`, whose own HTML renders unstyled under the API's
+         CSP. A *browser navigation* there (Accept includes text/html) is sent to the
+         web's page instead; the page's own JSON fetch of the same URL is not matched,
+         and neither is `/:id/complete`. The query (`returnUrl`) is passed through. */
+      {
+        source: '/api/v1/dev/payments/:paymentId',
+        has: [{ type: 'header', key: 'accept', value: '(.*)text/html(.*)' }],
+        destination: '/en/dev/pay/:paymentId',
+        permanent: false
+      }
     ];
   },
   async rewrites() {

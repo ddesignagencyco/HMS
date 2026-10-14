@@ -46,6 +46,9 @@ export function ProviderServicesScreen({ locale, dict }: { locale: Locale; dict:
   const [adding, setAdding] = useState(false);
   const [addingId, setAddingId] = useState<number | null>(null);
   const [localError, setLocalError] = useState('');
+  /* Removing a binding is irreversible from here: re-adding it creates a new
+     PENDING binding that needs an admin again. One click must not do that. */
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<number | null>(null);
 
   /* serviceId → catalogue row, for the band, the Urdu name and the duration. */
   const byId = useMemo(() => {
@@ -56,9 +59,19 @@ export function ProviderServicesScreen({ locale, dict }: { locale: Locale; dict:
 
   const save = async (serviceId: number): Promise<void> => {
     setLocalError('');
-    const paisa = Math.round(Number(draftPrice) * 100);
-    if (!Number.isFinite(paisa) || paisa < 0) {
+    const typed = draftPrice.trim();
+    /* `Number('')` is 0, so an emptied field used to go out as a price of
+       Rs 0 and come back as the server's bare "Request validation failed". */
+    const paisa = typed === '' ? Number.NaN : Math.round(Number(typed) * 100);
+    if (!Number.isFinite(paisa) || paisa <= 0) {
       setLocalError(dict.portal.priceInvalid);
+      return;
+    }
+    /* `upsertMine` refuses a price outside the catalogue band with a generic
+       422 whose only detail is in paisa; say it here, in rupees. */
+    const band = byId.get(serviceId);
+    if (band !== undefined && (paisa < band.minPricePaisa || paisa > band.maxPricePaisa)) {
+      setLocalError(dict.portal.priceOutOfBand.replace('{min}', formatMoney(band.minPricePaisa, locale)).replace('{max}', formatMoney(band.maxPricePaisa, locale)));
       return;
     }
     try {
@@ -73,6 +86,7 @@ export function ProviderServicesScreen({ locale, dict }: { locale: Locale; dict:
     setLocalError('');
     try {
       await remove.mutateAsync(service.serviceId);
+      setConfirmingRemoveId(null);
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : dict.portal.removeFailed);
     }
@@ -244,18 +258,35 @@ export function ProviderServicesScreen({ locale, dict }: { locale: Locale; dict:
                             onClick={() => {
                               setDraftPrice(String(binding.pricePaisa / 100));
                               setEditingId(binding.serviceId);
+                              setConfirmingRemoveId(null);
+                              setLocalError('');
                             }}
                             aria-label={`${dict.portal.editPrice}: ${name}`}
                           >
                             <Pencil className="size-4" aria-hidden="true" />
                             {dict.portal.editPrice}
                           </Button>
-                          <Button type="button" variant="ghost" size="sm" onClick={() => void stopOffering(binding)} aria-label={`${dict.portal.stopOffering}: ${name}`}>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingRemoveId(binding.serviceId)} aria-label={`${dict.portal.stopOffering}: ${name}`}>
                             {dict.portal.stopOffering}
                           </Button>
                         </div>
                       </div>
                     )}
+                    {confirmingRemoveId === binding.serviceId && !isEditing ? (
+                      <div role="alertdialog" aria-labelledby={`stop-${binding.serviceId}`} className="mt-3 rounded-[10px] border border-rose-200 bg-rose-50 p-3">
+                        <p id={`stop-${binding.serviceId}`} className="text-sm leading-6 text-rose-800">
+                          {dict.portal.stopOfferingConfirm.replace('{service}', name)}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button type="button" size="sm" variant="danger" onClick={() => void stopOffering(binding)} disabled={remove.isPending}>
+                            {dict.portal.stopOfferingYes}
+                          </Button>
+                          <Button type="button" size="sm" variant="secondary" onClick={() => setConfirmingRemoveId(null)} disabled={remove.isPending}>
+                            {dict.common.cancel}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </Card>
               </li>

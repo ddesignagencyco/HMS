@@ -91,7 +91,7 @@ export function ChangePasswordCard({ locale, dict, className }: { locale: Locale
       </h2>
       <p className="mt-1.5 text-sm leading-6 text-secondary">{dict.auth.changePasswordText}</p>
 
-      <form onSubmit={onSubmit} className="mt-4 grid gap-3" noValidate>
+      <form method="post" onSubmit={onSubmit} className="mt-4 grid gap-3" noValidate>
         <PasswordField
           {...form.register('currentPassword')}
           label={dict.auth.currentPassword}

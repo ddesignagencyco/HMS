@@ -249,6 +249,7 @@ export function ProviderConductScreen({ locale, dict }: { locale: Locale; dict: 
                         <Label htmlFor={`reply-${penalty.id}`}>{dict.portal.replyToPenalty}</Label>
                         <Textarea
                           id={`reply-${penalty.id}`}
+                          maxLength={2000}
                           value={replyDrafts[penalty.id] ?? ''}
                           onChange={(event) => setReplyDrafts({ ...replyDrafts, [penalty.id]: event.target.value })}
                           placeholder={dict.portal.replyPlaceholder}
@@ -266,6 +267,7 @@ export function ProviderConductScreen({ locale, dict }: { locale: Locale; dict: 
                         <Label htmlFor={`appeal-${penalty.id}`}>{dict.portal.appealGroundsLabel}</Label>
                         <Textarea
                           id={`appeal-${penalty.id}`}
+                          maxLength={2000}
                           value={appealDrafts[penalty.id] ?? ''}
                           onChange={(event) => setAppealDrafts({ ...appealDrafts, [penalty.id]: event.target.value })}
                           placeholder={dict.portal.appealPlaceholder}

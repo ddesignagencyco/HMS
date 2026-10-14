@@ -111,7 +111,10 @@ export function SearchRefinements({
   };
 
   return (
-    <div className={disabled ? "pointer-events-none opacity-55" : undefined}>
+    /* `inert`, not only `pointer-events-none`: the dimmed panel was still
+       reachable and editable from the keyboard, so Tab landed in inputs that
+       changed nothing. */
+    <div className={disabled ? "pointer-events-none opacity-55" : undefined} inert={disabled || undefined} aria-disabled={disabled || undefined}>
       <div className="flex items-center justify-between gap-2 border-t border-line pt-4">
         <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-muted">
           <SlidersHorizontal className="size-3.5" aria-hidden="true" />

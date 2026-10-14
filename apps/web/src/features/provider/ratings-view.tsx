@@ -224,6 +224,7 @@ function RatingCard({
               <Label htmlFor={`reply-${remark.id}`}>{dict.portal.replyToRemark}</Label>
               <Textarea
                 id={`reply-${remark.id}`}
+                maxLength={1000}
                 value={draft[remark.id] ?? ''}
                 onChange={(event) => setDraft({ ...draft, [remark.id]: event.target.value })}
                 placeholder={dict.portal.replyPlaceholder}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homePathForRoles, isPermittedForPath, returnToForRoles, safeReturnTo, signInPath } from "@/features/auth/routing";
+import { homePathForRoles, isPermittedForPath, returnToForRoles, safeReturnTo, signInPath, totpLandingForNonStaff } from "@/features/auth/routing";
 import type { ActorRole } from "@/features/auth/api";
 
 /* A return destination arrives from the URL, so it is untrusted input. These
@@ -123,5 +123,22 @@ describe("role typing", () => {
   it("treats only the five roles the API issues as areas", () => {
     const roles: ActorRole[] = ["CUSTOMER", "PROVIDER", "AGENT", "FINANCE", "ADMIN"];
     for (const role of roles) expect(homePathForRoles([role], "en")).toContain(`/${role.toLowerCase() === "customer" ? "account" : role.toLowerCase()}`);
+  });
+});
+describe("totpLandingForNonStaff", () => {
+  it("keeps staff on the two-factor route", () => {
+    expect(totpLandingForNonStaff(["AGENT"], null, "en")).toBeNull();
+    expect(totpLandingForNonStaff(["CUSTOMER", "ADMIN"], null, "en")).toBeNull();
+  });
+
+  it("sends a customer to their security page, or a safe permitted destination", () => {
+    expect(totpLandingForNonStaff(["CUSTOMER"], null, "en")).toBe("/en/account/security");
+    expect(totpLandingForNonStaff(["CUSTOMER"], "/en/account/bookings", "en")).toBe("/en/account/bookings");
+    expect(totpLandingForNonStaff(["CUSTOMER"], "https://evil.example/x", "en")).toBe("/en/account/security");
+  });
+
+  it("sends a provider home and never into a portal it does not own", () => {
+    expect(totpLandingForNonStaff(["PROVIDER"], null, "ur")).toBe("/ur/provider");
+    expect(totpLandingForNonStaff(["PROVIDER"], "/ur/admin", "ur")).toBe("/ur/provider");
   });
 });

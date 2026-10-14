@@ -21,5 +21,9 @@ export default async function ProviderDetailPage({
 }) {
   const { locale, providerId } = await params;
   if (!isLocale(locale)) notFound();
+  /* Providers are keyed by UUID. Anything else cannot name one, so it is a real
+     404 here rather than a 200 page that asks the API, gets a 400 and has to
+     explain it. */
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(providerId)) notFound();
   return <ProviderProfile locale={locale} dict={getDictionary(locale)} providerId={providerId} />;
 }

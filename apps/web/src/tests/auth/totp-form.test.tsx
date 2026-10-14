@@ -118,6 +118,36 @@ describe("TotpForm", () => {
     expect(screen.queryByRole("button", { name: dict.auth.totpSetupTitle })).toBeNull();
   });
 
+  it("tells an anonymous visitor to sign in, with a link, instead of an endless busy skeleton", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json(200, { authenticated: false, user: null })));
+
+    const { container } = renderForm();
+
+    const link = await screen.findByRole("link", { name: dict.auth.backToSignIn }, { timeout: 5000 });
+    expect(link.getAttribute("href")).toBe("/en/auth/sign-in");
+    expect(screen.getByText(dict.auth.totpSignInFirst)).not.toBeNull();
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it("sends a signed-in customer to their own security page instead of the staff enrolment card", async () => {
+    writeAccessToken("held", 900);
+    const customer = { ...agent, id: "c1", roles: ["CUSTOMER"] };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("/auth/session")
+          ? json(200, { authenticated: true, user: customer })
+          : json(201, { user: customer, accessToken: "fresh", expiresInSeconds: 900, totpRequired: false }),
+      ),
+    );
+
+    renderForm();
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/en/account/security"));
+    expect(screen.queryByText(dict.auth.totpPendingText)).toBeNull();
+    expect(screen.queryByRole("button", { name: dict.auth.totpSetupTitle })).toBeNull();
+  });
+
   it("draws the QR in a capped square, so it fits a narrow screen instead of overflowing the card", async () => {
     stubStaffSession();
     renderForm();

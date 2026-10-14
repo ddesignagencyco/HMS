@@ -32,6 +32,10 @@ describe("utils formatting functions", () => {
 
   it("formatMoney formats paisa to rupees correctly", () => {
     expect(formatMoney(100000, "en")).toBe("Rs 1,000");
+    /* Paisa are never rounded away: 191,250 paisa is Rs 1,912.50, not Rs 1,913. */
+    expect(formatMoney(191250, "en")).toBe("Rs 1,912.50");
+    expect(formatMoney(250, "en")).toBe("Rs 2.50");
+    expect(formatMoney(5, "en")).toBe("Rs 0.05");
     expect(formatMoney(0, "en")).toBe("Rs 0");
   });
 

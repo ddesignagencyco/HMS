@@ -235,9 +235,13 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
     return combined;
   }, [state.serviceSlug, results.data, initialProviderQueries]);
 
+  /* A chosen service with no search point (or an inverted price band) sends no
+     request at all, and a disabled query is `isPending` forever — so this used to
+     show skeleton cards indefinitely. Only a request that is actually in flight
+     is "pending"; the other two states are explained below instead. */
   const isSearchPending =
     state.serviceSlug !== ""
-      ? results.isPending
+      ? filters !== null && results.isPending
       : (everything.isPending && representativeServices.length === 0) ||
         (representativeServices.length > 0 && initialProviderQueries.some((q) => q.isPending));
 
@@ -648,7 +652,10 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
       <div className="grid gap-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-12">
         <aside className="hidden lg:sticky lg:top-[calc(var(--demo-bar-h,0px)+1.5rem)] lg:block lg:self-start">
           <h2 className="eyebrow eyebrow-light">{dict.search.filtersHeading}</h2>
-          <div className="mt-4">{filterBody}</div>
+          {/* Not rendered while the mobile drawer holds it: the aside is only
+              CSS-hidden below lg, so both copies were in the DOM with the same
+              ids, and every <label htmlFor> pointed at the invisible one. */}
+          <div className="mt-4">{sheetOpen ? null : filterBody}</div>
         </aside>
 
         <div className="min-w-0">
@@ -657,11 +664,16 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
               <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-navy">
                 {state.serviceSlug === ""
                   ? (locale === "ur" ? "تمام دستیاب تصدیق شدہ پیشہ ور" : "All Available Verified Professionals")
-                  : filteredResults.length === 0
-                    ? dict.search.noResultsTitle
-                    : filteredResults.length === 1
-                      ? dict.search.resultsHeadingOne
-                      : dict.search.resultsHeading.replace("{count}", formatNumber(filteredResults.length, locale))}
+                  : !isSearchable(state)
+                    ? dict.search.needsLocationTitle
+                    : /* The count of cards actually shown: the rating, badge and
+                         keyword chips narrow the list on this side, and the
+                         heading used to keep claiming the unfiltered count. */
+                      processedProviders.length === 0
+                      ? dict.search.noResultsTitle
+                      : processedProviders.length === 1
+                        ? dict.search.resultsHeadingOne
+                        : dict.search.resultsHeading.replace("{count}", formatNumber(processedProviders.length, locale))}
               </h2>
               <p className="mt-1 text-sm text-secondary">
                 {state.serviceSlug !== ""
@@ -728,6 +740,23 @@ export function ProvidersSearch({ locale, dict }: { locale: Locale; dict: Dictio
                   if (state.serviceSlug !== "") void results.refetch();
                   else initialProviderQueries.forEach((q) => void q.refetch());
                 }}
+              />
+            ) : state.serviceSlug !== "" && !isSearchable(state) ? (
+              <EmptyState
+                title={dict.search.needsLocationTitle}
+                body={dict.search.needsLocationText}
+                icon={<MapPin className="size-8" aria-hidden="true" />}
+                action={
+                  <Button type="button" variant="secondary" onClick={() => void applyDeviceLocation()} disabled={locating}>
+                    {dict.search.useMyLocation}
+                  </Button>
+                }
+              />
+            ) : state.serviceSlug !== "" && !isPriceBandValid(refinement) ? (
+              <EmptyState
+                title={dict.search.refinePriceBand}
+                body={dict.search.refinePriceBandInvalid}
+                icon={<SearchX className="size-8" aria-hidden="true" />}
               />
             ) : processedProviders.length === 0 ? (
               <EmptyState

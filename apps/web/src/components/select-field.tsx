@@ -54,13 +54,16 @@ export function SelectField({
           height: isSm ? 38 : 42,
           width: "100%",
           borderRadius: 10,
-          borderColor: state.isFocused ? "#94a3b8" : "#e2e8f0",
+          borderColor: state.isFocused ? "#2563eb" : "#e2e8f0",
           backgroundColor: isDisabled ? "#f8fafc" : "#ffffff",
-          boxShadow: "none",
+          /* A visible focus ring, matching the app's inputs (`focus:ring-4
+             ring-blue-100`). A one-shade border change was the only focus cue,
+             which a keyboard user tabbing through a form could not see. */
+          boxShadow: state.isFocused ? "0 0 0 4px #dbeafe" : "none",
           outline: "none",
           transition: "all 0.15s ease",
           "&:hover": {
-            borderColor: state.isFocused ? "#94a3b8" : "#cbd5e1",
+            borderColor: state.isFocused ? "#2563eb" : "#cbd5e1",
           },
         }),
         valueContainer: (base) => ({

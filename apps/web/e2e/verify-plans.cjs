@@ -12,7 +12,12 @@
 const { chromium } = require('playwright-core');
 
 const WEB = process.env.WEB_ORIGIN ?? 'http://localhost:3001';
-const ACCOUNT = { identifier: process.env.SEED_CUSTOMER ?? 'customer@smart-home.local', password: process.env.SEED_PASSWORD ?? 'DevPassword!2026' };
+const ACCOUNT = { identifier: process.env.SEED_CUSTOMER ?? 'customer@smart-home.local', password: process.env.SEED_PASSWORD };
+
+if (!ACCOUNT.password) {
+  process.stderr.write('Set SEED_PASSWORD (the seeded dev accounts password) — it is not stored in the repo\n');
+  process.exit(1);
+}
 
 const results = [];
 const record = (name, ok, detail = '') => {

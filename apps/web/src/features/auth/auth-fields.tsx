@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useState, useSyncExternalStore } from "react";
 import { Input, Label, buttonStyles } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -128,7 +128,24 @@ export function PasswordField({
   );
 }
 
-/** The single submit control, so a pending request always disables it. */
+const noopSubscribe = () => () => {};
+
+/** False in the server HTML and during hydration, true once React owns the page. */
+const useHydrated = (): boolean =>
+  useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
+
+/** The single submit control, so a pending request always disables it.
+ *
+ * It also stays disabled until the page has hydrated. Before that the form has no
+ * submit handler, so a click (or Enter in a field) submitted it natively: a GET to
+ * the current URL that put the identifier and password into the address bar, the
+ * history and server logs, then reloaded an empty form. A disabled default button
+ * also blocks implicit Enter-key submission, and the auth forms carry
+ * method="post" as a second line, so a native submit never puts a secret in a URL. */
 export function SubmitButton({
   pending,
   pendingLabel,
@@ -140,10 +157,11 @@ export function SubmitButton({
   children: React.ReactNode;
   className?: string;
 }) {
+  const hydrated = useHydrated();
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || !hydrated}
       className={buttonStyles({
         className: cn(
           /* `transition-all` was here, and it is the reason this card felt like it

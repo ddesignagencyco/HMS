@@ -83,6 +83,9 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
   const booking = useBooking(bookingId, locale);
   const services = useAllServices(locale);
   const evidence = useEvidenceList(bookingId, locale);
+  /* Same query `ChecklistCard` reads (deduplicated by key): its `outstanding` is
+     the server's own count, and `complete` 409s while it is above zero. */
+  const checklist = useChecklist(bookingId, locale);
   const contact = useOnBehalfContact(bookingId, locale);
 
   const accept = useAcceptBooking(locale);
@@ -116,6 +119,7 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
   const photos = useMemo(() => evidence.data?.items ?? [], [evidence.data]);
   const hasBefore = photos.some((photo) => photo.kind === 'BEFORE');
   const hasAfter = photos.some((photo) => photo.kind === 'AFTER');
+  const checklistOutstanding = checklist.data?.outstanding ?? 0;
 
   const steps: Step[] = row === undefined ? [] : buildSteps(row, dict, { hasBefore, hasAfter });
 
@@ -381,6 +385,7 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
             setRevision={setRevision}
             hasBefore={hasBefore}
             hasAfter={hasAfter}
+            checklistOutstanding={checklistOutstanding}
             onAccept={() => void attempt(() => accept.mutateAsync(current.id))}
             onDecline={() => void attempt(() => decline.mutateAsync(current.id))}
             onDepart={() => void attempt(() => depart.mutateAsync(current.id))}
@@ -817,6 +822,7 @@ function ActionsCard({
   setRevision,
   hasBefore,
   hasAfter,
+  checklistOutstanding = 0,
   onAccept,
   onDecline,
   onDepart,
@@ -837,6 +843,8 @@ function ActionsCard({
   setRevision: (value: { reason: string; delta: string }) => void;
   hasBefore: boolean;
   hasAfter: boolean;
+  /** Checklist steps the server still counts as open; `complete` refuses while any are. */
+  checklistOutstanding?: number;
   onAccept: () => void;
   onDecline: () => void;
   onDepart: () => void;
@@ -866,6 +874,7 @@ function ActionsCard({
      button is gated on it. The checklist gate is separate and invisible to them
      (§3.11), which the screen says rather than hides. */
   const photosReady = hasBefore && hasAfter;
+  const checklistReady = checklistOutstanding <= 0;
   const isTooEarly = new Date(booking.scheduledStart).getTime() > now + 30 * 60 * 1000;
   const startTooEarly = isTooEarly && booking.status === 'EN_ROUTE';
 
@@ -955,7 +964,7 @@ function ActionsCard({
             <p className="text-xs leading-5 text-muted">{dict.job.finalAmountHint}</p>
           </div>
 
-          <Button type="button" onClick={onComplete} disabled={pending || !photosReady}>
+          <Button type="button" onClick={onComplete} disabled={pending || !photosReady || !checklistReady}>
             <CheckCircle2 className="size-4" aria-hidden="true" />
             {dict.job.completeJob}
           </Button>
@@ -963,6 +972,10 @@ function ActionsCard({
             /* Naming the specific missing photo is the difference between a
                professional fixing the problem and guessing. */
             <p className="rounded-[9px] bg-amber-50 p-3 text-sm leading-6 text-amber-900">{!hasBefore ? dict.job.needBeforePhoto : dict.job.needAfterPhoto}</p>
+          ) : !checklistReady ? (
+            /* The server's own count of open steps, so the button is not offered
+               only to answer 409 "Not every checklist item has been completed". */
+            <p className="rounded-[9px] bg-amber-50 p-3 text-sm leading-6 text-amber-900">{dict.job.needChecklist.replace('{count}', String(checklistOutstanding))}</p>
           ) : null}
 
           <div className="border-t border-line pt-4">

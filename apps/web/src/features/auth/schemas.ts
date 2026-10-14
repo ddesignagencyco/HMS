@@ -74,7 +74,13 @@ export const registerSchema = z
     role: z.enum(["CUSTOMER", "PROVIDER"], { required_error: "Choose whether you are booking or offering services" }),
     firstName: z.string().trim().min(1, "Enter your first name").max(80, "That is too long"),
     lastName: z.string().trim().max(80, "That is too long").optional(),
-    phoneE164: z.string().trim().min(1, "Enter your mobile number"),
+    /* Checked with the other fields, not after them: validating it only once
+       everything else passed meant a short number was reported one submit late. */
+    phoneE164: z
+      .string()
+      .trim()
+      .min(1, "Enter your mobile number")
+      .refine((value) => toE164(value) !== null, "Enter a valid mobile number."),
     email: z
       .string()
       .trim()

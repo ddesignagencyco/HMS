@@ -130,7 +130,7 @@ export function ForgotForm({ locale, dict }: { locale: Locale; dict: Dictionary 
         </Link>
       }
     >
-      <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+      <form method="post" onSubmit={onSubmit} className="grid gap-4" noValidate>
         <Field
           {...form.register("identifier")}
           label={dict.auth.identifier}

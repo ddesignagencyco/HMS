@@ -411,12 +411,10 @@ describe('the customer plan screen', () => {
     expect(screen.getByText('AC Service')).toBeTruthy();
     /* The two visits carry the exact split `splitEvenly` produced —
        163334 + 163333 = 490000, so the remainder lands on one row
-       rather than being lost. `formatMoney` renders whole rupees
-       everywhere in this app, so both rows read Rs 1,633: the paisa
-       difference is in the stored values, not in the label. Asserted
-       as two rows rather than one, which is what proves both visits
-       were rendered. */
-    expect(screen.getAllByText('Rs 1,633')).toHaveLength(2);
+       rather than being lost. `formatMoney` shows paisa when there are
+       any, so the two rows differ by exactly the one paisa of remainder. */
+    expect(screen.getByText('Rs 1,633.34')).toBeTruthy();
+    expect(screen.getByText('Rs 1,633.33')).toBeTruthy();
     expect(screen.getByText('BOOKED')).toBeTruthy();
     expect(screen.getByText('PENDING')).toBeTruthy();
     expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes(`/subscriptions/${SUB_UUID}`))).toHaveLength(1);

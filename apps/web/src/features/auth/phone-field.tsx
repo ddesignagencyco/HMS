@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useId } from "react";
+import React, { useId, useState } from "react";
 import PhoneInput from "react-phone-input-2";
 import "react-phone-input-2/lib/style.css";
 import { Label } from "@/components/ui";
@@ -44,6 +44,25 @@ export function PhoneField({
   const hintId = hint === undefined ? undefined : `${fieldId}-hint`;
   const errorId = error === undefined ? undefined : `${fieldId}-error`;
 
+  /* What the input shows is kept apart from what the form receives. The form
+     gets "" while only a dial code is present, and feeding that "" straight back
+     into the input reset it mid-typing: selecting the field and typing
+     "+923005551234" came out as "+05 551-234", because the moment "92" was typed
+     the input was handed "" and lost its country. The parent's value still wins
+     whenever it changes from outside (a form reset, a prefill). */
+  const [display, setDisplay] = useState(value);
+  const [lastEmitted, setLastEmitted] = useState(value);
+  if (value !== lastEmitted) {
+    setLastEmitted(value);
+    setDisplay(value);
+  }
+
+  const emit = (shown: string, normalised: string, countryData: unknown) => {
+    setDisplay(shown);
+    setLastEmitted(normalised);
+    onChange(normalised, countryData);
+  };
+
   const handleChange = (val: string, countryData: any) => {
     const dialCode =
       countryData && typeof countryData === "object" && "dialCode" in countryData
@@ -53,7 +72,18 @@ export function PhoneField({
 
     // If empty or only the dial code without subscriber digits, treat as empty
     if (!digits || digits === dialCode) {
-      onChange("", countryData);
+      emit(digits, "", countryData);
+      return;
+    }
+
+    /* A Pakistani number written the local way — "0300…" in an emptied field —
+       has no country code, and the trunk 0 was being read as one
+       ("+03 005-551234"). The field defaults to Pakistan, so a leading 0 with no
+       recognised dial code is the national form of a +92 number (no E.164
+       country code starts with 0, so this never rewrites a real one). */
+    if (digits.startsWith("0") && digits.length > 1) {
+      const national = `92${digits.slice(1)}`;
+      emit(national, `+${national}`, countryData);
       return;
     }
 
@@ -63,7 +93,7 @@ export function PhoneField({
       cleanDigits = "92" + cleanDigits.slice(3);
     }
 
-    onChange(cleanDigits.startsWith("+") ? cleanDigits : `+${cleanDigits}`, countryData);
+    emit(val, cleanDigits.startsWith("+") ? cleanDigits : `+${cleanDigits}`, countryData);
   };
 
   return (
@@ -75,7 +105,7 @@ export function PhoneField({
         <PhoneInputComponent
           country="pk"
           preferredCountries={["pk", "ae", "sa", "gb", "us"]}
-          value={value}
+          value={display}
           onChange={handleChange}
           onBlur={onBlur}
           disabled={disabled}

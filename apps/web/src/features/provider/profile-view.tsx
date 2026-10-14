@@ -161,6 +161,13 @@ export function ProviderProfileScreen({ locale, dict }: { locale: Locale; dict: 
     }
     const trimmedBio = bio?.trim() ?? '';
     const trimmedQualification = qualification?.trim() ?? '';
+    /* `PATCH /provider/profile` can only replace bio/qualification
+       (`COALESCE(new, old)` in profile.service.ts), never clear them. Omitting an
+       emptied field used to "save" and silently bring the old text back. */
+    if ((trimmedBio === '' && me.bio !== null && me.bio !== '') || (trimmedQualification === '' && me.qualification !== null && me.qualification !== '')) {
+      setLocalError(dict.portal.bioCannotBeEmpty);
+      return;
+    }
     try {
       /* `profileUpdateSchema` is `.trim().min(1)` on bio and qualification, so an
          empty string is a 422 — an empty field is omitted, not sent blank. */

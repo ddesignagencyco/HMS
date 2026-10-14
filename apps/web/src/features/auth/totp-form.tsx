@@ -16,7 +16,7 @@ import { SubmitButton } from "./auth-fields";
 import { TotpQrCode } from "./totp-qr";
 import { AUTH_TOTP_IMAGE, AuthShell, Notice } from "./auth-shell";
 import { OtpField } from "./otp-field";
-import { actorRoles, returnToForRoles, signInPath } from "./routing";
+import { actorRoles, returnToForRoles, signInPath, totpLandingForNonStaff } from "./routing";
 import { applyServerFieldErrors, authErrorMessage, toastError, toastSuccess } from "./auth-feedback";
 
 /* Two-factor for staff.
@@ -63,6 +63,17 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
   useEffect(() => {
     if (status === "anonymous") router.replace(signInPath(locale, returnTo));
   }, [locale, returnTo, router, status]);
+
+  /* Two-factor on this route is a staff sign-in step. A customer or provider who
+     opens it has nothing to finish here: a customer manages their optional
+     two-factor on the account security page, anybody else goes home. Without
+     this a signed-in customer was shown the staff-only "this staff account
+     cannot be used until…" enrolment card. */
+  const nonStaffLanding =
+    status === "authenticated" && user !== null && !totpPending ? totpLandingForNonStaff(actorRoles(user), returnTo, locale) : null;
+  useEffect(() => {
+    if (nonStaffLanding !== null && secret === null) router.replace(nonStaffLanding);
+  }, [nonStaffLanding, router, secret]);
 
   /* Nothing to enrol on this account. */
   useEffect(() => {
@@ -136,14 +147,42 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
     }
   };
 
-  /* Held for loading and for the frame in which a visitor with no session is
-     being redirected — an enrolment card either way would be a dead end. */
-  if (status !== "authenticated") {
+  /* A visitor with no session is on their way to sign-in. That is a settled
+     answer, not a load, so it is said in words with a link — a skeleton marked
+     aria-busy here read as a page that never finished loading whenever the
+     redirect was slow (or blocked), and gave a keyboard or screen-reader user
+     nothing to act on. */
+  if (status === "anonymous") {
     return (
       <AuthShell locale={locale} dict={dict} title={dict.auth.totpTitle} description={dict.auth.totpIntro} imageSrc={AUTH_TOTP_IMAGE}>
-        <div className="grid gap-3" aria-busy="true" aria-live="polite">
-          <span className="skeleton h-11 w-full rounded-[9px]" />
-          <span className="skeleton h-11 w-2/3 rounded-[9px]" />
+        <div className="grid gap-4" data-testid="totp-sign-in-first">
+          <Notice tone="info">{dict.auth.totpSignInFirst}</Notice>
+          <Link
+            href={signInPath(locale, returnTo)}
+            className="inline-flex h-11 w-full items-center justify-center rounded-[9px] bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-strong"
+          >
+            {dict.auth.backToSignIn}
+          </Link>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  /* Held while the session is being read, and for the frame in which a signed-in
+     account with nothing to enrol here is being sent on. */
+  if (status !== "authenticated" || (nonStaffLanding !== null && secret === null)) {
+    const settled = status === "authenticated";
+    return (
+      <AuthShell locale={locale} dict={dict} title={dict.auth.totpTitle} description={dict.auth.totpIntro} imageSrc={AUTH_TOTP_IMAGE}>
+        <div className="grid gap-3" aria-busy={settled ? undefined : "true"} aria-live="polite">
+          {settled ? (
+            <Notice tone="info">{dict.auth.totpRedirecting}</Notice>
+          ) : (
+            <>
+              <span className="skeleton h-11 w-full rounded-[9px]" />
+              <span className="skeleton h-11 w-2/3 rounded-[9px]" />
+            </>
+          )}
         </div>
       </AuthShell>
     );
@@ -241,7 +280,7 @@ export function TotpForm({ locale, dict }: { locale: Locale; dict: Dictionary })
           </div>
         </div>
       ) : (
-        <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+        <form method="post" onSubmit={onSubmit} className="grid gap-4" noValidate>
           <div className="grid gap-3">
             <p className="flex items-center gap-2 text-sm font-semibold text-navy">
               <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-bold text-white" aria-hidden="true">

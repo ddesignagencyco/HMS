@@ -30,8 +30,16 @@ export function formatNumber(value: number, locale: Locale) {
   return new Intl.NumberFormat(localeTag(locale)).format(value);
 }
 
+/**
+ * Paisa → "Rs 1,912.50". Whole-rupee amounts stay "Rs 1,000"; anything with
+ * paisa shows both decimals. It used to round to whole rupees, which printed
+ * held Rs 1,912.50 as "Rs 1,913" — a money screen must never show a figure the
+ * ledger doesn't hold.
+ */
 export function formatMoney(paisa: number, locale: Locale) {
-  return `Rs ${formatNumber(Math.round(paisa / 100), locale)}`;
+  const whole = paisa % 100 === 0;
+  const rupees = new Intl.NumberFormat(localeTag(locale), { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 }).format(paisa / 100);
+  return `Rs ${rupees}`;
 }
 
 export function formatDate(value: string | null | undefined, locale: Locale) {

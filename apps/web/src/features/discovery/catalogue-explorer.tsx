@@ -45,6 +45,16 @@ export function CatalogueExplorer({
 
   // Filter States
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
+  /* The URL is the authority for the category. `useState(initialCategory)` only
+     read it once, so browser Back/Forward between `?category=` URLs changed the
+     address bar while the list stayed on the old category. When the server hands
+     down a different category (a history step, a link), adopt it — the
+     "adjust state while rendering" pattern, so there is no effect and no flash. */
+  const [categoryFromUrl, setCategoryFromUrl] = useState<string>(initialCategory);
+  if (categoryFromUrl !== initialCategory) {
+    setCategoryFromUrl(initialCategory);
+    setSelectedCategory(initialCategory);
+  }
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [pricingFilter, setPricingFilter] = useState<PricingFilter>("ALL");
   const [emergencyOnly, setEmergencyOnly] = useState<boolean>(false);

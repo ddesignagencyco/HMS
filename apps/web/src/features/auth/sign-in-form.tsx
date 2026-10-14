@@ -159,7 +159,7 @@ export function SignInForm({ locale, dict }: { locale: Locale; dict: Dictionary 
           </button>
         }
       >
-        <form onSubmit={onChallengeSubmit} className="grid gap-4" noValidate>
+        <form method="post" onSubmit={onChallengeSubmit} className="grid gap-4" noValidate>
           <p className="text-sm leading-6 text-secondary">
             {dict.auth.otpSentTo.replace("{target}", describeTarget(challenge.identifier))}
           </p>
@@ -191,7 +191,7 @@ export function SignInForm({ locale, dict }: { locale: Locale; dict: Dictionary 
       imageSrc={AUTH_HERO_IMAGE}
       imagePlacement="right"
     >
-      <form onSubmit={onSubmit} className="grid gap-3.5" noValidate>
+      <form method="post" onSubmit={onSubmit} className="grid gap-3.5" noValidate>
         <Field
           {...form.register("identifier")}
           label={locale === "ur" ? "فون یا ای میل" : "Phone or email"}

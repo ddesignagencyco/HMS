@@ -114,7 +114,7 @@ export function RegisterForm({ locale, dict }: { locale: Locale; dict: Dictionar
       visualVariant="signup"
       showLogo={true}
     >
-      <form onSubmit={onSubmit} className="grid gap-2 sm:gap-2.5" noValidate>
+      <form method="post" onSubmit={onSubmit} className="grid gap-2 sm:gap-2.5" noValidate>
         {/* Role Selection Matching Reference Design */}
         <div className="grid gap-2 sm:grid-cols-2">
           {(["CUSTOMER", "PROVIDER"] as const).map((value) => {

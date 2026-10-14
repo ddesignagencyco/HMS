@@ -968,7 +968,7 @@ function ScheduleStep({
                   const afternoon: { start: string; end: string }[] = [];
                   const evening: { start: string; end: string }[] = [];
                   for (const slot of slotTimes) {
-                    const hour = new Date(slot.start).getHours();
+                    const hour = karachiHour(slot.start);
                     if (hour < 12) morning.push(slot);
                     else if (hour < 17) afternoon.push(slot);
                     else evening.push(slot);
@@ -1300,11 +1300,23 @@ const isSlotTaken = (error: unknown): boolean =>
  * it. Formatting in the browser's zone would show the wrong day to anybody
  * outside Pakistan — midnight local is 19:00Z the previous day.
  */
-function describeSchedule(scheduled: ScheduleRequest | { start: string; end: string } | null, locale: Locale, notChosen: string): string {
+export function describeSchedule(scheduled: ScheduleRequest | { start: string; end: string } | null, locale: Locale, notChosen: string): string {
   if (scheduled === null) return notChosen;
   const tag = locale === "ur" ? "ur-PK" : "en-PK";
   if ("date" in scheduled) return `${formatDay(scheduled.date, locale)}, ${formatSlotTime(scheduled.start, tag)}`;
-  return new Intl.DateTimeFormat(tag, { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Karachi" }).format(
-    new Date(scheduled.start),
-  );
+  /* The day alone is not what the customer chose: they picked a start time, and
+     the review step is the last place to catch a wrong one before it is booked. */
+  const day = new Intl.DateTimeFormat(tag, { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Karachi" }).format(new Date(scheduled.start));
+  return `${day}, ${formatSlotTime(scheduled.start, tag)}`;
+}
+
+/**
+ * The hour of a slot on the clock the slot is sold in. Slot labels are printed
+ * in Asia/Karachi, so the morning/afternoon/evening grouping must use the same
+ * clock — a browser elsewhere (`getHours()` is browser-local) would otherwise
+ * file a 9:00 am slot under "Evening".
+ */
+export function karachiHour(iso: string): number {
+  const hour = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: "Asia/Karachi" }).format(new Date(iso));
+  return Number(hour);
 }

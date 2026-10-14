@@ -62,6 +62,13 @@ describe("registerSchema", () => {
     expect(registerSchema.safeParse(valid).success).toBe(true);
   });
 
+  it("flags a too-short phone alongside the other field errors, not one submit later", () => {
+    const result = registerSchema.safeParse({ ...valid, firstName: " ", phoneE164: "+92300" });
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((issue) => issue.path[0]);
+    expect(paths).toEqual(expect.arrayContaining(["firstName", "phoneE164"]));
+  });
+
   it("enforces the API password policy, not the old eight-character rule", () => {
     const short = registerSchema.safeParse({ ...valid, password: "Sh0rt", confirmPassword: "Sh0rt" });
     expect(short.success).toBe(false);

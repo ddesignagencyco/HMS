@@ -217,6 +217,16 @@ describe('the services a provider offers', () => {
     });
   });
 
+  it('refuses an emptied price instead of sending Rs 0', async () => {
+    renderScreen();
+    await screen.findByText('Leak Repair');
+    fireEvent.click(screen.getByRole('button', { name: /Edit price/ }));
+    fireEvent.change(await screen.findByLabelText(dict.portal.yourPrice), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.save }));
+    expect(await screen.findByText(dict.portal.priceInvalid)).toBeDefined();
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'PUT')).toBe(false);
+  });
+
   it('refuses a non-numeric price before sending it', async () => {
     renderScreen();
     await screen.findByText('Leak Repair');
@@ -226,10 +236,15 @@ describe('the services a provider offers', () => {
     expect(await screen.findByText(dict.portal.priceInvalid)).toBeDefined();
   });
 
-  it('removes a binding through the API', async () => {
+  it('removes a binding through the API only after confirming', async () => {
     renderScreen();
     await screen.findByText('Leak Repair');
     fireEvent.click(screen.getByRole('button', { name: /Stop offering/ }));
+    /* Regression: one click used to DELETE an approved binding outright, and
+       re-adding it needs an admin's approval again. */
+    const isDelete = ([url, init]: unknown[]) => String(url).includes('/provider/services/11') && (init as RequestInit | undefined)?.method === 'DELETE';
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.some(isDelete)).toBe(false);
+    fireEvent.click(await screen.findByRole('button', { name: dict.portal.stopOfferingYes }));
     await waitFor(() => {
       const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
         ([url, init]) => String(url).includes('/provider/services/11') && (init as RequestInit | undefined)?.method === 'DELETE'

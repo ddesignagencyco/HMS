@@ -7,7 +7,7 @@ import type { Dictionary } from "@/lib/dictionaries";
 import { localizedPath, type Locale } from "@/lib/utils";
 import { SelectField } from "@/components/select-field";
 import { buttonStyles } from "@/components/ui";
-import { useCategories, useCategoryServices } from "@/features/catalogue/queries";
+import { useAllServices } from "@/features/catalogue/queries";
 import { useCities } from "@/features/places/queries";
 import { cityCentre } from "@/features/search/location";
 import { SEARCH_PARAM } from "@/features/search/types";
@@ -24,15 +24,20 @@ export function HeroSearch({ locale, dict }: { locale: Locale; dict: Dictionary 
   const [service, setService] = useState("");
   const [city, setCity] = useState("");
 
-  const categories = useCategories(locale);
   const cities = useCities(locale);
-  const firstCategory = categories.data?.items[0]?.slug ?? null;
-  const services = useCategoryServices(firstCategory, locale);
+  /* Every service in the catalogue. This used to list only the *first*
+     category's services (plumbing) under a hint promising "plumbing,
+     electrical, painting and more", so nothing outside plumbing could be
+     searched from the homepage. */
+  const services = useAllServices(locale);
 
   const serviceOptions = useMemo(
     () => [
       { value: "", label: dict.home.searchHint },
-      ...(services.data?.items ?? []).map((item) => ({ value: item.slug, label: locale === "ur" ? item.nameUr : item.nameEn })),
+      ...(services.data?.items ?? []).map((item) => ({
+        value: item.slug,
+        label: `${locale === "ur" ? item.nameUr : item.nameEn} · ${locale === "ur" ? item.categoryNameUr : item.categoryNameEn}`,
+      })),
     ],
     [dict.home.searchHint, locale, services.data],
   );
@@ -80,6 +85,7 @@ export function HeroSearch({ locale, dict }: { locale: Locale; dict: Dictionary 
             onChange={setService}
             options={serviceOptions}
             placeholder={dict.home.searchHint}
+            isSearchable
           />
         </div>
         <div className="grid gap-2">

@@ -106,7 +106,7 @@ export function ResetPasswordForm({ locale, dict }: { locale: Locale; dict: Dict
         </Link>
       }
     >
-      <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+      <form method="post" onSubmit={onSubmit} className="grid gap-4" noValidate>
         <p className="text-sm leading-6 text-secondary">{dict.auth.otpSentTo.replace("{target}", describeTarget(identifier))}</p>
 
         <Controller

@@ -7,7 +7,7 @@ import { SelectField } from '@/components/select-field';
 import { useEarnings, usePayoutAccounts, usePayouts, useRequestPayout, useAddPayoutAccount } from '@/features/provider/queries';
 import type { PayoutStatus } from '@/features/provider/api';
 import type { Dictionary } from '@/lib/dictionaries';
-import { cn, formatDate, formatMoney, type Locale } from '@/lib/utils';
+import { cn, formatDate, formatMoney, localeTag, type Locale } from '@/lib/utils';
 
 /* Payouts: where money goes, and what has already gone.
 
@@ -25,6 +25,12 @@ import { cn, formatDate, formatMoney, type Locale } from '@/lib/utils';
    · **An account number is stored encrypted** and is never returned — only
      `accountLast4`. So there is nothing to re-display, and the form is the only
      place it exists. */
+
+/** Rupees with paisa when there are any. `formatMoney` rounds to whole rupees,
+    which turned a releasable Rs 2.50 into "Rs 3" — a ceiling the server then
+    refuses when the professional types 3. */
+const formatExact = (paisa: number, locale: Locale): string =>
+  paisa % 100 === 0 ? formatMoney(paisa, locale) : `Rs ${new Intl.NumberFormat(localeTag(locale), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(paisa / 100)}`;
 
 const STATUS_TONE: Record<PayoutStatus, string> = {
   REQUESTED: 'bg-amber-50 text-amber-700',
@@ -63,9 +69,16 @@ export function ProviderPayoutsScreen({ locale, dict }: { locale: Locale; dict: 
   const askForPayout = async (): Promise<void> => {
     setLocalError('');
     setDone('');
-    const paisa = Math.round(Number(amount) * 100);
+    const typed = amount.trim();
+    const paisa = typed === '' ? Number.NaN : Math.round(Number(typed) * 100);
     if (!Number.isFinite(paisa) || paisa <= 0) {
       setLocalError(dict.portal.payoutAmountInvalid);
+      return;
+    }
+    /* The server refuses more than the releasable balance too, but its sentence
+       is in paisa ("at most 250 paisa"); the ceiling is known here, in rupees. */
+    if (earnings.data !== undefined && paisa > releasable) {
+      setLocalError(dict.portal.payoutAboveReleasable.replace('{amount}', formatExact(releasable, locale)));
       return;
     }
     const chosen = accountId !== '' ? accountId : (accounts.data?.items[0]?.id ?? '');
@@ -90,6 +103,13 @@ export function ProviderPayoutsScreen({ locale, dict }: { locale: Locale; dict: 
     setDone('');
     if (accountTitle.trim() === '' || institution.trim() === '' || accountNumber.trim() === '') {
       setLocalError(dict.portal.accountFieldsRequired);
+      return;
+    }
+    /* `accountSchema` (provider-payouts.controller.ts): title and institution are
+       2–120 characters, and the number needs at least 6 digits — otherwise a bare
+       "Request validation failed" came back. */
+    if (accountTitle.trim().length < 2 || institution.trim().length < 2 || accountNumber.replace(/\D/g, '').length < 6) {
+      setLocalError(dict.portal.accountFieldsTooShort);
       return;
     }
     try {
@@ -180,7 +200,7 @@ export function ProviderPayoutsScreen({ locale, dict }: { locale: Locale; dict: 
               <Wallet className="size-4 text-muted" aria-hidden="true" />
               {dict.portal.requestPayout}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-secondary">{dict.portal.releasableNow.replace('{amount}', formatMoney(releasable, locale))}</p>
+            <p className="mt-2 text-sm leading-6 text-secondary">{dict.portal.releasableNow.replace('{amount}', formatExact(releasable, locale))}</p>
 
             <div className="mt-4 grid gap-3">
               <div className="grid gap-2">
@@ -257,15 +277,15 @@ export function ProviderPayoutsScreen({ locale, dict }: { locale: Locale; dict: 
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="account-title">{dict.portal.accountTitleLabel}</Label>
-                  <Input id="account-title" value={accountTitle} onChange={(event) => setAccountTitle(event.target.value)} />
+                  <Input id="account-title" maxLength={120} value={accountTitle} onChange={(event) => setAccountTitle(event.target.value)} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="account-institution">{dict.portal.institutionLabel}</Label>
-                  <Input id="account-institution" value={institution} onChange={(event) => setInstitution(event.target.value)} />
+                  <Input id="account-institution" maxLength={120} value={institution} onChange={(event) => setInstitution(event.target.value)} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="account-number">{dict.portal.accountNumberLabel}</Label>
-                  <Input id="account-number" value={accountNumber} onChange={(event) => setAccountNumber(event.target.value)} />
+                  <Input id="account-number" maxLength={40} value={accountNumber} onChange={(event) => setAccountNumber(event.target.value)} />
                 </div>
                 <p className="text-xs leading-5 text-muted">{dict.portal.accountNumberPrivacy}</p>
                 <div className="flex gap-2">

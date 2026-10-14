@@ -151,7 +151,7 @@ export function VerifyOtpPage({ locale, dict }: { locale: Locale; dict: Dictiona
           </Link>
         }
       >
-        <form onSubmit={onRequestSubmit} className="grid gap-4" noValidate>
+        <form method="post" onSubmit={onRequestSubmit} className="grid gap-4" noValidate>
           <Field
             {...identifierForm.register("identifier")}
             label={dict.auth.identifier}
@@ -195,7 +195,7 @@ export function VerifyOtpPage({ locale, dict }: { locale: Locale; dict: Dictiona
         </>
       }
     >
-      <form onSubmit={onCodeSubmit} className="grid gap-4" noValidate>
+      <form method="post" onSubmit={onCodeSubmit} className="grid gap-4" noValidate>
         <p dir="ltr" className="inline-flex w-fit items-center gap-2 rounded-[9px] bg-slate-100 px-3.5 py-2 text-[15px] font-semibold text-navy">
           <Phone className="size-4 text-primary" aria-hidden="true" />
           {describeTarget(identifier)}

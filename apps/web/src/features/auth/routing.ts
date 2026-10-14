@@ -114,3 +114,22 @@ export const totpPath = (locale: Locale, returnTo?: string | null): string => {
   const base = localizedPath(locale, "/auth/totp");
   return target === null ? base : `${base}?returnTo=${encodeURIComponent(target)}`;
 };
+const STAFF_ROLES: readonly ActorRole[] = ["AGENT", "FINANCE", "ADMIN"];
+
+/**
+ * Where a signed-in account that holds no staff role goes when it opens the
+ * staff two-factor route. Null for staff, who belong there.
+ *
+ * A customer manages their own (optional) two-factor on the account security
+ * page, so that is where they land; a provider, or an account with no portal
+ * role, goes to its home or a safe destination it is allowed to reach.
+ */
+export const totpLandingForNonStaff = (
+  roles: readonly ActorRole[],
+  returnTo: string | null | undefined,
+  locale: Locale,
+): string | null => {
+  if (roles.some((role) => STAFF_ROLES.includes(role))) return null;
+  if (roles.includes("CUSTOMER") && safeReturnTo(returnTo, locale) === null) return localizedPath(locale, "/account/security");
+  return returnToForRoles(returnTo, roles, locale);
+};
