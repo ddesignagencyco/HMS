@@ -3,7 +3,7 @@
 import { CalendarDays, Camera, CheckCircle2, ChevronLeft, ChevronRight, Info, ShieldCheck, Upload, X, Zap } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, localizedPath, type Locale } from "@/lib/utils";
@@ -25,6 +25,8 @@ import { useIssueOptions } from "@/features/catalogue/queries";
 import { isAwaitingProvider, isHeldPayment } from "@/features/booking/status";
 import { bookingApi, type CreatedBooking, type PaymentMode, type Quote } from "@/features/booking/api";
 import { prepareEvidenceImage } from "@/features/uploads/image";
+import { savePaymentLink } from "@/features/booking/payment-link";
+import { newIdempotencyKey } from "@/lib/api/idempotency";
 import { resolveProviderName } from "@/features/providers/names";
 import type { CatalogueService } from "@/features/catalogue/api";
 
@@ -94,6 +96,11 @@ export function BookingFlow({
   const [localError, setLocalError] = useState("");
   const quote = useQuote(null, locale);
   const createBooking = useCreateBooking(locale);
+  /* One Idempotency-Key per checkout attempt, not per request: a double-tap or a
+     resend replays the first booking instead of creating a second one. The API
+     keeps no record of a failed attempt, so the same key is safe to resend with a
+     corrected slot after SLOT_TAKEN; it is only replaced once a booking exists. */
+  const checkoutKey = useRef<string | null>(null);
 
   const { status: sessionStatus } = useSession();
   const canReadAddresses = sessionStatus === "authenticated";
@@ -288,7 +295,8 @@ const eligibleProviders = useMemo(() => {
     if (basket.addressId === null || basket.choice === null || scheduled === null || basket.paymentMode === null) return;
 
     try {
-      const booking = await createBooking.mutateAsync({
+      checkoutKey.current ??= newIdempotencyKey(`booking:${crypto.randomUUID()}`);
+      const booking = await createBooking.mutateAsync({ idempotencyKey: checkoutKey.current, input: {
         serviceId: service.id,
         addressId: basket.addressId,
         scheduledStart: scheduled.start,
@@ -298,7 +306,8 @@ const eligibleProviders = useMemo(() => {
         ...(basket.problem.trim() === "" ? {} : { problemText: basket.problem.trim() }),
         ...(chosenProviderId === null ? {} : { providerId: chosenProviderId }),
         ...(emergencyAllowed && basket.emergency ? { isEmergency: true } : {}),
-      });
+      } });
+      checkoutKey.current = null;
 
       /* If the customer selected problem photos during checkout, upload them as evidence now */
       if (photos.length > 0) {
@@ -506,7 +515,7 @@ const eligibleProviders = useMemo(() => {
                     chosenProviderId
                       ? resolveProviderName(
                           chosenProviderId,
-                          eligibleProviders.find((item) => item.providerId === chosenProviderId)?.qualification ?? dict.booking.professionalFallback
+                          eligibleProviders.find((item) => item.providerId === chosenProviderId)?.qualification ?? dict.common.professional
                         ).fullName
                       : null
                   }
@@ -613,7 +622,7 @@ const eligibleProviders = useMemo(() => {
                     <div className="flex justify-between gap-3 text-xs">
                       <dt className="text-white/60">{locale === "ur" ? "منتخب ماہر" : "Selected professional"}</dt>
                       <dd className="text-end font-semibold text-white">
-                        {resolveProviderName(chosenProvider.providerId, chosenProvider.qualification ?? "").fullName}
+                        {resolveProviderName(chosenProvider.providerId, chosenProvider.qualification ?? dict.common.professional).fullName}
                       </dd>
                     </div>
                   ) : null}
@@ -1157,7 +1166,13 @@ function ReviewStep({
   );
 }
 
-const PAYMENT_URL_STORAGE_KEY = 'booking:paymentUrl';
+/** Keeps the gateway link for this booking, once, so the booking page can offer "Pay now" later — even in another tab. */
+function RememberPaymentLink({ bookingId, redirectUrl }: { bookingId: string; redirectUrl: string }) {
+  useEffect(() => {
+    savePaymentLink(bookingId, redirectUrl);
+  }, [bookingId, redirectUrl]);
+  return null;
+}
 
 function BookingConfirmed({
   locale,
@@ -1236,20 +1251,7 @@ function BookingConfirmed({
 
             {booking.payment !== undefined ? (
               <div className="mt-6">
-                {(() => {
-                  /* Store the redirect URL so the booking detail page can offer
-                     a "Pay" button even if the customer navigates away and returns
-                     later. The key is scoped to this booking id. */
-                  const key = `${PAYMENT_URL_STORAGE_KEY}:${booking.id}`;
-                  const idKey = `booking:paymentId:${booking.id}`;
-                  try {
-                    sessionStorage.setItem(key, booking.payment.redirectUrl);
-                    sessionStorage.setItem(idKey, booking.payment.paymentId);
-                  } catch {
-                    /* Ignore quota/private mode failures. */
-                  }
-                  return null;
-                })()}
+                <RememberPaymentLink bookingId={booking.id} redirectUrl={booking.payment.redirectUrl} />
                 <a
                   /* Same-origin: the gateway URL is the mock provider's own page
                      behind the same rewrite, so the httpOnly refresh cookie

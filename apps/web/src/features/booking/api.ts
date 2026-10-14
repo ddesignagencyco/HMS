@@ -25,6 +25,7 @@
      409 `SLOT_TAKEN`. No function here treats a held slot as reserved. */
 
 import { apiRequest, type ApiRequest } from "@/lib/api/client";
+import { apiWrite } from "@/lib/api/idempotency";
 import type { Locale } from "@/lib/utils";
 
 /* ---- What the API returns ------------------------------------------------
@@ -313,6 +314,14 @@ export type ServiceAddress = {
 };
 
 /** `POST /bookings/:id/evidence` — one photo, base64, insert-only. */
+
+/**
+ * `evidenceContentTypes` in booking.schemas.ts. Widened with the Supabase
+ * storage switch: GIF, short video and PDF are stored as well as photos, so a
+ * reader must not assume every row is an image (see `StoredMedia`).
+ */
+export type EvidenceContentType = "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "video/mp4" | "video/webm" | "video/quicktime" | "application/pdf";
+
 export type EvidenceKind = "CUSTOMER_PROBLEM" | "BEFORE" | "AFTER" | "CHECKLIST";
 
 export type Evidence = {
@@ -321,7 +330,7 @@ export type Evidence = {
   /** Generated on the device, so a retried upload stores once and returns 200. */
   clientUuid: string;
   checklistItemId: number | null;
-  contentType: "image/jpeg" | "image/png" | "image/webp";
+  contentType: EvidenceContentType;
   sizeBytes: number;
   receivedAt: string;
   clientCapturedAt: string | null;
@@ -331,7 +340,7 @@ export type Evidence = {
 export type AddEvidenceInput = {
   clientUuid: string;
   kind: EvidenceKind;
-  contentType: "image/jpeg" | "image/png" | "image/webp";
+  contentType: EvidenceContentType;
   contentBase64: string;
   checklistItemId?: number;
   capturedAt?: string;
@@ -409,12 +418,17 @@ export const bookingApi = {
    * PENDING_PAYMENT and only becomes REQUESTED once the gateway's signed
    * webhook confirms capture. So a successful 201 with a `redirectUrl` means
    * "not yet booked" as much as it means "booked".
+   *
+   * `idempotencyKey` is one key per checkout attempt, held by the caller: a
+   * double-tap or a resend of the same attempt replays the first response rather
+   * than creating a second booking. The API does not store failures, so after an
+   * error the same key may be sent again with a corrected body.
    */
-  create: (input: CreateBookingInput, options?: BookingOptions) =>
-    call<CreatedBooking>(
+  create: (input: CreateBookingInput, idempotencyKey: string, options?: BookingOptions) =>
+    apiWrite<CreatedBooking>(
       "/bookings",
-      { method: "POST", body: compact({ ...input, isEmergency: input.isEmergency ?? false }) },
-      options,
+      { method: "POST", body: compact({ ...input, isEmergency: input.isEmergency ?? false }), idempotencyKey },
+      options?.locale,
     ),
 
   /** 404 for someone else's booking — the API does not confirm it exists. */
@@ -439,8 +453,13 @@ export const bookingApi = {
     call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/reschedule`, { method: "POST", body: input }, options),
 
   /** The provider found extra work; the customer answers with one of these. */
+  /**
+   * On an ONLINE job the approval waits on a top-up payment, so the response
+   * carries `payment` (as `create` does) and the booking stays in QUOTE_REVISION
+   * until the gateway confirms capture. A CASH approval returns no `payment`.
+   */
   approveRevision: (bookingId: string, options?: BookingOptions) =>
-    call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/revisions/approve`, { method: "POST" }, options),
+    call<CreatedBooking>(`/bookings/${encodeURIComponent(bookingId)}/revisions/approve`, { method: "POST" }, options),
 
   rejectRevision: (bookingId: string, options?: BookingOptions) =>
     call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/revisions/reject`, { method: "POST" }, options),

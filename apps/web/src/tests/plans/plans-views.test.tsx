@@ -43,7 +43,7 @@ const toast = (await import('react-hot-toast')).default;
  *   refunded one is gone money. The customer screen shows all five
  *   because the collapsing version is the misleading one.
  *
- * · **Subscribing routes to `checkout.returnUrl` and does not announce a
+ * · **Subscribing routes to `checkout.redirectUrl` and does not announce a
  *   confirmed plan.** The subscription only becomes ACTIVE when the
  *   gateway callback fires, so a screen that said "subscribed" on the
  *   strength of a POST would be lying to the customer about money.
@@ -293,9 +293,9 @@ describe('the customer plan screen', () => {
     expect(fetchMock.mock.calls.filter((call) => String(call[0]).includes('/subscribe'))).toHaveLength(0);
   });
 
-  it('sends the chosen address and follows the checkout url the server returns', async () => {
+  it('sends the chosen address and an absolute returnUrl, and follows the gateway redirectUrl', async () => {
     const assign = vi.fn();
-    vi.stubGlobal('location', { assign });
+    vi.stubGlobal('location', { assign, origin: 'https://app.test' });
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/subscribe')) {
@@ -306,7 +306,9 @@ describe('the customer plan screen', () => {
           startsAt: '2026-01-01T00:00:00.000Z',
           endsAt: '2027-01-01T00:00:00.000Z',
           visitsCount: 3,
-          checkout: { returnUrl: 'https://gateway.test/checkout/abc' }
+          /* `PaymentsService.startCheckout`'s shape: `returnUrl` is our own
+             echo; only `redirectUrl` takes the money. */
+          checkout: { paymentId: 'p1', redirectUrl: 'https://gateway.test/checkout/abc', returnUrl: 'https://app.test/en/account/plans' }
         });
       }
       if (url.includes('/plans')) return json({ items: [plan()] });
@@ -323,7 +325,11 @@ describe('the customer plan screen', () => {
     await waitFor(() => expect(assign).toHaveBeenCalledWith('https://gateway.test/checkout/abc'));
     /* The body carried the address and an explicit null preferred pro. */
     const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/subscribe'));
-    expect(JSON.parse(String((call?.[1] as RequestInit)?.body)).addressId).toBe(ADDRESS_UUID);
+    const body = JSON.parse(String((call?.[1] as RequestInit)?.body));
+    expect(body.addressId).toBe(ADDRESS_UUID);
+    /* `z.string().url()` — absolute, and a route this app actually has. */
+    expect(body.returnUrl).toBe(`https://app.test/${locale}/account/plans`);
+    expect(assign).not.toHaveBeenCalledWith('https://app.test/en/account/plans');
   });
 
   it('states the refund rule before cancelling and reports the server figure after', async () => {

@@ -27,7 +27,7 @@
  *
  * **Subscribing does not activate a plan.** `POST /plans/:id/subscribe`
  * writes the subscription, schedules the visits and opens a payment,
- * then returns `checkout.returnUrl`. The plan only becomes `ACTIVE`
+ * then returns `checkout.redirectUrl`. The plan only becomes `ACTIVE`
  * when the gateway callback fires `capturePlan`. So the screen routes
  * to the checkout and says the plan is not active yet — it does not
  * show a success state on the strength of a request that created a
@@ -299,7 +299,10 @@ export function CustomerPlansScreen({ locale, dict }: Props) {
     }
     setPendingPlan(plan.id);
     subscribe.mutate(
-      { planId: plan.id, input: { addressId, preferredProviderId: null } },
+      /* `returnUrl` must be absolute (`z.string().url()`), and the server's
+         default (`/me/subscriptions`) is not a web route — so the gateway is
+         told to bring the customer back to this screen. */
+      { planId: plan.id, input: { addressId, preferredProviderId: null, returnUrl: `${window.location.origin}${localizedPath(locale, '/account/plans')}` } },
       {
         onSuccess: (result) => {
           setPendingPlan(null);
@@ -308,11 +311,11 @@ export function CustomerPlansScreen({ locale, dict }: Props) {
              fires `capturePlan`. So the browser is sent there, and the
              screen never reports "you are subscribed" on the strength
              of a POST that merely opened a payment. */
-          if (typeof result.checkout?.returnUrl === 'string' && result.checkout.returnUrl !== '') {
-            window.location.assign(result.checkout.returnUrl);
+          if (typeof result.checkout?.redirectUrl === 'string' && result.checkout.redirectUrl !== '') {
+            window.location.assign(result.checkout.redirectUrl);
             return;
           }
-          /* No returnUrl: the subscription exists but is unpaid, so the
+          /* No redirectUrl: the subscription exists but is unpaid, so the
              message says the payment is outstanding rather than
              announcing a plan the customer does not yet hold. */
           toastSuccess(dict.portal.plansSubscribedText);

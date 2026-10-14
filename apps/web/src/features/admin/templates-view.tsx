@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { BellRing, Loader2, Mail, MessageSquare, Save } from 'lucide-react';
 import { Button, Card, PageHeader } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
-import type { Channel, NotificationStatus } from '@/features/admin/cases-api';
+import type { Channel, NotificationStatus, TemplatePreview } from '@/features/admin/cases-api';
 import { useNotificationLog, usePreviewTemplate, useSaveTemplate, useTemplates } from '@/features/admin/cases-queries';
 import { detailOf, toastSuccess } from '@/features/auth/auth-feedback';
 import { ApiError } from '@/lib/api/problem';
@@ -96,17 +96,16 @@ function TemplateCard({
   const save = useSaveTemplate(locale);
   const [body, setBody] = useState(row.body);
   const [subject, setSubject] = useState(row.subject ?? '');
-  const [missing, setMissing] = useState<string[] | null>(null);
+  const [result, setResult] = useState<TemplatePreview | null>(null);
   const [error, setError] = useState('');
   const Icon = CHANNEL_ICON[row.channel as Channel] ?? MessageSquare;
 
   const runPreview = async (): Promise<void> => {
     setError('');
     try {
-      const result = await preview.mutateAsync({ body, ...(subject === '' ? {} : { subject }) });
-      /* The server's list of placeholders it would not fill. This is the check
-         that stands between a draft and every customer on that event. */
-      setMissing(result.missing);
+      /* The server's list of placeholders it would not fill (`unknownPlaceholders`)
+         is the check that stands between a draft and every customer on that event. */
+      setResult(await preview.mutateAsync({ body, ...(subject === '' ? {} : { subject }) }));
     } catch (caught) {
       setError(detailOf(caught, dict));
     }
@@ -114,11 +113,11 @@ function TemplateCard({
 
   const doSave = async (): Promise<void> => {
     setError('');
-    if (missing === null) {
+    if (result === null) {
       setError(dict.admin.previewFirst);
       return;
     }
-    if (missing.length > 0) {
+    if (!result.valid) {
       setError(dict.admin.fixPlaceholdersFirst);
       return;
     }
@@ -153,7 +152,10 @@ function TemplateCard({
           <input
             id={`subject-${row.id}`}
             value={subject}
-            onChange={(event) => setSubject(event.target.value)}
+            onChange={(event) => {
+              setSubject(event.target.value);
+              setResult(null);
+            }}
             className="mt-1 min-h-11 w-full rounded-[9px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
           />
         </div>
@@ -171,16 +173,22 @@ function TemplateCard({
             setBody(event.target.value);
             /* Editing invalidates the preview: the missing-placeholder list belongs
                to the draft that was previewed, not to the next one. */
-            setMissing(null);
+            setResult(null);
           }}
           className="mt-1 w-full rounded-[9px] border border-line bg-white p-3 text-sm text-navy outline-none focus:border-primary"
         />
       </div>
 
-      {missing === null ? null : (
-        <p className={cn('mt-2 text-xs leading-5', missing.length === 0 ? 'text-emerald-700' : 'text-rose-700')}>
-          {missing.length === 0 ? dict.admin.previewClean : dict.admin.previewMissing.replace('{placeholders}', missing.map((name) => `{{${name}}}`).join(', '))}
-        </p>
+      {result === null ? null : (
+        <>
+          <div className="mt-2 rounded-[9px] border border-line bg-slate-50 p-3 text-sm text-navy" data-testid="template-rendered">
+            {result.subject === null ? null : <p className="font-semibold">{result.subject}</p>}
+            <p className="whitespace-pre-wrap">{result.body}</p>
+          </div>
+          <p className={cn('mt-2 text-xs leading-5', result.valid ? 'text-emerald-700' : 'text-rose-700')}>
+            {result.valid ? dict.admin.previewClean : dict.admin.previewMissing.replace('{placeholders}', result.unknownPlaceholders.map((name) => `{{${name}}}`).join(', '))}
+          </p>
+        </>
       )}
 
       {error !== '' ? (

@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertTriangle, CalendarDays, CheckCircle2, CreditCard, Image as ImageIcon, Info, ShieldCheck, XCircle } from 'lucide-react';
-import { EvidenceImage } from '@/components/evidence-image';
+import { EvidenceImage, mediaLabels } from '@/components/evidence-image';
 import { useEffect, useState } from 'react';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDateTime, localizedPath, type Locale } from '@/lib/utils';
@@ -27,6 +27,8 @@ import { BookingChat } from '@/features/booking/booking-chat';
 import { StartCodeCard } from '@/features/booking/start-code-card';
 import { RevisionCard } from '@/features/booking/revision-card';
 import { isNotFoundError } from '@/lib/api/keys';
+import { ApiError } from '@/lib/api/problem';
+import { clearPaymentLink, readPaymentLink } from '@/features/booking/payment-link';
 import { useProviderSlots } from '@/features/search/queries';
 import { formatSlotTime } from '@/features/search/location';
 import { addDays, SLOT_WINDOW_DAYS, toApiDate } from '@/features/search/types';
@@ -98,7 +100,7 @@ export function BookingDetail({ locale, dict, bookingId }: { locale: Locale; dic
           <StageTimeline dict={dict} booking={record} />
           <StartCodeCard locale={locale} dict={dict} booking={record} />
           {hasPendingRevision(record) ? <RevisionCard locale={locale} dict={dict} booking={record} /> : null}
-          <ActionsCard locale={locale} dict={dict} booking={record} />
+          <BookingActionsCard locale={locale} dict={dict} booking={record} />
           <BookingChat locale={locale} dict={dict} booking={record} />
         </div>
 
@@ -253,49 +255,65 @@ const cancellationFeePaisa = (booking: Pick<BookingDetail, "cancellation">): num
     ? booking.cancellation.feeDuePaisa
     : 0;
 
-function ActionsCard({ locale, dict, booking }: { locale: Locale; dict: Dictionary; booking: BookingDetail }) {
+/**
+ * Cancel, reschedule and report a no-show — the customer's own actions on a booking.
+ *
+ * Exported for the live customer route (`CustomerBookingDetailScreen`), which
+ * until now rendered none of these: a customer could cancel only an unpaid
+ * booking, and could never reschedule or report a provider who did not turn up.
+ *
+ * `hidePayment` is for screens that already show `AwaitingPaymentCard`, which owns
+ * paying and cancelling an unpaid booking — two cancel buttons for one booking is
+ * one too many. `hideWhenEmpty` drops the card on a finished job rather than
+ * printing "nothing to do here".
+ */
+export function BookingActionsCard({
+  locale,
+  dict,
+  booking,
+  hidePayment = false,
+  hideWhenEmpty = false
+}: {
+  locale: Locale;
+  dict: Dictionary;
+  booking: BookingDetail;
+  hidePayment?: boolean;
+  hideWhenEmpty?: boolean;
+}) {
   const cancel = useCancelBooking(locale);
   const reschedule = useRescheduleBooking(locale);
   const noShow = useReportNoShow(locale);
   const [cancelReason, setCancelReason] = useState('');
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  /* Seeded once: reading the clock during render is impure. */
+  const [now] = useState(() => Date.now());
 
-  const cancelAllowed = canCancel(booking);
+  const payAllowed = !hidePayment && booking.status === 'PENDING_PAYMENT' && booking.paymentMode === 'ONLINE';
+  const cancelAllowed = canCancel(booking) && !(hidePayment && booking.status === 'PENDING_PAYMENT');
   const rescheduleReason = rescheduleBlockReason(booking);
   const rescheduleAllowed = canReschedule(booking);
-  const noShowAllowed = booking.status === 'EN_ROUTE';
-  const payAllowed = booking.status === 'PENDING_PAYMENT' && booking.paymentMode === 'ONLINE';
+  /* `noShow` is legal from SCHEDULED and EN_ROUTE, and only once
+     `booking.no_show_grace_min` has passed after the start. The grace is an admin
+     setting the client cannot read, so the option appears from the start time
+     and the server's own sentence explains a report that is still too early. */
+  const noShowAllowed = (booking.status === 'SCHEDULED' || booking.status === 'EN_ROUTE') && now >= new Date(booking.scheduledStart).getTime();
   const nothingToDo = !cancelAllowed && !rescheduleAllowed && !hasPendingRevision(booking) && !noShowAllowed && !payAllowed;
 
-  /* Storage key for the payment redirect URL, scoped to this booking id. */
-  const payStorageKey = `booking:paymentUrl:${booking.id}`;
+  const paymentUrl = payAllowed ? readPaymentLink(booking.id) : null;
 
-  const getPaymentUrl = (): string | null => {
-    try {
-      return sessionStorage.getItem(`booking:paymentUrl:${booking.id}`);
-    } catch {
-      return null;
-    }
-  };
-  const paymentUrl = payAllowed ? getPaymentUrl() : null;
-  const clearPaymentUrl = () => {
-    try {
-      sessionStorage.removeItem(payStorageKey);
-    } catch {
-      /* Ignore. */
-    }
-  };
-
-  /* Clear the stored payment URL when the booking is no longer
-     PENDING_PAYMENT — the payment has been completed or the booking
-     has moved to another state, so the redirect URL is stale. */
+  /* A stored payment link outlives the PENDING_PAYMENT state it belongs to;
+     drop it once the booking has moved on. */
   useEffect(() => {
-    if (!payAllowed) {
-      clearPaymentUrl();
-    }
-  }, [payAllowed, clearPaymentUrl]);
+    if (booking.status !== 'PENDING_PAYMENT') clearPaymentLink(booking.id);
+  }, [booking.status, booking.id]);
 
-  const errorText = (cancel.isError ? dict.booking.actionFailed : null) ?? (reschedule.isError ? dict.booking.actionFailed : null) ?? (noShow.isError ? dict.booking.actionFailed : null);
+  /* The server's sentence when it gave one — "the visit is less than four hours
+     away", "a no-show can only be reported 30 minutes after…" — is the only
+     account of why an action was refused. */
+  const failed = cancel.error ?? reschedule.error ?? noShow.error;
+  const errorText = failed === null ? null : failed instanceof ApiError && failed.problem.detail !== '' ? failed.problem.detail : dict.booking.actionFailed;
+
+  if (nothingToDo && hideWhenEmpty) return null;
 
   return (
     <Card className="p-5">
@@ -651,8 +669,7 @@ export function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: 
         <ul className="mt-3 grid grid-cols-3 gap-2">
           {stored.map((item) => (
             <li key={item.id} className="relative aspect-square overflow-hidden rounded-[9px] bg-slate-100">
-              {/* eslint-disable-next-line @next/next/no-img-element -- a dev-storage object URL, not a static asset, and next/image would need a configured loader for it */}
-              <EvidenceImage url={item.url} alt="" />
+              <EvidenceImage url={item.url} contentType={item.contentType} alt="" labels={mediaLabels(dict)} />
             </li>
           ))}
         </ul>
@@ -661,7 +678,7 @@ export function ProblemPhotos({ locale, dict, bookingId, canUpload }: { locale: 
         <ul className="mt-3 grid grid-cols-3 gap-2">
           {results.map((item) => (
             <li key={item.url} className="relative aspect-square overflow-hidden rounded-[9px] bg-slate-100">
-              <EvidenceImage url={item.url} alt="" />
+              <EvidenceImage url={item.url} alt="" labels={mediaLabels(dict)} />
             </li>
           ))}
         </ul>

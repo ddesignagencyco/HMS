@@ -56,7 +56,7 @@
  * `subscribe()` writes the subscription, schedules the visits and
  * creates a `PLAN` payment inside one transaction, then calls
  * `payments.startCheckout`, so the response carries
- * `checkout.returnUrl`. Following that URL is what actually takes the
+ * `checkout.redirectUrl`. Following that URL is what actually takes the
  * money: the subscription only becomes `ACTIVE` when the gateway
  * callback arrives and `capturePlan` runs. The screen therefore routes
  * to the checkout rather than declaring success. */
@@ -184,7 +184,10 @@ export type SubscribeResult = {
   endsAt: string;
   /** How many visits the server scheduled — a count, not money. */
   visitsCount: number;
-  checkout: { returnUrl: string; [key: string]: unknown };
+  /** `PaymentsService.startCheckout` — `redirectUrl` is the gateway page that
+   *  takes the money; `returnUrl` is echoed back unchanged (where the gateway
+   *  sends the customer afterwards), so it is never the place to navigate to. */
+  checkout: { paymentId: string; redirectUrl: string; returnUrl: string };
 };
 
 /**

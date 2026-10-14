@@ -38,7 +38,8 @@ export const URGENT_CATEGORIES: readonly ComplaintCategory[] = ['SAFETY'];
 
 export type ComplaintStatus = 'OPEN' | 'UNDER_REVIEW' | 'AWAITING_RESPONSE' | 'RESOLVED' | 'REJECTED';
 export type ComplaintSeverity = 'SAFETY' | 'HIGH' | 'NORMAL';
-export type ComplaintSource = 'CUSTOMER' | 'PROVIDER' | 'RECEIPT_LINK' | 'DISPUTE';
+/** The database's `complaint_source` enum (packages/db/migrations/0001_init.sql). */
+export type ComplaintSource = 'CUSTOMER' | 'PROVIDER' | 'VERIFICATION_AUTO' | 'RECEIPT_LINK' | 'POST_RELEASE';
 export type ComplaintResolution = 'NO_ACTION' | 'WARNING' | 'PARTIAL_REFUND' | 'FULL_REFUND' | 'PROVIDER_PENALTY' | 'TEMPORARY_SUSPENSION' | 'PERMANENT_BLOCK';
 
 /** `ComplaintsService.head` joined to the two parties' names. */
@@ -92,8 +93,11 @@ export type ComplaintDetail = Complaint & {
   timeline: ComplaintEvent[];
 };
 
+/** `complaintMediaTypes` in complaints.schemas.ts. */
+export type ComplaintMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' | 'video/mp4' | 'video/webm' | 'video/quicktime' | 'application/pdf';
+
 export type ComplaintPhotoInput = {
-  contentType: 'image/jpeg' | 'image/png' | 'image/webp';
+  contentType: ComplaintMediaType;
   contentBase64: string;
 };
 
@@ -143,12 +147,13 @@ export const complaintsApi = {
    * A respondent's reply puts a complaint that was waiting on them back under
    * review; a complainant's is a further comment. One field, two meanings — the
    * server decides from which side the caller is on, so the screen must not send
-   * a flag saying which it thinks it is.
+   * a flag saying which it thinks it is. Answers `{ ok: true }` only; the
+   * updated thread is read back with `one()`.
    */
-  reply: (id: string, body: string, options?: ComplaintOptions) => call<ComplaintDetail>(`/complaints/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { body } }, options),
+  reply: (id: string, body: string, options?: ComplaintOptions) => call<{ ok: true }>(`/complaints/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { body } }, options),
 
-  /** `complaintEvidenceSchema` is the photo on its own, not wrapped in `photos`. */
-  addEvidence: (id: string, photo: ComplaintPhotoInput, options?: ComplaintOptions) => call<ComplaintEvent>(`/complaints/${encodeURIComponent(id)}/evidence`, { method: 'POST', body: photo }, options),
+  /** `complaintEvidenceSchema` is the photo on its own, not wrapped in `photos`. Answers `{ ok: true }`. */
+  addEvidence: (id: string, photo: ComplaintPhotoInput, options?: ComplaintOptions) => call<{ ok: true }>(`/complaints/${encodeURIComponent(id)}/evidence`, { method: 'POST', body: photo }, options),
 
   /**
    * `POST /complaints/from-receipt` — **the only complaint route that is

@@ -91,6 +91,12 @@ export type UserStatusResult = { id: string; status: string };
 /** `limit` is coerced and defaulted to 50 by the schema, capped at 200. */
 const MAX_LIMIT = 200;
 
+/** `ProviderAdminService.transition` — block, unblock, deactivate. */
+export type ProviderStatusResult = { id: string; status: string };
+
+/** `ProviderApprovalRow` — approve and reject. */
+export type ProviderApprovalResult = { userId: string; status: string; approvedAt: string | null; approvedBy: string | null; rejectionReason: string | null };
+
 export type AdminApiOptions = { signal?: AbortSignal; locale?: Locale };
 
 export type ListUsersFilters = { role?: AssignableRole; status?: UserStatus; q?: string; limit?: number };
@@ -296,26 +302,26 @@ export const adminApi = {
   /* ---- providers, on their own side-table -------------------------------- */
 
   approveProvider: (providerId: string, options?: AdminApiOptions) =>
-    call<{ providerId: string; status: string }>(`/admin/providers/${encodeURIComponent(providerId)}/approve`, { method: 'POST' }, options),
+    call<ProviderApprovalResult>(`/admin/providers/${encodeURIComponent(providerId)}/approve`, { method: 'POST' }, options),
 
   /**
    * `providerRejectSchema` requires a `reason`, and it is what the professional is
    * shown — so it is a parameter here rather than an optional body field.
    */
   rejectProvider: (providerId: string, reason: string, options?: AdminApiOptions) =>
-    call<{ providerId: string; status: string }>(`/admin/providers/${encodeURIComponent(providerId)}/reject`, { method: 'POST', body: { reason } }, options),
+    call<ProviderApprovalResult>(`/admin/providers/${encodeURIComponent(providerId)}/reject`, { method: 'POST', body: { reason } }, options),
 
   /** BLOCKED — stops new work. Distinct from a conduct penalty, which is separate. */
   blockProvider: (providerId: string, options?: AdminApiOptions) =>
-    call<{ providerId: string; status: string }>(`/admin/providers/${encodeURIComponent(providerId)}/block`, { method: 'POST' }, options),
+    call<ProviderStatusResult>(`/admin/providers/${encodeURIComponent(providerId)}/block`, { method: 'POST' }, options),
 
   /** Back to APPROVED. */
   unblockProvider: (providerId: string, options?: AdminApiOptions) =>
-    call<{ providerId: string; status: string }>(`/admin/providers/${encodeURIComponent(providerId)}/unblock`, { method: 'POST' }, options),
+    call<ProviderStatusResult>(`/admin/providers/${encodeURIComponent(providerId)}/unblock`, { method: 'POST' }, options),
 
   /** Soft only (FR-AD-09). */
   deactivateProvider: (providerId: string, options?: AdminApiOptions) =>
-    call<{ providerId: string; status: string }>(`/admin/providers/${encodeURIComponent(providerId)}/deactivate`, { method: 'POST' }, options),
+    call<ProviderStatusResult>(`/admin/providers/${encodeURIComponent(providerId)}/deactivate`, { method: 'POST' }, options),
 
   /** One provider-service offer, for the approval queue. */
   approveProviderService: (providerId: string, serviceId: number, options?: AdminApiOptions) =>

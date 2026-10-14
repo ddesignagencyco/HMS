@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRight, Clock, Gavel, Info, Loader2, ShieldAlert } from 'lucide-react';
+import { StoredMedia, mediaLabels } from '@/components/evidence-image';
 import { Button, Card, PageHeader, StatCard } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
 import { RESOLUTIONS, type ComplaintQueueFilters, type ComplaintStatus, type ComplaintTarget, type Resolution } from '@/features/admin/cases-api';
@@ -362,9 +363,15 @@ function ComplaintDetailPanel({ locale, dict, id, onBack }: { locale: Locale; di
                 {row.timeline.map((entry) => (
                   <li key={entry.id} className="border-s-2 border-line ps-3">
                     <p className="text-xs text-muted">
-                      {entry.kind} · {formatDateTime(entry.createdAt, locale)}
+                      {entry.type}
+                      {entry.fromStatus !== null || entry.toStatus !== null ? ` (${entry.fromStatus ?? '—'} → ${entry.toStatus ?? '—'})` : ''} · {formatDateTime(entry.createdAt, locale)}
                     </p>
                     {entry.body === null ? null : <p className="mt-1 text-sm leading-6 text-secondary">{entry.body}</p>}
+                    {entry.evidenceUrl === null ? null : (
+                      <div className="mt-2 w-40 overflow-hidden rounded-[9px] border border-line">
+                        <StoredMedia url={entry.evidenceUrl} alt="" labels={mediaLabels(dict)} />
+                      </div>
+                    )}
                   </li>
                 ))}
               </ol>

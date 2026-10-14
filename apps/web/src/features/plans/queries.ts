@@ -80,7 +80,7 @@ export function useSubscription(id: string, locale: Locale) {
 /**
  * Starts the purchase.
  *
- * The caller is responsible for following `checkout.returnUrl` — the
+ * The caller is responsible for following `checkout.redirectUrl` — the
  * subscription is not active until the gateway confirms, so this hook
  * does not treat a success as a completed sale and the screen does not
  * say "you are subscribed" on the strength of it.

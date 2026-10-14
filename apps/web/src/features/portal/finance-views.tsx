@@ -204,8 +204,8 @@ export function FinanceReleases({ locale, dict }: { locale: Locale; dict: Dictio
           <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-slate-50 text-xs text-muted">
               <tr>
-                <th className="p-4 text-start">{dict.common.service}</th>
-                <th className="p-4 text-start">{dict.common.professional}</th>
+                <th className="p-4 text-start">{dict.finance.booking}</th>
+                <th className="p-4 text-start">{dict.finance.method}</th>
                 <th className="p-4 text-start">{dict.common.status}</th>
                 <th className="p-4 text-end">{dict.common.amount}</th>
               </tr>
@@ -221,11 +221,11 @@ export function FinanceReleases({ locale, dict }: { locale: Locale; dict: Dictio
                 releasable.map((item) => {
                   return (
                     <tr key={item.bookingId} className="hover:bg-slate-50">
-                      <td className="p-4">
-                        <p className="font-medium text-navy">{item.serviceName ?? "Service"}</p>
-                        <p className="mt-1 font-mono text-xs text-muted">{item.bookingCode ?? item.bookingId}</p>
-                      </td>
-                      <td className="p-4 text-secondary">{item.providerName ?? "—"}</td>
+                      {/* `GET /finance/escrow` returns the booking code, mode,
+                          status and amounts — no service or provider name — so
+                          those columns are not invented here. */}
+                      <td className="p-4 font-mono text-xs font-semibold text-navy">{item.code}</td>
+                      <td className="p-4 text-secondary">{item.paymentMode}</td>
                       <td className="p-4"><StatusBadge status={item.status as never} label={item.status} /></td>
                       <td className="p-4 text-end">
                         <p className="font-semibold text-navy tabular-nums">{formatMoney(item.heldPaisa, locale)}</p>
@@ -431,8 +431,10 @@ export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Diction
                 const tone =
                   row.status === "PAID"
                     ? "bg-emerald-50 text-emerald-700"
-                    : row.status === "APPROVED"
+                    : row.status === "APPROVED" || row.status === "IN_BATCH"
                     ? "bg-blue-50 text-primary-strong"
+                    : row.status === "FAILED" || row.status === "CANCELLED"
+                    ? "bg-rose-50 text-rose-700"
                     : "bg-amber-50 text-amber-800";
 
                 const stateLabel = (dict.finance.states as Record<string, string>)[row.status] ?? row.status;
@@ -440,8 +442,19 @@ export function FinancePayouts({ locale, dict }: { locale: Locale; dict: Diction
                 return (
                   <tr key={row.id} className="hover:bg-slate-50">
                     <td className="p-4 font-mono text-xs font-semibold text-navy">{row.id}</td>
-                    <td className="p-4 text-secondary">{row.providerName ?? row.providerId}</td>
-                    <td className="p-4 text-secondary">{formatDate(row.createdAt, locale)}</td>
+                    <td className="p-4 text-secondary">
+                      <p>{row.providerName}</p>
+                      <p className="mt-0.5 text-xs text-muted">{row.institution} · ••{row.accountLast4}</p>
+                    </td>
+                    <td className="p-4 text-secondary">
+                      <p>{dict.finance.requestedOn}: {formatDate(row.requestedAt, locale)}</p>
+                      {row.paidAt !== null ? (
+                        <p className="mt-0.5 text-xs text-muted">{dict.finance.paidOnDate}: {formatDate(row.paidAt, locale)}</p>
+                      ) : null}
+                      {row.status === "FAILED" && row.failureReason !== null ? (
+                        <p className="mt-0.5 text-xs text-rose-700">{row.failureReason}</p>
+                      ) : null}
+                    </td>
                     <td className="p-4">
                       <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone}`}>
                         {stateLabel}
@@ -936,9 +949,9 @@ export function EscrowView({ locale, dict }: { locale: Locale; dict: Dictionary 
           <table className="w-full min-w-[700px] text-sm">
             <thead className="bg-slate-50 text-xs text-muted">
               <tr>
-                <th className="p-4 text-start">{dict.common.service}</th>
+                <th className="p-4 text-start">{dict.finance.booking}</th>
                 <th className="p-4 text-start">{dict.common.status}</th>
-                <th className="p-4 text-start">{dict.common.date}</th>
+                <th className="p-4 text-start">{dict.finance.method}</th>
                 <th className="p-4 text-end">{dict.common.amount}</th>
               </tr>
             </thead>
@@ -952,12 +965,9 @@ export function EscrowView({ locale, dict }: { locale: Locale; dict: Dictionary 
               ) : (
                 items.map((item) => (
                   <tr key={item.bookingId}>
-                    <td className="p-4 font-medium text-navy">
-                      <p>{item.serviceName ?? "Service"}</p>
-                      <p className="mt-0.5 font-mono text-xs text-muted">{item.code ?? item.bookingCode ?? item.bookingId}</p>
-                    </td>
-                    <td className="p-4"><StatusBadge status={item.status as never} label={dict.portal.held} /></td>
-                    <td className="p-4 text-secondary">{item.createdAt ? formatDate(item.createdAt, locale) : "—"}</td>
+                    <td className="p-4 font-mono text-xs font-semibold text-navy">{item.code}</td>
+                    <td className="p-4"><StatusBadge status={item.status as never} label={item.status} /></td>
+                    <td className="p-4 text-secondary">{item.paymentMode}</td>
                     <td className="p-4 text-end font-semibold text-navy">{formatMoney(item.heldPaisa, locale)}</td>
                   </tr>
                 ))

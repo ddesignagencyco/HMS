@@ -176,7 +176,7 @@ export const searchApi = {
    * the slot length, which is why it cannot be inferred.
    */
   nextSlots: (providerId: string, serviceId: number, limit?: number, options?: SearchOptions) =>
-    read<{ slots: Slot[] }>(
+    read<{ durationMin: number; items: Slot[] }>(
       `/search/providers/${encodeURIComponent(providerId)}/next-slots`,
       { ...options, query: { serviceId, ...(limit === undefined ? {} : { limit }) } }
     ),

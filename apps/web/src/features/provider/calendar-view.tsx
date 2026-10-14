@@ -29,9 +29,13 @@ type Draft = { weekday: number; startTime: string; endTime: string };
 
 const blockKey = (block: Draft): string => `${block.weekday}-${block.startTime}-${block.endTime}`;
 
-/** One picked date becomes a half-open range: 00:00 on it → 00:00 the next day. */
+/** One picked date becomes a half-open range: 00:00 on it → 00:00 the next day.
+    Midnight is Karachi's (+05:00, no DST), not UTC's — a UTC midnight would start
+    the leave at 05:00 local and spill five hours into the next day. It is sent
+    as a `Z` instant because `timeOffCreateSchema` uses `.datetime()`, which
+    refuses offsets. */
 const singleDayRange = (date: string): { start: string; end: string } => {
-  const start = new Date(`${date}T00:00:00.000Z`);
+  const start = new Date(`${date}T00:00:00.000+05:00`);
   const end = new Date(start.getTime() + 24 * 3_600_000);
   return { start: start.toISOString(), end: end.toISOString() };
 };

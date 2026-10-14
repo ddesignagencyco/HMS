@@ -63,6 +63,35 @@ All frontend modules in `apps/web` have undergone complete verification, field-b
 
 Backend gaps found while building this (form reopens after `ESCALATED`, English-only server sentences, no notification, no read-back) are logged in `backend_requirement.md` §5.
 
+### 2026-10-14 — Supabase Storage (backend `bbdb868`, `STORAGE_PROVIDER=supabase`)
+
+| Area | Prior Behavior | Updated Behavior |
+|---|---|---|
+| **Provider documents upload** | Inline base64 to `POST /provider/documents` (1 MB body limit → real CNIC photos refused); JPEG/PNG/PDF only. | Presigned: `POST /uploads/presign` → PUT bytes (typed) straight to the Supabase signed upload URL → record `storageKey`. Adds WebP and MP4/WebM/MOV video (50 MB), with "uploading"/"saving" steps shown. |
+| **Stored media rendering** | `EvidenceImage` always rendered `<img>` and assumed the dev JSON envelope; English-only failure text. | `StoredMedia`: real signed URLs load directly; `<img>` / `<video>` / PDF tile chosen by content type; mock envelope still supported; localized "File unavailable". |
+| **Admin document preview** | `<img>` only (PDF/video broken); "Preview Unavailable in Dev Storage" hardcoded. | Fetches the signed file, renders image, video player or PDF viewer by its real type; "open in new tab"; retry re-signs the 5-minute link; en + ur. |
+| **Types** | Evidence/complaint/document types listed 3 image types. | Match the backend's widened `evidenceContentTypes`, `complaintMediaTypes`, `documentContentTypes`. |
+
+**Blocking backend bug:** evidence URLs (booking, complaint, dispute, verification console) are still built as `/dev/storage/...`, which reads the in-memory mock, so under Supabase they 404. See `backend_requirement.md` P0.4.
+
+### 2026-10-14 — Full contract audit: web vs API
+
+Every web API call was checked against the API's controllers, strict zod schemas and response shapes (4 domains, ~200 endpoints). About 45 web-side defects were fixed; backend-only findings went to `backend_requirement.md`. Highlights:
+
+| Area | Was broken | Now |
+|---|---|---|
+| Customer booking page | No cancel/reschedule/no-show; "Pay now" fell back to a hand-built dev-gateway URL | `BookingActionsCard` mounted; only the API's own `redirectUrl` (kept in `payment-link.ts`) |
+| Provider onboarding | Certificate uploads 422 (`TRADE_CERT`/`CHARACTER_CERT`); no screen set city/base location, so submit could never pass | Enums match `packages/contracts`; profile has "Where you work from" |
+| Provider money/disputes | Payout/document statuses blank; dispute reply sent `{ body }`; debt invisible | Real enums; `{ reply }` + disputes screen; debt notice + pay |
+| Discovery | Fabricated provider names from an id hash; plan subscribe never opened the gateway | Qualification label only; `redirectUrl` + absolute `returnUrl` |
+| Texted links | `/v/:token` and `/problem/:token` were 404s | Config redirects to the localized pages |
+| Checkout return | `ABANDONED` shown as "Payment Confirmed!" | `checkoutOutcome()` status mapping |
+| Provider job | Rework couldn't start; BEFORE photo picker en route (409); checklist ticked by guesswork | Fixed gating; explicit ticks only; provider cancel/no-show |
+| Verification console | WITH_ISSUE and extra-charge submits always 422; canned text published as the customer's review | Consent + amount captured; only the customer's words sent |
+| Finance | Payout batch marked PAID before the bank paid; escrow/payout columns read phantom fields; FINANCE couldn't reach ops/reports | Create → bank result per payout; real fields; `/finance/ops`, `/finance/reports` |
+
+Verification: `tsc` 0 errors · 61 test files / 762 tests pass · `next build` green · lint: 19 errors, all on lines from earlier commits (none new).
+
 ---
 
 ## 3. Documentation Structure

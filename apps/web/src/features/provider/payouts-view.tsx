@@ -29,9 +29,10 @@ import { cn, formatDate, formatMoney, type Locale } from '@/lib/utils';
 const STATUS_TONE: Record<PayoutStatus, string> = {
   REQUESTED: 'bg-amber-50 text-amber-700',
   APPROVED: 'bg-blue-50 text-primary-strong',
-  PROCESSING: 'bg-blue-50 text-primary-strong',
+  IN_BATCH: 'bg-blue-50 text-primary-strong',
   PAID: 'bg-emerald-50 text-emerald-700',
-  REJECTED: 'bg-rose-50 text-rose-700'
+  FAILED: 'bg-rose-50 text-rose-700',
+  CANCELLED: 'bg-slate-100 text-slate-700'
 };
 
 export function ProviderPayoutsScreen({ locale, dict }: { locale: Locale; dict: Dictionary }) {
@@ -50,6 +51,12 @@ export function ProviderPayoutsScreen({ locale, dict }: { locale: Locale; dict: 
   const [accountNumber, setAccountNumber] = useState('');
   const [localError, setLocalError] = useState('');
   const [done, setDone] = useState('');
+  /* One `Idempotency-Key` per payout intent: kept across a retry of the same
+     request (so a double-tap or a lost response cannot pay out twice), renewed
+     when the amount or account changes (the API refuses a reused key with a
+     different body) and after a success (the next payout is a new intent). */
+  const [payoutKey, setPayoutKey] = useState(() => crypto.randomUUID());
+  const renewPayoutKey = (): void => setPayoutKey(crypto.randomUUID());
 
   const releasable = earnings.data?.releasablePaisa ?? 0;
 
@@ -67,9 +74,10 @@ export function ProviderPayoutsScreen({ locale, dict }: { locale: Locale; dict: 
       return;
     }
     try {
-      await request.mutateAsync({ amountPaisa: paisa, payoutAccountId: chosen });
+      await request.mutateAsync({ amountPaisa: paisa, payoutAccountId: chosen, idempotencyKey: `payout-${payoutKey}` });
       setDone(dict.portal.payoutRequested);
       setAmount('');
+      renewPayoutKey();
     } catch (error) {
       /* The server names the real minimum and the real ceiling, so its sentence
          beats anything invented here. */
@@ -177,7 +185,16 @@ export function ProviderPayoutsScreen({ locale, dict }: { locale: Locale; dict: 
             <div className="mt-4 grid gap-3">
               <div className="grid gap-2">
                 <Label htmlFor="payout-amount">{dict.portal.payoutAmountLabel}</Label>
-                <Input id="payout-amount" inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={String(releasable / 100)} />
+                <Input
+                  id="payout-amount"
+                  inputMode="numeric"
+                  value={amount}
+                  onChange={(event) => {
+                    setAmount(event.target.value);
+                    renewPayoutKey();
+                  }}
+                  placeholder={String(releasable / 100)}
+                />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="payout-account">{dict.portal.payoutAccountLabel}</Label>
@@ -187,7 +204,10 @@ export function ProviderPayoutsScreen({ locale, dict }: { locale: Locale; dict: 
                   <SelectField
                     id="payout-account"
                     value={accountId}
-                    onChange={setAccountId}
+                    onChange={(next) => {
+                      setAccountId(next);
+                      renewPayoutKey();
+                    }}
                     options={accountList.map((account) => ({
                       value: account.id,
                       label: `${account.institution} · ••••${account.accountLast4}${account.isDefault ? ` (${dict.portal.defaultAccount})` : ''}`

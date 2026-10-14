@@ -405,7 +405,7 @@ function ReportRow({ run, locale, dict }: { run: FinanceReportRun; locale: Local
  * lived under `/admin`, and `ReportsController` allows ADMIN as well as FINANCE,
  * so the path is still correct.
  */
-export function AdminReports({ locale, dict }: { locale: Locale; dict: Dictionary }) {
+export function AdminReports({ locale, dict, eyebrow }: { locale: Locale; dict: Dictionary; /** The area it is shown in; FINANCE reaches it under `/finance`. */ eyebrow?: string }) {
   const runs = useReportRuns(locale);
   const [downloadBlocked, setDownloadBlocked] = useState(false);
 
@@ -427,7 +427,7 @@ export function AdminReports({ locale, dict }: { locale: Locale; dict: Dictionar
   return (
     <div>
       <PageHeader
-        eyebrow={dict.portal.admin}
+        eyebrow={eyebrow ?? dict.portal.admin}
         title={dict.admin.reports}
         description={dict.reports.headerText}
         action={

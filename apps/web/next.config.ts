@@ -31,6 +31,22 @@ const nextConfig: NextConfig = {
      that received it. Proxying keeps the browser on one origin: a cross-origin
      API on another port would need this exact origin in CORS_ORIGINS, and that
      allow-list lives in the API's own environment, outside this app. */
+  /* The API texts short links that do not match this app's page paths:
+     `${PUBLIC_BASE_URL}/v/<token>` (verification-link.service.ts) and
+     `${PUBLIC_BASE_URL}/problem/<token>` (notification.service.ts, the cash-receipt
+     "report a problem" link). Config redirects run before `proxy.ts`, and each
+     destination already carries a locale, so the proxy's locale prefixing never
+     sees the short form and cannot loop. They also catch the receipt token, whose
+     dot makes the proxy matcher skip it. Temporary (307): the short paths are the
+     API's to change, not a permanent address. */
+  async redirects() {
+    return [
+      { source: '/v/:token', destination: '/en/verification/:token', permanent: false },
+      { source: '/:locale(en|ur)/v/:token', destination: '/:locale/verification/:token', permanent: false },
+      { source: '/problem/:token', destination: '/en/receipt/:token', permanent: false },
+      { source: '/:locale(en|ur)/problem/:token', destination: '/:locale/receipt/:token', permanent: false }
+    ];
+  },
   async rewrites() {
     return [{ source: '/api/v1/:path*', destination: `${API_ORIGIN}/api/v1/:path*` }];
   }

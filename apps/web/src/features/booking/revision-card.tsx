@@ -39,9 +39,8 @@ export function RevisionCard({ locale, dict, booking, className }: RevisionCardP
     setErrorMessage(null);
     try {
       const result = await approve.mutateAsync(booking.id);
-      const payment = (result as { payment?: { redirectUrl?: string } })?.payment;
-      if (payment?.redirectUrl && typeof window !== 'undefined') {
-        window.location.assign(payment.redirectUrl);
+      if (result.payment !== undefined && typeof window !== 'undefined') {
+        window.location.assign(result.payment.redirectUrl);
       }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : dict.booking.actionFailed);

@@ -220,7 +220,11 @@ export const usePayouts = (locale: Locale) =>
     retry: publicRetry
   });
 
-export const useRequestPayout = (locale: Locale) => useProviderAction((input: { amountPaisa: number; payoutAccountId: string }) => providerApi.requestPayout(input, { locale }));
+/** `idempotencyKey` rides in the input so the screen owns its lifetime — one per form intent. */
+export const useRequestPayout = (locale: Locale) =>
+  useProviderAction((input: { amountPaisa: number; payoutAccountId: string; idempotencyKey: string }) =>
+    providerApi.requestPayout({ amountPaisa: input.amountPaisa, payoutAccountId: input.payoutAccountId }, input.idempotencyKey, { locale })
+  );
 
 export const usePayoutAccounts = (locale: Locale) =>
   useQuery({
@@ -240,7 +244,9 @@ export const useAddPayoutAccount = (locale: Locale) => {
   });
 };
 
-export const usePayDebt = (locale: Locale) => useProviderAction((amountPaisa: number) => providerApi.payDebt(amountPaisa, { locale }));
+/** Omit `amountPaisa` to pay the whole debt (`payDebtSchema`). */
+export const usePayDebt = (locale: Locale) =>
+  useProviderAction((input: { amountPaisa?: number; idempotencyKey: string }) => providerApi.payDebt(input.amountPaisa, input.idempotencyKey, { locale }));
 
 /* ---- Documents ----------------------------------------------------------- */
 
@@ -358,7 +364,7 @@ export const useDispute = (id: string | null, locale: Locale) =>
 export const useReplyToDispute = (locale: Locale) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { disputeId: string; body: string }) => providerApi.replyToDispute(input.disputeId, input.body, { locale }),
+    mutationFn: (input: { disputeId: string; reply: string }) => providerApi.replyToDispute(input.disputeId, input.reply, { locale }),
     onSuccess: (_result, input) => {
       void queryClient.invalidateQueries({ queryKey: providerKeys.dispute(input.disputeId) });
       void queryClient.invalidateQueries({ queryKey: providerKeys.disputes });

@@ -36,12 +36,32 @@ import { formatNumber, type Locale } from "@/lib/utils";
 
 const RUPEES_PER_100 = 100;
 
-/** rupees in the box → paisa for the query. `null` for anything not a number. */
-const rupeesToPaisa = (raw: string): number | null => {
+/** rupees in the box → paisa for the query. `null` for anything not a number,
+ *  and for zero: `minPricePaisa`/`maxPricePaisa` are `.int().positive()`, so a 0
+ *  would be a 422 — and "at least Rs 0" is no filter anyway. */
+export const rupeesToPaisa = (raw: string): number | null => {
   const trimmed = raw.trim();
   if (trimmed === "") return null;
   const rupees = Number(trimmed);
-  return Number.isFinite(rupees) && rupees >= 0 ? Math.round(rupees * RUPEES_PER_100) : null;
+  if (!Number.isFinite(rupees)) return null;
+  const paisa = Math.round(rupees * RUPEES_PER_100);
+  return paisa > 0 ? paisa : null;
+};
+
+/** Upper bounds from `providerSearchQuerySchema` (`.int().min(0).max(n)`). */
+export const MAX_EXPERIENCE_YEARS = 60;
+export const MAX_COMPLETED_JOBS = 10_000;
+
+/** A whole-number minimum for the query. Empty, non-numeric, zero or negative is
+ *  "no filter" (`null`); a decimal is floored (the schema is `.int()`); anything
+ *  above the schema's maximum is clamped to it rather than sent as a 422. */
+export const parseWholeMinimum = (raw: string, max: number): number | null => {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) return null;
+  const whole = Math.min(Math.floor(parsed), max);
+  return whole > 0 ? whole : null;
 };
 
 /** paisa on the wire → rupees in the box, so the two never drift apart. */
@@ -80,7 +100,7 @@ export function SearchRefinements({
 
   /** An empty number box means "no bound", not "zero" — sending 0 as a minimum
    *  price would exclude every free job and look like a filter that worked. */
-  const onNumber = (key: "minPricePaisa" | "maxPricePaisa" | "minExperienceYears" | "minCompletedJobs", raw: string) => {
+  const onNumber = (key: "minPricePaisa" | "maxPricePaisa", raw: string) => {
     const paisa = rupeesToPaisa(raw);
     if (paisa === null) {
       const { [key]: _removed, ...rest } = value;
@@ -143,13 +163,13 @@ export function SearchRefinements({
             type="number"
             inputMode="numeric"
             min={0}
-            max={60}
+            max={MAX_EXPERIENCE_YEARS}
+            step={1}
             className={field}
             value={value.minExperienceYears ?? ""}
             onChange={(event) => {
-              const raw = event.target.value;
-              const parsed = raw.trim() === "" ? null : Number(raw);
-              update(parsed === null || !Number.isFinite(parsed) ? { minExperienceYears: undefined } : { minExperienceYears: parsed });
+              const parsed = parseWholeMinimum(event.target.value, MAX_EXPERIENCE_YEARS);
+              update({ minExperienceYears: parsed ?? undefined });
             }}
           />
         </div>
@@ -162,13 +182,13 @@ export function SearchRefinements({
             type="number"
             inputMode="numeric"
             min={0}
-            max={10000}
+            max={MAX_COMPLETED_JOBS}
+            step={1}
             className={field}
             value={value.minCompletedJobs ?? ""}
             onChange={(event) => {
-              const raw = event.target.value;
-              const parsed = raw.trim() === "" ? null : Number(raw);
-              update(parsed === null || !Number.isFinite(parsed) ? { minCompletedJobs: undefined } : { minCompletedJobs: parsed });
+              const parsed = parseWholeMinimum(event.target.value, MAX_COMPLETED_JOBS);
+              update({ minCompletedJobs: parsed ?? undefined });
             }}
           />
         </div>

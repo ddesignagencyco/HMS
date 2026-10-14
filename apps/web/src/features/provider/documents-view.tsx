@@ -4,9 +4,9 @@ import { AlertTriangle, CheckCircle2, Clock3, FileUp, ShieldCheck, XCircle } fro
 import { useState } from 'react';
 import { Button, Card, FileInput, Input, Label, PageHeader } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
-import { fileToBase64 } from '@/features/uploads/image';
+import { presignUpload, putToPresignedTarget } from '@/features/uploads/api';
 import { useProviderDocuments, useSubmitDocument } from '@/features/provider/queries';
-import { DOCUMENT_CONTENT_TYPES, MAX_DOCUMENT_BYTES, type DocumentContentType, type ProviderDocument, type ProviderDocumentKind } from '@/features/provider/api';
+import { DOCUMENT_CONTENT_TYPES, MAX_DOCUMENT_BYTES, MAX_VIDEO_DOCUMENT_BYTES, maxDocumentBytes, type DocumentContentType, type ProviderDocument, type ProviderDocumentKind } from '@/features/provider/api';
 import { cn, formatDate, type Locale } from '@/lib/utils';
 import type { Dictionary } from '@/lib/dictionaries';
 
@@ -22,22 +22,48 @@ import type { Dictionary } from '@/lib/dictionaries';
      load. It is not the API's to give back.
 
    · Submitting is one of two shapes, and `documentSubmitSchema` refuses both and
-   * neither: inline base64, or a presigned key. It uses **inline base64**.
-   *
-   * The presign-then-PUT path works for the API's integration tests but has one
-   * property that matters more to a real browser on a metered connection: it
-   * uploads the bytes twice. The inline path uploads them once, inside the JSON
-   * body, and is what the provider's own document recording is designed around
-   * (the mock storage persists the bytes under `storageKeyFor`).
+     neither: inline base64, or a presigned key. It uses the **presigned key**:
+     `POST /uploads/presign` → PUT the bytes to the signed Supabase Storage URL →
+     `POST /provider/documents { storageKey }`. Inline base64 was used while the
+     storage was a mock, and it cannot work for real files: that route's JSON
+     body limit is 1 MB.
 
    · A rejected document can be replaced; evidence is insert-only, documents are
      not. So "Replace" is really "submit again", and the old row stays visible. */
 
+/** What the file picker offers — the extensions as well as the types, because
+    some browsers report an empty type for `.mov` and `.webm`. */
+const DOCUMENT_ACCEPT = [...DOCUMENT_CONTENT_TYPES, '.jpg', '.jpeg', '.png', '.webp', '.pdf', '.mp4', '.webm', '.mov'].join(',');
+
+const EXTENSION_TYPES: Record<string, DocumentContentType> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime'
+};
+
+/** The file's type as the API names it, or null when it is not one it accepts. */
+const documentTypeOf = (file: File): DocumentContentType | null => {
+  if ((DOCUMENT_CONTENT_TYPES as readonly string[]).includes(file.type)) return file.type as DocumentContentType;
+  if (file.type !== '') return null;
+  const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+  return EXTENSION_TYPES[extension] ?? null;
+};
+
 /** The four kinds, in the order a provider should supply them. */
-const KINDS: ProviderDocumentKind[] = ['CNIC_FRONT', 'CNIC_BACK', 'TRADE_CERTIFICATE', 'CHARACTER_CERTIFICATE'];
+const KINDS: ProviderDocumentKind[] = ['CNIC_FRONT', 'CNIC_BACK', 'TRADE_CERT', 'CHARACTER_CERT'];
+
+const isCnicKind = (kind: ProviderDocumentKind): boolean => kind === 'CNIC_FRONT' || kind === 'CNIC_BACK';
+
+/** 13 digits, dashes and spaces allowed — the same rule as `normalizeCnic`. */
+const isCnicNumber = (value: string): boolean => /^\d{13}$/.test(value.replace(/[\s-]/g, ''));
 
 const STATUS_TONE = {
-  APPROVED: 'bg-emerald-50 text-emerald-700',
+  VERIFIED: 'bg-emerald-50 text-emerald-700',
   PENDING: 'bg-amber-50 text-amber-700',
   REJECTED: 'bg-rose-50 text-rose-700'
 } as const;
@@ -49,11 +75,18 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
   const [kind, setKind] = useState<ProviderDocumentKind>('CNIC_FRONT');
   const [cnicNumber, setCnicNumber] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
+  /* Two network legs, said separately: on a slow connection the upload is the
+     long one, and "Uploading…" for the whole time hides which leg failed. */
+  const [step, setStep] = useState<'idle' | 'uploading' | 'recording'>('idle');
+  const busy = step !== 'idle';
   const [localError, setLocalError] = useState('');
   const [done, setDone] = useState('');
 
   const cnic = documents.data?.cnic;
+  /* The onboarding "documents" step is satisfied by `providers.cnic_enc`, and the
+     only way to set it is a `cnicNumber` sent with a CNIC scan. So until one is on
+     file, a CNIC scan without the number leaves the step open forever. */
+  const cnicNumberRequired = cnic !== undefined && !cnic.hasCnic && isCnicKind(kind);
 
   const send = async (): Promise<void> => {
     setLocalError('');
@@ -62,41 +95,52 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
       setLocalError(dict.portal.chooseFileFirst);
       return;
     }
-    if (file.size > MAX_DOCUMENT_BYTES) {
-      /* `maxBytes` is the store's own ceiling; the API would refuse it anyway. */
-      setLocalError(dict.portal.fileTooLarge.replace('{max}', String(Math.round(MAX_DOCUMENT_BYTES / 1024 / 1024))));
-      return;
-    }
-    const contentType = file.type as DocumentContentType;
-    if (!DOCUMENT_CONTENT_TYPES.includes(contentType)) {
+    const contentType = documentTypeOf(file);
+    if (contentType === null) {
       /* `documentContentTypes` is deliberately narrow — no octet-stream — so an
          unexpected type is refused here rather than as a 422. */
       setLocalError(dict.portal.fileTypeUnsupported);
       return;
     }
+    if (file.size > maxDocumentBytes(contentType)) {
+      setLocalError(dict.portal.fileTooLarge.replace('{max}', String(Math.round(maxDocumentBytes(contentType) / 1024 / 1024))));
+      return;
+    }
     /* The CNIC number only belongs on a CNIC scan, and the schema refuses it on
        anything else. */
-    if (cnicNumber.trim() !== '' && kind !== 'CNIC_FRONT' && kind !== 'CNIC_BACK') {
+    if (cnicNumber.trim() !== '' && !isCnicKind(kind)) {
       setLocalError(dict.portal.cnicNumberNeedsCnicDoc);
       return;
     }
+    if (cnicNumberRequired && cnicNumber.trim() === '') {
+      setLocalError(dict.portal.cnicNumberRequired);
+      return;
+    }
+    if (cnicNumber.trim() !== '' && !isCnicNumber(cnicNumber)) {
+      setLocalError(dict.portal.cnicNumberInvalid);
+      return;
+    }
 
-    setBusy(true);
     const clientUuid = crypto.randomUUID();
     try {
-      /* Inline bytes, not presigned. The presign-then-PUT handshake is the right
-         shape for a real object store, but the API's mock storage implements no
-         PUT handler at all — `POST /uploads/presign` hands back
-         `/api/v1/dev/storage/...`, and PUT on it is a 404 every time. The working
-         path is `submitDocument`'s presigned contract's twin: `contentBase64` +
-         `contentType`. This is also what the API's integration tests exercise,
-         so the recorded document survives. */
-      const contentBase64 = await fileToBase64(file);
+      /* Straight to storage, then record the key. The API's JSON body limit for
+         `POST /provider/documents` is 1 MB, so the inline base64 route refused
+         any ordinary phone photo of a CNIC (2–4 MB, a third larger again as
+         base64) and could never carry a video. The presigned route sends the
+         bytes once, to Supabase, and the API only ever sees the key. */
+      setStep('uploading');
+      const upload = await presignUpload({ docType: kind, contentType }, clientUuid, locale);
+      /* The store's own ceiling is the authority; the local check above is a courtesy. */
+      if (file.size > upload.maxBytes) {
+        setLocalError(dict.portal.fileTooLarge.replace('{max}', String(Math.round(upload.maxBytes / 1024 / 1024))));
+        return;
+      }
+      await putToPresignedTarget(upload, file, contentType);
+
+      setStep('recording');
       await submit.mutateAsync({
         docType: kind,
-        clientUuid,
-        contentType,
-        contentBase64,
+        storageKey: upload.storageKey,
         ...(cnicNumber.trim() === '' ? {} : { cnicNumber: cnicNumber.trim() })
       });
       setDone(dict.portal.documentSubmitted);
@@ -105,7 +149,7 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : dict.portal.documentUploadFailed);
     } finally {
-      setBusy(false);
+      setStep('idle');
     }
   };
 
@@ -159,7 +203,7 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
                       {document.reviewNote}
                     </p>
                   ) : null}
-                  {document.status === 'APPROVED' ? (
+                  {document.status === 'VERIFIED' ? (
                     <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700">
                       <CheckCircle2 className="size-3.5" aria-hidden="true" />
                       {dict.portal.docApprovedNote}
@@ -211,10 +255,18 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
                 />
               </div>
 
-              {kind === 'CNIC_FRONT' || kind === 'CNIC_BACK' ? (
+              {isCnicKind(kind) ? (
                 <div className="grid gap-2">
-                  <Label htmlFor="cnic-number">{dict.portal.cnicNumberLabel}</Label>
-                  <Input id="cnic-number" value={cnicNumber} onChange={(event) => setCnicNumber(event.target.value)} placeholder={dict.portal.cnicNumberPlaceholder} />
+                  <Label htmlFor="cnic-number">{cnicNumberRequired ? dict.portal.cnicNumberRequiredLabel : dict.portal.cnicNumberLabel}</Label>
+                  <Input
+                    id="cnic-number"
+                    value={cnicNumber}
+                    onChange={(event) => setCnicNumber(event.target.value)}
+                    placeholder={dict.portal.cnicNumberPlaceholder}
+                    required={cnicNumberRequired}
+                    aria-required={cnicNumberRequired}
+                  />
+                  {cnicNumberRequired ? <p className="text-xs leading-5 text-amber-800">{dict.portal.cnicNumberRequiredWhy}</p> : null}
                   <p className="text-xs leading-5 text-muted">{dict.portal.cnicNumberHint}</p>
                 </div>
               ) : null}
@@ -222,12 +274,16 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
               <FileInput
                 id="doc-file"
                 label={dict.portal.chooseFileLabel}
-                accept=".jpg,.jpeg,.png,.pdf"
+                accept={DOCUMENT_ACCEPT}
                 chooseLabel={dict.common.chooseFile}
                 selectedLabel={dict.common.chosenFile}
                 onPick={(chosen) => setFile(chosen[0] ?? null)}
               />
-                <p className="-mt-1 text-xs leading-5 text-muted">{dict.portal.fileTypesHint.replace('{max}', String(Math.round(MAX_DOCUMENT_BYTES / 1024 / 1024)))}</p>
+              <p className="-mt-1 text-xs leading-5 text-muted">
+                {dict.portal.documentAcceptHint
+                  .replace('{docMax}', String(Math.round(MAX_DOCUMENT_BYTES / 1024 / 1024)))
+                  .replace('{videoMax}', String(Math.round(MAX_VIDEO_DOCUMENT_BYTES / 1024 / 1024)))}
+              </p>
 
               {localError !== '' ? (
                 <p role="alert" className="flex items-start gap-2 rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">
@@ -242,8 +298,8 @@ export function ProviderDocumentsScreen({ locale, dict }: { locale: Locale; dict
                 </p>
               ) : null}
 
-              <Button type="button" onClick={() => void send()} disabled={busy || submit.isPending}>
-                {busy || submit.isPending ? dict.portal.uploading : dict.portal.submitDocument}
+              <Button type="button" onClick={() => void send()} disabled={busy}>
+                {step === 'uploading' ? dict.portal.documentUploading : step === 'recording' ? dict.portal.documentRecording : dict.portal.submitDocument}
               </Button>
             </div>
           </Card>

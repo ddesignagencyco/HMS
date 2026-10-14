@@ -3,6 +3,7 @@
 import { Bell, Check, CheckCheck, Clock, ExternalLink, Loader2, MessageSquare, ShieldAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import toast from "react-hot-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { notificationApi } from "@/features/notifications/api";
@@ -16,12 +17,27 @@ type NotificationBellProps = {
 };
 
 export function NotificationBell({ locale = "en", dark = false, className }: NotificationBellProps) {
-  const { status } = useSession();
+  const { status, user } = useSession();
+  const pathname = usePathname() ?? "";
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   const isAuth = status === "authenticated";
+
+  /* The bell renders for every role, but a booking has a different screen per
+     side: a professional opens it as a job, a customer as a booking. Staff have
+     no booking-detail route, so they get no link rather than a customer page
+     their role cannot load. Someone who is both follows the portal they are in. */
+  const roles = user?.roles ?? [];
+  const isProvider = roles.includes("PROVIDER");
+  const isCustomer = roles.includes("CUSTOMER");
+  const bookingHref = (bookingId: string): string | null =>
+    isProvider && (!isCustomer || pathname.includes("/provider"))
+      ? localizedPath(locale, `/provider/jobs/${bookingId}`)
+      : isCustomer
+        ? localizedPath(locale, `/account/bookings/${bookingId}`)
+        : null;
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["notifications", "own"],
@@ -232,9 +248,9 @@ export function NotificationBell({ locale = "en", dark = false, className }: Not
                       </p>
                       <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted">
                         <span>{formatDate(item.createdAt, locale)}</span>
-                        {item.bookingId && (
+                        {item.bookingId && bookingHref(item.bookingId) !== null && (
                           <Link
-                            href={localizedPath(locale, `/account/bookings/${item.bookingId}`)}
+                            href={bookingHref(item.bookingId) ?? ""}
                             onClick={() => setOpen(false)}
                             className="inline-flex items-center gap-0.5 text-primary-strong hover:underline"
                           >

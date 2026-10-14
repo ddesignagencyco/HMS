@@ -97,7 +97,8 @@ export function useQuote(input: QuoteInput | null, locale: Locale) {
 }
 
 /**
- * Creates the booking.
+ * Creates the booking. The caller owns the idempotency key — one per checkout
+ * attempt — so a double-submit replays rather than creating a second booking.
  *
  * The list is invalidated rather than optimistically appended, because the
  * create response is authoritative but the list may be filtered by a status the
@@ -107,7 +108,8 @@ export function useQuote(input: QuoteInput | null, locale: Locale) {
 export function useCreateBooking(locale: Locale) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateBookingInput) => bookingApi.create(input, { locale }),
+    mutationFn: ({ input, idempotencyKey }: { input: CreateBookingInput; idempotencyKey: string }) =>
+      bookingApi.create(input, idempotencyKey, { locale }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: bookingKeys.all }),
     ...noRetry
   });

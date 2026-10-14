@@ -339,12 +339,13 @@ describe('only actions the API will accept are offered', () => {
   it('reports an action that the API refused rather than pretending it worked', { timeout: 15_000 }, async () => {
     /* The booking can move on between the page loading and the click — 409 is the
        correct answer and the customer must be told, not shown a stale success. */
-    renderDetail({ status: 'SCHEDULED' }, { create: { status: 409, body: problem(409, 'ILLEGAL_TRANSITION') } });
+    renderDetail({ status: 'SCHEDULED' }, { create: { status: 409, body: { ...problem(409, 'ILLEGAL_TRANSITION'), detail: 'Cannot cancel a booking in status EN_ROUTE' } } });
     await screen.findByRole('heading', { name: 'Leak Repair' });
     fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.booking.cancelAction) }));
     fireEvent.click(screen.getByRole('button', { name: new RegExp(dict.booking.confirmCancel) }));
 
-    await waitFor(() => expect(text()).toContain(dict.booking.actionFailed), { timeout: 5_000 });
+    /* The server's own sentence names the reason, so it is shown verbatim. */
+    await waitFor(() => expect(text()).toContain('Cannot cancel a booking in status EN_ROUTE'), { timeout: 5_000 });
     /* Announced to a screen reader, not just painted on. */
     expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
     /* And the booking is still shown as it was: a refused action does not blank

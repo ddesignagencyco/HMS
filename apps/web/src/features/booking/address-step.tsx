@@ -345,6 +345,9 @@ async function reverseGeocode(point: LatLng, locale: Locale): Promise<{
  */
 export function AddressForm({ locale, dict, onCreated, onCancel, fallbackCityId, initial }: AddressFormProps) {
   const cities = useCities(locale);
+  /* Already cached by every screen that renders this form; read here only to
+     know whether this is the customer's first address. */
+  const saved = useAddresses(locale);
   const [cityId, setCityId] = useState<number | null>(null);
   const [areaId, setAreaId] = useState<number | null>(initial?.areaId ?? null);
   const [label, setLabel] = useState(initial?.label ?? '');
@@ -499,9 +502,12 @@ export function AddressForm({ locale, dict, onCreated, onCancel, fallbackCityId,
       lng: point.lng,
       ...(line2.trim() === '' ? {} : { line2: line2.trim() }),
       ...(notes.trim() === '' ? {} : { notes: notes.trim() }),
-      /* The first address a customer saves is their default; the API
-         un-defaults the others in the same transaction when this is true. */
-      isDefault: initial?.isDefault ?? true
+      /* Only the first address a customer saves becomes their default. Sending
+         true on every create made each new address the default, because the API
+         un-defaults the others in the same transaction. Unknown (list not loaded)
+         counts as "not first": a missed default is fixable, a stolen one is a
+         surprise. */
+      isDefault: initial?.isDefault ?? (saved.data !== undefined && saved.data.items.length === 0)
     };
     try {
       const address = initial === undefined ? await create.mutateAsync(input) : await update.mutateAsync({ id: initial.id, input: { ...input, isDefault: undefined } });

@@ -70,6 +70,7 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
           { href: `${base}/payouts`, label: dict.portal.payouts, icon: Banknote },
           { href: `${base}/ratings`, label: dict.portal.ratings, icon: Star },
           { href: `${base}/conduct`, label: dict.portal.conduct, icon: ShieldAlert },
+          { href: `${base}/disputes`, label: dict.portal.disputes, icon: Gavel },
           { href: `${base}/profile`, label: dict.portal.profile, icon: Settings },
         ]
         : role === "agent"
@@ -84,9 +85,12 @@ export function WorkspaceShell({ locale, dict, children }: { locale: Locale; dic
               { href: `${base}/releases`, label: dict.finance.releases, icon: Scale },
               { href: `${base}/refunds`, label: dict.finance.refunds, icon: RefreshCcw },
               { href: `${base}/payouts`, label: dict.portal.payouts, icon: Banknote },
+              { href: `${base}/payout-batches`, label: dict.finance.batches, icon: FileCheck2 },
               { href: `${base}/cash`, label: dict.finance.cash, icon: CircleDollarSign },
               { href: `${base}/debts`, label: dict.finance.debts, icon: TriangleAlert },
               { href: `${base}/ledger`, label: dict.finance.ledger, icon: ReceiptText },
+              { href: `${base}/ops`, label: dict.admin.ops, icon: Gauge },
+              { href: `${base}/reports`, label: dict.admin.reports, icon: BarChart3 },
             ]
           : [
               { href: `/${locale}/admin`, label: dict.portal.admin, icon: LayoutDashboard },

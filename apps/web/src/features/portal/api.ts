@@ -31,19 +31,42 @@ export type AgentQueueEntry = {
   attempts: number;
 };
 
-/** Single attempt recorded by the agent. */
+export type TimeBand = "MORNING" | "AFTERNOON" | "EVENING";
+export type AttemptResult = "ANSWERED" | "NO_ANSWER" | "BUSY" | "SWITCHED_OFF" | "WRONG_PERSON" | "CALL_DROPPED";
+
+/** One attempt as `GET .../attempts` (and the console's `verification.attempts`)
+    returns it — `VerificationConsoleService.attempts`. */
 export type AgentAttempt = {
   id: string;
-  attempt: number;
-  band: "BAND_A" | "BAND_B" | "BAND_C";
-  result: "ANSWERED" | "NO_ANSWER" | "BUSY" | "SWITCHED_OFF" | "WRONG_PERSON" | "CALL_DROPPED";
+  attemptNo: number;
+  agentId: string;
+  band: TimeBand;
   startedAt: string;
-  durationSeconds?: number;
-  notes?: string;
+  durationSeconds: number | null;
+  result: AttemptResult;
+  callRef: string | null;
+  notes: string | null;
 };
 
+/** What `POST .../attempts` returns. An unanswered attempt hands the call back to
+    the queue (`nextAttemptAt`); the last one sends the customer the link. */
+export type RecordedAttempt = {
+  id: string;
+  attemptNo: number;
+  band: TimeBand;
+  result: AttemptResult;
+  nextAttemptAt: string | null;
+  linkSent: boolean;
+};
+
+/** `POST .../call`. Without an agent endpoint the agent dials by hand; with one
+    the telephony adapter bridges and records, and the refs go on the attempt. */
+export type CallStart =
+  | { mode: "MANUAL"; customerPhone: string; consentLine: string }
+  | { mode: "BRIDGED"; callRef: string; status: string; recordingRef: string; consentLine: string };
+
 export type AgentAttemptInput = {
-  result: "ANSWERED" | "NO_ANSWER" | "BUSY" | "SWITCHED_OFF" | "WRONG_PERSON" | "CALL_DROPPED";
+  result: AttemptResult;
   startedAt?: string;
   durationSeconds?: number;
   callRef?: string;
@@ -64,13 +87,17 @@ export type AgentSubmitPayload = {
   ownTools: boolean;
   consentLineRead: boolean;
   consentToRelease: boolean;
-  outcome: "VERIFIED_SATISFIED" | "VERIFIED_WITH_ISSUE" | "REWORK_REQUIRED" | "DISPUTED";
+  outcome: AgentOutcome;
+  /** The customer's own words, transcribed. Published as their review — never agent text. */
   remark?: string;
   recordingRef?: string;
   callDurationSeconds?: number;
 };
 
-/** Verification console full response from `GET /agent/verifications/:id`. */
+export type AgentOutcome = "VERIFIED_SATISFIED" | "VERIFIED_WITH_ISSUE" | "REWORK_REQUIRED" | "DISPUTED";
+
+/** Verification console full response from `GET /agent/verifications/:id` —
+    `VerificationConsoleService.console`. */
 export type VerificationConsoleData = {
   verification: {
     id: string;
@@ -79,15 +106,7 @@ export type VerificationConsoleData = {
     routingReasons: string[];
     priority: number;
     slaDueAt: string;
-    attempts: {
-      id: string;
-      attempt: number;
-      band: string;
-      result: string;
-      durationSeconds: number | null;
-      notes: string | null;
-      recordedAt: string;
-    }[];
+    attempts: AgentAttempt[];
   };
   booking: {
     id: string;
@@ -102,31 +121,34 @@ export type VerificationConsoleData = {
     finalAmountPaisa: number | null;
     completedAt: string | null;
     startedAt: string | null;
+    minutesOnSite: number | null;
+    expectedDurationMin: number;
     checkinDistanceM: number | null;
     checkoutDistanceM: number | null;
-    expectedDurationMin: number;
   };
   customer: {
     firstName: string;
     phone: string | null;
   };
+  /** Just who it is — the track record is `providerHistory`. */
   provider: {
     id: string;
     name: string;
-    phone: string | null;
+  };
+  providerHistory: {
     verifiedJobs: number;
     ratingCount: number;
-    averageScore: string | null;
+    averageScore: number | null;
     openComplaints: number;
     flags90d: number;
     demeritPoints: number;
-  };
+  } | null;
   invoice: {
     number: string;
-    subtotal: number;
-    surcharge: number;
-    discount: number;
-    total: number;
+    subtotalPaisa: number;
+    surchargePaisa: number;
+    discountPaisa: number;
+    totalPaisa: number;
     lines: { kind: string; description: string; amountPaisa: number }[];
   } | null;
   evidence: {
@@ -134,8 +156,10 @@ export type VerificationConsoleData = {
     kind: string;
     checklistItemId: number | null;
     receivedAt: string;
-    storageKey: string;
-    url?: string;
+    /** A stored-media URL; the storage key itself is never sent. */
+    url: string;
+    /** The stored type when the server includes it — evidence may be a photo, a short video or a PDF. */
+    contentType?: string | null;
   }[];
   checklist: {
     id: number;
@@ -144,7 +168,8 @@ export type VerificationConsoleData = {
     done: boolean | null;
     evidenceId: string | null;
   }[];
-  complaints: {
+  /** Open complaints on this booking or against this provider. */
+  openComplaints: {
     id: string;
     category: string;
     severity: string;
@@ -160,15 +185,17 @@ export type VerificationConsoleData = {
     followUp?: string;
     optional?: boolean;
   }[];
+  outcomes: AgentOutcome[];
 };
 
-/** Verification record — returned after submit. */
-export type VerificationRecord = {
-  id: string;
-  bookingId: string;
+/** `VerificationSubmitService.submit`'s result. */
+export type VerificationSubmitResult = {
+  verificationId: string;
   outcome: string;
-  recordedAt: string;
-  releasedPaisa?: number;
+  bookingStatus: string;
+  released: boolean;
+  reworkStarted?: boolean;
+  disputeOpened?: boolean;
 };
 
 /* ----- API call helpers ----- */
@@ -233,7 +260,7 @@ export const agentApi = {
    * Initiate click-to-call bridge, or retrieve customer number for manual calling.
    */
   startCall: (verificationId: string, agentEndpoint?: string, options?: { locale?: Locale; signal?: AbortSignal }) =>
-    call<{ agentEndpoint?: string; customerPhone?: string }>(
+    call<CallStart>(
       `/agent/verifications/${verificationId}/call`,
       { method: "POST", body: agentEndpoint ? { agentEndpoint } : {} },
       options,
@@ -259,7 +286,7 @@ export const agentApi = {
     input: AgentAttemptInput,
     options?: { locale?: Locale; signal?: AbortSignal }
   ) =>
-    call<AgentAttempt>(
+    call<RecordedAttempt>(
       `/agent/verifications/${verificationId}/attempts`,
       { method: "POST", body: input },
       options,
@@ -270,7 +297,7 @@ export const agentApi = {
    * Submit the final verification decision with questionnaire answers.
    */
   submit: (verificationId: string, input: AgentSubmitPayload, options?: { locale?: Locale; signal?: AbortSignal }) =>
-    call<VerificationRecord>(
+    call<VerificationSubmitResult>(
       `/agent/verifications/${verificationId}/submit`,
       { method: "POST", body: input },
       options,
@@ -299,7 +326,7 @@ export const agentApi = {
    * Short-lived signed link to play call recording.
    */
   recording: (attemptId: string, options?: { locale?: Locale; signal?: AbortSignal }) =>
-    call<{ url: string; durationSeconds: number }>(
+    call<{ url: string; expiresAt: string }>(
       `/finance/recordings/${attemptId}`,
       { method: "GET" },
       options,

@@ -6,6 +6,12 @@ import { ProviderJobScreen } from '@/features/provider/job-view';
 import { getDictionary } from '@/lib/dictionaries';
 import type { Locale } from '@/lib/utils';
 
+/* Canvas is not available under jsdom, so the downscaler is replaced with a
+   fixed payload. Only the photo tests below pick a file. */
+vi.mock('@/features/uploads/image', () => ({
+  prepareEvidenceImage: vi.fn(async () => ({ contentType: 'image/jpeg', base64: 'AAAA' }))
+}));
+
 /* The provider's job screen.
  *
  * This is the screen that had the worst defects in the migration, and each one is
@@ -522,5 +528,96 @@ describe('reading the booking', () => {
     );
     renderScreen();
     expect(await screen.findByText(dict.job.notFound)).toBeDefined();
+  });
+});
+
+describe('rework, photos and leaving a job', () => {
+  it('offers the start code on a rework visit, which the API starts from REWORK_REQUIRED', async () => {
+    row = booking({ status: 'REWORK_REQUIRED' });
+    renderScreen();
+    expect(await screen.findByText(dict.job.reworkExplainer)).toBeDefined();
+    fireEvent.change(screen.getByLabelText(dict.job.otpLabel), { target: { value: '654321' } });
+    fireEvent.click(screen.getByRole('button', { name: dict.job.startJob }));
+    await waitFor(() => expect(callsTo('/bookings/bk-1/start', 'POST')).toHaveLength(1));
+    expect(JSON.parse(String((callsTo('/bookings/bk-1/start', 'POST')[0][1] as RequestInit).body))).toEqual({ code: '654321' });
+  });
+
+  it('offers no photo picker en route, where the API refuses provider evidence', async () => {
+    row = booking({ status: 'EN_ROUTE' });
+    renderScreen();
+    await screen.findByRole('button', { name: dict.job.startJob });
+    expect(screen.queryByText(dict.job.addBeforePhoto)).toBeNull();
+    expect(screen.queryByText(dict.job.addAfterPhoto)).toBeNull();
+  });
+
+  it('offers both pickers in IN_PROGRESS and QUOTE_REVISION', async () => {
+    row = booking({ status: 'QUOTE_REVISION' });
+    renderScreen();
+    expect(await screen.findByText(dict.job.addBeforePhoto)).toBeDefined();
+    expect(screen.getByText(dict.job.addAfterPhoto)).toBeDefined();
+  });
+
+  it('records a BEFORE photo as itself and ticks no checklist step', async () => {
+    row = booking({ status: 'IN_PROGRESS' });
+    evidence = [];
+    renderScreen();
+    await screen.findByText(dict.job.addBeforePhoto);
+    const input = document.getElementById('before-bk-1') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(['x'], 'before.jpg', { type: 'image/jpeg' })] } });
+    await waitFor(() => expect(callsTo('/bookings/bk-1/evidence', 'POST')).toHaveLength(1));
+    const sent = JSON.parse(String((callsTo('/bookings/bk-1/evidence', 'POST')[0][1] as RequestInit).body)) as Record<string, unknown>;
+    expect(sent.kind).toBe('BEFORE');
+    expect('checklistItemId' in sent).toBe(false);
+    /* No step is guessed from the photo's kind. */
+    expect(callsTo('/checklist/', 'POST')).toHaveLength(0);
+  });
+
+  it('cancels a scheduled job only after a confirm step', async () => {
+    row = booking({ status: 'SCHEDULED' });
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: dict.job.providerCancelAction }));
+    expect(callsTo('/bookings/bk-1/cancel', 'POST')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: dict.job.providerCancelConfirm }));
+    await waitFor(() => expect(callsTo('/bookings/bk-1/cancel', 'POST')).toHaveLength(1));
+  });
+
+  it('reports a customer no-show with party CUSTOMER after confirming', async () => {
+    row = booking({ status: 'EN_ROUTE' });
+    renderScreen();
+    /* No provider cancel en route: the API allows it only from SCHEDULED. */
+    expect(screen.queryByRole('button', { name: dict.job.providerCancelAction })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: dict.job.customerNoShowAction }));
+    fireEvent.click(screen.getByRole('button', { name: dict.job.customerNoShowConfirm }));
+    await waitFor(() => expect(callsTo('/bookings/bk-1/no-show', 'POST')).toHaveLength(1));
+    expect(JSON.parse(String((callsTo('/bookings/bk-1/no-show', 'POST')[0][1] as RequestInit).body))).toEqual({ party: 'CUSTOMER' });
+  });
+
+  it('shows the server sentence when a no-show is reported inside the grace window', async () => {
+    row = booking({ status: 'SCHEDULED' });
+    const base = globalThis.fetch as ReturnType<typeof vi.fn>;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : String(input);
+        if ((init?.method ?? 'GET').toUpperCase() === 'POST' && url.includes('/no-show')) {
+          return new Response(
+            JSON.stringify({ type: 'about:blank', title: 'x', status: 400, code: 'BAD_REQUEST', detail: 'A no-show can only be reported 30 minutes after the visit was due to start', errors: [] }),
+            { status: 400, headers: { 'content-type': 'application/problem+json' } }
+          );
+        }
+        return base(input, init);
+      })
+    );
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: dict.job.customerNoShowAction }));
+    fireEvent.click(screen.getByRole('button', { name: dict.job.customerNoShowConfirm }));
+    expect(await screen.findByText('A no-show can only be reported 30 minutes after the visit was due to start')).toBeDefined();
+  });
+
+  it('does not offer a no-show before the visit was due to start', async () => {
+    row = booking({ status: 'SCHEDULED', scheduledStart: '2099-01-01T05:00:00.000Z', scheduledEnd: '2099-01-01T06:30:00.000Z' });
+    renderScreen();
+    await screen.findByRole('button', { name: dict.job.providerCancelAction });
+    expect(screen.queryByRole('button', { name: dict.job.customerNoShowAction })).toBeNull();
   });
 });

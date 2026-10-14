@@ -72,7 +72,21 @@ export type AdminComplaintDetail = AdminComplaintRow & {
   booking: { status: string; paymentMode: string; finalAmountPaisa: number | null } | null;
   disputes: { id: string; status: string; origin: string }[];
   penalties: { id: string; breachCode: string; status: string }[];
-  timeline: { id: string; kind: string; body: string | null; createdAt: string; actorUserId: string | null }[];
+  timeline: ComplaintTimelineEvent[];
+};
+
+/** One `complaint_events` row as `ComplaintsService.timeline` returns it. A
+    STATUS_CHANGE carries `fromStatus`/`toStatus`; `evidenceUrl` is a stored-media
+    path, never a raw storage key. */
+export type ComplaintTimelineEvent = {
+  id: string;
+  actorUserId: string | null;
+  type: string;
+  fromStatus: string | null;
+  toStatus: string | null;
+  body: string | null;
+  evidenceUrl: string | null;
+  createdAt: string;
 };
 
 export type ComplaintQueueFilters = { status?: ComplaintStatus; severity?: ComplaintSeverity; assignedTo?: string; open?: 'true' | 'false' };
@@ -191,6 +205,10 @@ export type TemplateRow = {
   isActive: boolean;
   updatedAt: string;
 };
+
+/** `TemplateService.preview`: the rendered subject and body, the placeholders the
+    system would not fill in, and whether there are none. */
+export type TemplatePreview = { subject: string | null; body: string; unknownPlaceholders: string[]; valid: boolean };
 
 export type NotificationLogRow = {
   id: string;
@@ -326,7 +344,7 @@ export const notificationsApi = {
   /** Renders a draft with sample values and lists any placeholder the system would
       not fill in. Saves nothing. */
   preview: (input: { body: string; subject?: string | null; variables?: Record<string, string> }, options?: AdminApiOptions) =>
-    call<{ rendered: string; missing: string[] }>('/admin/templates/preview', { method: 'POST', body: { ...input } }, options),
+    call<TemplatePreview>('/admin/templates/preview', { method: 'POST', body: { ...input } }, options),
 
   create: (input: { eventKey: string; channel: Channel; locale: 'en' | 'ur'; subject?: string | null; body: string; isActive?: boolean }, options?: AdminApiOptions) =>
     call<TemplateRow>('/admin/templates', { method: 'POST', body: { ...input } }, options),

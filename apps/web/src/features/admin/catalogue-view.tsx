@@ -32,9 +32,11 @@ import { cn, formatDuration, formatMoney, type Locale } from '@/lib/utils';
  * together and checked here before the request — a band rejected by a 422 after a
  * save button press is a worse experience than an inline message.
  *
- * Commission rules and the checklist/issue-option replacement routes exist on the
- * same controller but are **not** on this screen: they have no reader anywhere in
- * the API, so a form that wrote one would be a write with nothing to verify
+ * Commission rules are managed below (`CommissionRulesPanel`): they have a list
+ * route, `GET /admin/catalogue/commission-rules`, so every write can be checked
+ * against what the server holds. The checklist/issue-option replacement routes
+ * exist on the same controller but are **not** on this screen: they have no admin
+ * reader, so a form that wrote one would be a write with nothing to verify
  * against. That gap is written up in `docs/backend_requirement.md`. */
 
 /** What `PATCH /admin/catalogue/categories/:id` accepts. `.strict()`. */

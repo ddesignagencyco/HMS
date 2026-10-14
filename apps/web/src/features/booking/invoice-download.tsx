@@ -29,8 +29,27 @@ import type { BookingDetail } from "@/features/booking/api";
 import type { Dictionary } from "@/lib/dictionaries";
 import { cn, formatDate, formatMoney, type Locale } from "@/lib/utils";
 
-/** The statuses in which an invoice exists. `completion.service.ts` writes it. */
-export const INVOICE_READY_STATUSES = ['VERIFIED', 'AUTO_RELEASED', 'PAYMENT_RELEASED', 'CLOSED'] as const;
+/**
+ * The statuses in which an invoice exists.
+ *
+ * `CompletionService.bill` writes it in the same transaction as `complete` (or
+ * `completeAtVisitFee`), and `invoicePdf` serves it from then on with no status
+ * check — so it is downloadable from WORK_COMPLETED onward, through verification,
+ * rework and dispute, and after any refund. Only statuses that are reachable
+ * *without* completing (cancellation, no-show, unfulfilled) are left out.
+ */
+export const INVOICE_READY_STATUSES = [
+  'WORK_COMPLETED',
+  'AWAITING_VERIFICATION',
+  'REWORK_REQUIRED',
+  'VERIFIED',
+  'AUTO_RELEASED',
+  'DISPUTED',
+  'PAYMENT_RELEASED',
+  'PARTIALLY_REFUNDED',
+  'REFUNDED',
+  'CLOSED'
+] as const;
 
 export const isInvoiceReady = (status: string): boolean =>
   (INVOICE_READY_STATUSES as readonly string[]).includes(status);

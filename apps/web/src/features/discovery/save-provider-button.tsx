@@ -27,7 +27,7 @@ import type { Locale } from '@/lib/utils';
 
 export function SaveProviderButton({ locale, dict, providerId }: { locale: Locale; dict: Dictionary; providerId: string }) {
   const { user } = useSession();
-  const favourites = useFavourites(locale);
+  const favourites = useFavourites(locale, user?.roles.includes('CUSTOMER') === true);
   const add = useAddFavourite(locale);
   const remove = useRemoveFavourite(locale);
   const [localError, setLocalError] = useState('');

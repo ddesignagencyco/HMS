@@ -43,14 +43,19 @@ const render_ = () => {
   return render(<ProviderOffersView locale={locale} dict={dict} />, { wrapper: Component });
 };
 
+let wallet = { balancePaisa: 0, debtPaisa: 0, debtCeilingPaisa: 100_000, offersBlocked: false, offerBlockedReason: null as string | null };
+
 describe('provider offers', () => {
   beforeEach(() => {
+    wallet = { balancePaisa: 0, debtPaisa: 0, debtCeilingPaisa: 100_000, offersBlocked: false, offerBlockedReason: null };
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : String(input);
         if (init?.method === 'POST' && url.includes('/provider/offers/of-1/accept')) return json({ id: 'booking-of-1' });
         if (init?.method === 'POST' && url.includes('/provider/offers/of-2/decline')) return new Response(null, { status: 204 });
+        if (init?.method === 'POST' && url.includes('/provider/debt/pay')) return json({ paymentId: 'pay-1', redirectUrl: 'https://gateway.test/checkout/pay-1', amountPaisa: wallet.debtPaisa });
+        if (url.includes('/provider/wallet')) return json(wallet);
         if (url.includes('/provider/offers'))
           return json({
             items: [offer({ id: 'of-1', code: 'SHM-0000101', expiresInMs: 5 * 60_000 }), offer({ id: 'of-2', code: 'SHM-0000102', expiresInMs: -60_000, emergency: true })]
@@ -129,5 +134,22 @@ describe('provider offers', () => {
     render_();
     expect(await screen.findByText(dict.portal.offersError)).toBeDefined();
     expect(screen.queryByText(dict.portal.noOffers)).toBeNull();
+  });
+
+  /* `GET /provider/offers` returns nothing while the provider is offer-blocked, so
+     the wallet has to say why — and offer the way out. */
+  it('says why offers are blocked and starts the debt payment', async () => {
+    wallet = { balancePaisa: -150_000, debtPaisa: 150_000, debtCeilingPaisa: 100_000, offersBlocked: true, offerBlockedReason: 'Commission debt is over the ceiling.' };
+    const assign = vi.fn();
+    vi.stubGlobal('location', { assign, origin: 'https://app.test' });
+    render_();
+    expect(await screen.findByText('Commission debt is over the ceiling.')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.payDebt }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('https://gateway.test/checkout/pay-1'));
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find(([url]) => String(url).includes('/provider/debt/pay'));
+    const init = call?.[1] as RequestInit;
+    /* No amount: `payDebtSchema` defaults to the whole debt. */
+    expect(JSON.parse(String(init.body))).toEqual({});
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toMatch(/^debt-/);
   });
 });

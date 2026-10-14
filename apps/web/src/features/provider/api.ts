@@ -19,6 +19,7 @@
      owns — `earnings.commissionPaisa` must always be read from the endpoint. */
 
 import { apiRequest, type ApiRequest } from '@/lib/api/client';
+import { apiWrite } from '@/lib/api/idempotency';
 import type { Locale } from '@/lib/utils';
 
 export type ProviderOptions = { signal?: AbortSignal; locale?: Locale };
@@ -31,7 +32,8 @@ const call = <T>(path: string, request: ApiRequest = {}, options?: ProviderOptio
   });
 
 /** `provider_status` in the schema. `PENDING_APPROVAL` sees a queued workspace. */
-export type ProviderStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | 'BLOCKED';
+/** `provider_status` (packages/contracts/src/enums.ts). */
+export type ProviderStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | 'BLOCKED' | 'DEACTIVATED';
 
 /**
  * What `POST /provider/submit` answers with — `ProviderOnboardingRow`.
@@ -75,7 +77,8 @@ export type ProviderProfile = {
   /** The public trade description, e.g. "Licensed electrician". Deliberately not a
       name: the public search contract omits `users.first_name`. */
   qualification: string | null;
-  cityId: number;
+  /** Null until the professional sets where they work from (`profile.service.ts:13`). */
+  cityId: number | null;
   baseAddressText: string | null;
   lat: number | null;
   lng: number | null;
@@ -219,7 +222,12 @@ export type Wallet = {
   offerBlockedReason: string | null;
 };
 
-export type PayoutStatus = 'REQUESTED' | 'APPROVED' | 'PROCESSING' | 'PAID' | 'REJECTED';
+/** `POST /provider/debt/pay` (`ProviderMoneyService.payDebt`). The wallet only
+    changes once the gateway confirms, so the browser must follow `redirectUrl`. */
+export type DebtPaymentStarted = { paymentId: string; redirectUrl: string; amountPaisa: number };
+
+/** `payout_status` (packages/contracts/src/enums.ts). */
+export type PayoutStatus = 'REQUESTED' | 'APPROVED' | 'IN_BATCH' | 'PAID' | 'FAILED' | 'CANCELLED';
 
 /** One row of `GET /provider/payouts` (`listForProvider`), with the destination
     account already joined in. */
@@ -301,9 +309,10 @@ export type ProviderRating = {
 
 export type ProviderRatings = {
   reputation: {
-    /** A Bayesian mean pulled toward the prior — **read only when `ratingCount > 0`**,
-        or an unrated professional is shown as "3.5 out of 5". */
-    score: number;
+    /** A Bayesian mean pulled toward the prior. **Null while unrated**
+        (`reputation.service.ts` returns null with no ratings), so never print it
+        without a null check. */
+    score: number | null;
     ratingCount: number;
     distribution: Record<'1' | '2' | '3' | '4' | '5', number>;
     verifiedJobs: number;
@@ -421,21 +430,90 @@ export type Appeal = {
   finePaisa: number;
 };
 
+/** `POST /provider/penalties/:id/appeal` — just the new appeal's handle, not an `Appeal` row. */
+export type AppealCreated = { id: string; penaltyId: string; status: 'OPEN' };
+
+/** `POST /provider/remarks/:id/reply` (`ReputationService.reply`). */
+export type RemarkReplyCreated = { id: string; remarkId: string; body: string; createdAt: string };
+
+/* ---- Disputes ----------------------------------------------------------------
+   The list is flat (`listForProvider`), but the detail is the **evidence floor**
+   (`DisputesService.evidenceFloor(id, false)`) — nested sections, not a flat row
+   with statements. The provider variant blanks `agentId` and has no call
+   attempts; recordings are admin-only. */
+
+/** `dispute_status`. AWAITING_PROVIDER_REPLY is in the enum; OPEN is what a new dispute starts as. */
+export type DisputeStatus = 'OPEN' | 'AWAITING_PROVIDER_REPLY' | 'READY' | 'RESOLVED';
+
+export type DisputeResolution = 'FULL_RELEASE' | 'PARTIAL_RELEASE' | 'FULL_REFUND' | 'REFUND_WITH_PENALTY';
+
 export type ProviderDispute = {
   id: string;
   bookingCode: string;
   origin: string;
-  status: string;
+  status: DisputeStatus;
   replyDueAt: string | null;
   providerReplied: boolean;
-  resolution: string | null;
+  createdAt: string;
+  resolution: DisputeResolution | null;
 };
 
-export type ProviderDisputeDetail = ProviderDispute & {
-  customerStatement: string | null;
-  providerStatement: string | null;
-  evidence: { id: string; kind: string; url: string; createdAt: string }[];
+export type ProviderDisputeDetail = {
+  dispute: {
+    id: string;
+    origin: string;
+    status: DisputeStatus;
+    replyDueAt: string | null;
+    providerReply: string | null;
+    providerRepliedAt: string | null;
+    resolution: DisputeResolution | null;
+    releasePaisa: number | null;
+    refundPaisa: number | null;
+    note: string | null;
+    resolvedAt: string | null;
+    createdAt: string;
+    complaintId: string | null;
+  };
+  booking: {
+    id: string;
+    code: string;
+    status: string;
+    paymentMode: string;
+    serviceName: string;
+    customerName: string;
+    providerName: string;
+    scheduledStart: string;
+    problemText: string | null;
+    approvedTotalPaisa: number;
+    finalAmountPaisa: number | null;
+    discountPaisa: number;
+    visitNo: number;
+  };
+  money: { escrowHeldPaisa: number; finalAmountPaisa: number; excessPaisa: number };
+  evidenceFloor: {
+    startCodeVerifiedAt: string | null;
+    completedAt: string | null;
+    minutesOnSite: number | null;
+    geofence: { radiusM: number; checkinDistanceM: number | null; checkoutDistanceM: number | null; checkinWithin: boolean | null; checkoutWithin: boolean | null };
+    photos: { id: string; kind: string; visitNo: number; receivedAt: string; storageKey: string; url: string }[];
+    checklist: { label: string; requiresPhoto: boolean; done: boolean | null; visitNo: number | null; evidenceId: string | null }[];
+    invoice: { number: string; totalPaisa: number; lines: { kind: string; description: string; amountPaisa: number }[] } | null;
+  };
+  verifications: {
+    id: string;
+    visitNo: number;
+    tier: string;
+    outcome: string | null;
+    submittedAt: string | null;
+    workCompleted: string | null;
+    remark: string | null;
+  }[];
+  complaints: { id: string; category: string; severity: string; status: string; description: string }[];
+  statusHistory: { event: string; from: string | null; to: string; role: string; at: string }[];
 };
+
+/** `POST /provider/disputes/:id/reply` — only the new status, not the detail. */
+export type DisputeReplyResult = { id: string; status: 'READY' };
 
 /* ---- Documents -----------------------------------------------------------
    Added by the backend in the 5 Oct handoff. This endpoint did **not** exist when
@@ -456,9 +534,11 @@ export type ProviderDisputeDetail = ProviderDispute & {
    `cnic: { hasCnic, cnicVerified }` and nothing else. */
 
 /** `DocumentType` in packages/contracts. */
-export type ProviderDocumentKind = 'CNIC_FRONT' | 'CNIC_BACK' | 'TRADE_CERTIFICATE' | 'CHARACTER_CERTIFICATE';
+/** `document_type` (packages/contracts/src/enums.ts). */
+export type ProviderDocumentKind = 'CNIC_FRONT' | 'CNIC_BACK' | 'TRADE_CERT' | 'CHARACTER_CERT';
 
-export type ProviderDocumentStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+/** `review_status` — a reviewed document is VERIFIED, not APPROVED. */
+export type ProviderDocumentStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
 
 export type ProviderDocument = {
   id: string;
@@ -479,12 +559,18 @@ export type CnicReviewState = { hasCnic: boolean; cnicVerified: boolean };
 
 export type ProviderDocumentList = { items: ProviderDocument[]; cnic: CnicReviewState };
 
-/** `documentContentTypes` — deliberately narrow: no generic octet-stream. */
-export const DOCUMENT_CONTENT_TYPES = ['image/jpeg', 'image/png', 'application/pdf'] as const;
+/** `documentContentTypes` — deliberately narrow: no generic octet-stream. Video
+    was added with the Supabase storage switch (a short walkthrough of a trade). */
+export const DOCUMENT_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/webm', 'video/quicktime'] as const;
 export type DocumentContentType = (typeof DOCUMENT_CONTENT_TYPES)[number];
 
-/** `MAX_DOCUMENT_BYTES`, which the presign response also reports back. */
+/** `MAX_DOCUMENT_BYTES` — images and PDFs. The presign response reports the real ceiling back. */
 export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
+/** `MAX_VIDEO_BYTES` — video documents. */
+export const MAX_VIDEO_DOCUMENT_BYTES = 50 * 1024 * 1024;
+
+/** The ceiling the API applies to this type (`maxBytesFor` in provider-documents.service.ts). */
+export const maxDocumentBytes = (contentType: DocumentContentType): number => (contentType.startsWith('video/') ? MAX_VIDEO_DOCUMENT_BYTES : MAX_DOCUMENT_BYTES);
 
 /** Exactly one of `contentBase64` or `storageKey` — the schema refuses both and neither. */
 export type ProviderDocumentInput = {
@@ -497,8 +583,9 @@ export type ProviderDocumentInput = {
   cnicNumber?: string;
 };
 
-/** What `POST /uploads/presign` returns. No `headers` — the storage mock takes
-    the content type as a query parameter, so nothing extra is sent on the PUT. */
+/** What `POST /uploads/presign` returns. With Supabase storage `url` is a signed
+    upload URL on the Supabase host; with the mock it is `/api/v1/dev/storage/…`
+    and the content type rides as a query parameter. */
 export type PresignedUpload = {
   storageKey: string;
   url: string;
@@ -550,14 +637,18 @@ export const providerApi = {
   earnings: (options?: ProviderOptions) => call<Earnings>('/provider/earnings', {}, options),
   wallet: (options?: ProviderOptions) => call<Wallet>('/provider/wallet', {}, options),
   payouts: (options?: ProviderOptions) => call<{ items: Payout[] }>('/provider/payouts', {}, options),
-  requestPayout: (input: PayoutRequestInput, options?: ProviderOptions) => call<PayoutRequestResult>('/provider/payouts', { method: 'POST', body: compact(input) }, options),
+  /** Money moves, so it carries an `Idempotency-Key`. The caller mints one per
+      form intent and keeps it across retries — a fresh key per click would let a
+      double-tap request the payout twice. */
+  requestPayout: (input: PayoutRequestInput, idempotencyKey: string, options?: ProviderOptions) =>
+    apiWrite<PayoutRequestResult>('/provider/payouts', { method: 'POST', body: compact(input), idempotencyKey }, options?.locale),
   payoutAccounts: (options?: ProviderOptions) => call<{ items: PayoutAccount[] }>('/provider/payout-accounts', {}, options),
   addPayoutAccount: (input: PayoutAccountInput, options?: ProviderOptions) => call<PayoutAccount>('/provider/payout-accounts', { method: 'POST', body: compact(input) }, options),
   /** `payDebtSchema` takes an optional amount — omitting it pays the whole debt.
     It starts an online payment and answers with where to send the browser, so it
     is not a `Wallet` and the caller has to follow the redirect. */
-  payDebt: (amountPaisa: number | undefined, options?: ProviderOptions) =>
-    call<{ paymentId?: string; redirectUrl: string }>('/provider/debt/pay', { method: 'POST', body: compact({ amountPaisa }) }, options),
+  payDebt: (amountPaisa: number | undefined, idempotencyKey: string, options?: ProviderOptions) =>
+    apiWrite<DebtPaymentStarted>('/provider/debt/pay', { method: 'POST', body: compact({ amountPaisa }), idempotencyKey }, options?.locale),
 
   /* ---- Documents ---- */
   documents: (options?: ProviderOptions) => call<ProviderDocumentList>('/provider/documents', {}, options),
@@ -566,7 +657,7 @@ export const providerApi = {
   /* ---- Reputation ---- */
   ratings: (options?: ProviderOptions) => call<ProviderRatings>('/provider/ratings', {}, options),
   replyToRemark: (remarkId: string, body: string, options?: ProviderOptions) =>
-    call<ProviderRating>(`/provider/remarks/${encodeURIComponent(remarkId)}/reply`, { method: 'POST', body: { body } }, options),
+    call<RemarkReplyCreated>(`/provider/remarks/${encodeURIComponent(remarkId)}/reply`, { method: 'POST', body: { body } }, options),
 
   /* ---- Conduct ---- */
   conduct: (options?: ProviderOptions) => call<Conduct>('/provider/conduct', {}, options),
@@ -575,13 +666,15 @@ export const providerApi = {
   /* `replySchema` takes `{ reply }`, not `{ body }` — sending `body` is a 422 because
    the schema is `.strict()`. */
   replyToPenalty: (id: string, reply: string, options?: ProviderOptions) => call<Penalty>(`/provider/penalties/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { reply } }, options),
-  appealPenalty: (id: string, grounds: string, options?: ProviderOptions) => call<Appeal>(`/provider/penalties/${encodeURIComponent(id)}/appeal`, { method: 'POST', body: { grounds } }, options),
+  appealPenalty: (id: string, grounds: string, options?: ProviderOptions) => call<AppealCreated>(`/provider/penalties/${encodeURIComponent(id)}/appeal`, { method: 'POST', body: { grounds } }, options),
 
   /* ---- Disputes ---- */
   disputes: (options?: ProviderOptions) => call<{ items: ProviderDispute[] }>('/provider/disputes', {}, options),
   dispute: (id: string, options?: ProviderOptions) => call<ProviderDisputeDetail>(`/provider/disputes/${encodeURIComponent(id)}`, {}, options),
-  replyToDispute: (id: string, body: string, options?: ProviderOptions) =>
-    call<ProviderDisputeDetail>(`/provider/disputes/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { body } }, options),
+  /* `replySchema` in disputes.controller.ts is `{ reply }` and `.strict()` — the
+     same trap as the penalty reply: `{ body }` is a 422. */
+  replyToDispute: (id: string, reply: string, options?: ProviderOptions) =>
+    call<DisputeReplyResult>(`/provider/disputes/${encodeURIComponent(id)}/reply`, { method: 'POST', body: { reply } }, options),
 
   /* ---- Onboarding (SHM-021) ---- */
   /**

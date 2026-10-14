@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Label, PageHeader, Textarea } from '@/components/ui';
 import { SelectField } from '@/components/select-field';
-import { ProblemPhotos, canAttachProblemPhotos } from '@/features/booking/booking-detail';
+import { BookingActionsCard, ProblemPhotos, canAttachProblemPhotos } from '@/features/booking/booking-detail';
 import { InvoiceDownload, isInvoiceReady } from '@/features/booking/invoice-download';
 import { BookingChat } from '@/features/booking/booking-chat';
 import { StartCodeCard } from '@/features/booking/start-code-card';
@@ -19,7 +19,6 @@ import { CUSTOMER_CATEGORIES, MAX_COMPLAINT_DESCRIPTION, MIN_COMPLAINT_DESCRIPTI
 import { useRaiseComplaint } from '@/features/complaints/queries';
 import type { Dictionary } from '@/lib/dictionaries';
 import { cn, formatDate, formatDateTime, formatMoney, localizedPath, type Locale } from '@/lib/utils';
-import { resolveProviderName } from '@/features/providers/names';
 
 /* Customer booking detail view: tracks status progression, awaiting payment resolution,
    problem photos, start codes, revision approvals, in-job messaging, and complaints. */
@@ -208,27 +207,27 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
           {/* Who is coming. Assigned professional details. */}
           <Card className="p-5">
             {(() => {
-              const providerResolved = resolveProviderName(current.providerId, current.providerQualification ?? dict.common.professional);
+              /* The API publishes no professional's name on this row, only their
+                 qualification. Showing a name derived from the id would put a
+                 person on screen who may not exist, so the label is what is known. */
+              const providerLabel = current.providerQualification ?? dict.common.professional;
               return (
                 <div className="flex items-start gap-3.5">
                   <span
                     aria-hidden="true"
                     className="grid size-10 shrink-0 place-items-center rounded-lg bg-navy text-sm font-bold text-white shadow-sm"
                   >
-                    {current.providerId ? providerResolved.initial : '•'}
+                    {current.providerId ? providerLabel.charAt(0).toUpperCase() : '•'}
                   </span>
                   <div className="min-w-0 flex-1">
                     <h2 className="flex items-center gap-2 font-semibold text-navy">
                       <UserRound className="size-4 text-muted" aria-hidden="true" />
-                      {current.providerId ? providerResolved.fullName : dict.common.professional}
+                      {current.providerId ? providerLabel : dict.common.professional}
                     </h2>
                     {current.providerId === null ? (
                       <p className="mt-2 text-sm leading-6 text-secondary">{dict.portal.awaitingProfessional}</p>
                     ) : (
                       <div className="mt-1.5 space-y-1">
-                        <p className="text-xs font-medium text-slate-500">
-                          {current.providerQualification ?? dict.common.professional}
-                        </p>
                         <span className="sr-only">{dict.portal.professionalNameUnavailable}</span>
                         <Link
                           href={localizedPath(locale, `/providers/${current.providerId}`)}
@@ -339,6 +338,11 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
         </div>
 
         <div className="grid content-start gap-5">
+          {/* Cancel (with the server-quoted fee), reschedule from live slots, and
+              report a provider who never arrived. An unpaid booking's pay/cancel
+              stays with `AwaitingPaymentCard`, so it is not offered twice. */}
+          <BookingActionsCard locale={locale} dict={dict} booking={current} hidePayment hideWhenEmpty />
+
           <Card className="p-5">
             <h2 className="flex items-center gap-2 font-semibold text-navy">
               <CalendarDays className="size-4 text-muted" aria-hidden="true" />
@@ -380,6 +384,10 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
             ) : null}
           </Card>
 
+          {/* `POST /complaints` is a 404 on a booking nobody has taken yet — there is
+              no provider to complain about — so the card waits for an assignment.
+              The warranty claim below needs PAYMENT_RELEASED, which implies one. */}
+          {current.providerId !== null ? (
           <Card className="p-5">
             <h2 className="font-semibold text-navy">{dict.portal.somethingWrong}</h2>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -396,6 +404,7 @@ export function CustomerBookingDetailScreen({ locale, bookingId, dict }: { local
               ) : null}
             </div>
           </Card>
+          ) : null}
         </div>
       </div>
     </div>

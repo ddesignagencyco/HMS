@@ -3,7 +3,7 @@
 import { Activity } from 'lucide-react';
 import Link from 'next/link';
 import { Button, Card, PageHeader } from '@/components/ui';
-import { useAdminProviders, useAdminUsers, useEscrow } from '@/features/admin/queries';
+import { useAdminCustomers, useAdminProviders, useEscrow } from '@/features/admin/queries';
 import { useComplaintQueue, useDisputes, usePenalties } from '@/features/admin/cases-queries';
 import { ApiError } from '@/lib/api/problem';
 import type { Dictionary } from '@/lib/dictionaries';
@@ -146,11 +146,21 @@ export function AdminOps({ locale, dict }: { locale: Locale; dict: Dictionary })
  * and returns the ledger's own `totalHeldPaisa`. It is a real balance, so it is
  * shown — formatted from the paisa the API sends, never summed from `items`.
  */
+/** `limit` in admin.schemas.ts defaults to 50, and the two directory lists
+    below are read with that default — so 50 rows means "at least 50". */
+export const LIST_PAGE_LIMIT = 50;
+
+/** A row count from a capped list: exact below the cap, a lower bound at it. */
+export const cappedCount = (value: number, locale: Locale, limit = LIST_PAGE_LIMIT): string =>
+  value >= limit ? `${formatNumber(limit, locale)}+` : formatNumber(value, locale);
+
 export function AdminOverview({ locale, dict }: { locale: Locale; dict: Dictionary }) {
   const complaints = useComplaintQueue({}, locale);
   const disputes = useDisputes(undefined, locale);
   const penalties = usePenalties({}, locale);
-  const users = useAdminUsers({}, locale);
+  /* Customers from `GET /admin/customers` — counting `GET /admin/users` counted
+     every account, staff and professionals included. */
+  const customers = useAdminCustomers({}, locale);
   const providers = useAdminProviders({}, locale);
   const escrow = useEscrow(locale);
 
@@ -164,8 +174,8 @@ export function AdminOverview({ locale, dict }: { locale: Locale; dict: Dictiona
     { href: '/admin/complaints', label: dict.admin.complaints, value: complaintRows.filter((row) => row.slaBreached).length },
     { href: '/admin/disputes', label: dict.admin.disputes, value: disputeRows.filter((row) => row.status !== 'RESOLVED').length },
     { href: '/admin/penalties', label: dict.admin.penalties, value: penaltyRows.filter((row) => row.status === 'PROPOSED').length },
-    { href: '/admin/providers', label: dict.admin.allProviders, value: providers.data?.items.length ?? null },
-    { href: '/admin/customers', label: dict.admin.customers, value: users.data?.items.length ?? null }
+    { href: '/admin/providers', label: dict.admin.allProviders, value: providers.data?.items.length ?? null, capped: true },
+    { href: '/admin/customers', label: dict.admin.customers, value: customers.data?.items.length ?? null, capped: true }
   ];
 
   return (
@@ -200,7 +210,7 @@ export function AdminOverview({ locale, dict }: { locale: Locale; dict: Dictiona
               <span className="text-sm font-semibold text-navy">{section.label}</span>
               {/* A dash, not a zero: a queue that failed to load has no count, and
                   "0" would read as "nothing to do". */}
-              <span className="text-xl font-semibold text-navy tabular-nums">{section.value === null ? '—' : formatNumber(section.value, locale)}</span>
+              <span className="text-xl font-semibold text-navy tabular-nums">{section.value === null ? '—' : 'capped' in section && section.capped ? cappedCount(section.value, locale) : formatNumber(section.value, locale)}</span>
             </Link>
           </li>
         ))}

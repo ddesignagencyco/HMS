@@ -16,10 +16,15 @@ import type { Locale } from '@/lib/utils';
  * `POST /me/deactivate` anonymises an account — a replayed request is not a
  * harmless duplicate the way a read would be. */
 
-/** `GET /me/favourites`. Short windows: a shortlist is what you rebook from. */
-export function useFavourites(locale: Locale) {
+/** `GET /me/favourites`. Short windows: a shortlist is what you rebook from.
+ *
+ * `enabled` lets a caller that renders for every visitor (a provider profile)
+ * hold the request until it knows the viewer is a CUSTOMER — the route is
+ * customer-only, so anyone else would only collect a 401/403. */
+export function useFavourites(locale: Locale, enabled = true) {
   return useQuery({
     queryKey: accountKeys.favourites,
+    enabled,
     queryFn: ({ signal }) => meApi.listFavourites({ signal, locale }),
     staleTime: FRESHNESS.search.staleTime,
     gcTime: FRESHNESS.search.gcTime,
@@ -65,7 +70,10 @@ export function useUpdateProfile(locale: Locale) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: ProfileUpdateInput) => meApi.updateProfile(input, { locale }),
-    onSuccess: (result) => queryClient.setQueryData(sessionKeys.me, { user: result.user }),
+    /* Merge, never replace: the session cache also carries `totpRequired`, and
+       dropping it would read as "no second factor pending". */
+    onSuccess: (result) =>
+      queryClient.setQueryData<{ user: typeof result.user; totpRequired: boolean } | null>(sessionKeys.me, (old) => (old ? { ...old, user: result.user } : old)),
     retry: false
   });
 }

@@ -108,6 +108,15 @@ describe("isPermittedForPath", () => {
     expect(isPermittedForPath("/en/finance", ["PROVIDER"])).toBe(false);
     expect(isPermittedForPath("/en/agent", ["CUSTOMER"])).toBe(false);
   });
+
+  it("lets FINANCE reach the ops board, reports and payout batches the API allows it, in its own area", () => {
+    /* ops-board.controller.ts and reports.controller.ts allow FINANCE + ADMIN;
+       FINANCE cannot enter /admin, so those screens are served under /finance. */
+    expect(isPermittedForPath("/en/finance/ops", ["FINANCE"])).toBe(true);
+    expect(isPermittedForPath("/en/finance/reports", ["FINANCE"])).toBe(true);
+    expect(isPermittedForPath("/en/finance/payout-batches", ["FINANCE"])).toBe(true);
+    expect(isPermittedForPath("/en/admin/ops", ["FINANCE"])).toBe(false);
+  });
 });
 
 describe("role typing", () => {

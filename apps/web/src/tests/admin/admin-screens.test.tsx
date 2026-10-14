@@ -130,7 +130,12 @@ const stub = (): void => {
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
-    if (method === 'POST' && url.includes('/preview')) return json({ rendered: 'text', missing: previewMissing });
+    if (method === 'POST' && url.includes('/preview')) {
+      /* `TemplateService.preview`'s real shape — the old `{ rendered, missing }`
+         mock is what let the screen read `result.missing` and crash in use. */
+      const body = JSON.parse(String(init?.body ?? '{}')) as { body?: string; subject?: string | null };
+      return json({ subject: body.subject ?? null, body: `rendered: ${body.body ?? ''}`, unknownPlaceholders: previewMissing, valid: previewMissing.length === 0 });
+    }
     if (method === 'POST' && url.includes('/review')) return json(documentRow({ status: 'VERIFIED' }));
     if (method === 'POST') return json({});
     if (method === 'PUT') return json({});
@@ -360,6 +365,16 @@ describe('notification templates', () => {
     fireEvent.click(screen.getByRole('button', { name: dict.admin.saveTemplate }));
 
     await waitFor(() => expect(writes()).toHaveLength(2));
+  });
+
+  it('shows the server-rendered body and the unknown placeholders from the real preview shape', async () => {
+    previewMissing = ['serviceName', 'slot'];
+    render(<AdminTemplates locale={locale} dict={dict} />, { wrapper: wrap });
+    await screen.findByText('booking.accepted');
+    fireEvent.click(screen.getByRole('button', { name: dict.admin.preview }));
+
+    await screen.findByText(dict.admin.previewMissing.replace('{placeholders}', '{{serviceName}}, {{slot}}'));
+    expect(screen.getByTestId('template-rendered').textContent).toContain('rendered: ');
   });
 
   it('invalidates the preview as soon as the draft is edited', async () => {

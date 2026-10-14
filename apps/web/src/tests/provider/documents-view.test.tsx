@@ -14,12 +14,14 @@ import type { Locale } from '@/lib/utils';
      `{ hasCnic, cnicVerified }`. **The CNIC number is never returned by any
      endpoint.** A test asserts the number never reaches the DOM even when the
      person typed one — the screen submits it and must never read it back.
-   · Submitting is **inline base64**: one POST to `/provider/documents` carrying
-     `contentBase64`. The mock storage implements no PUT handler, so the
-     presigned handshake would 404 — the test asserts the inline path and that
-     `storageKey` is *not* sent, per the schema's either/or.
-   · Only JPEG, PNG and PDF are accepted; `documentContentTypes` has no
-     octet-stream, so an unsupported file is refused before the round trip.
+   · Submitting is **presigned**: `POST /uploads/presign` → PUT the bytes to the
+     signed Supabase Storage URL → `POST /provider/documents { storageKey }`.
+     Inline base64 cannot carry a real file: that route's JSON limit is 1 MB. The
+     tests assert the bytes go to storage with their content type, and that the
+     API only ever receives the key — never `contentBase64`, per the either/or.
+   · JPEG, PNG, WebP, PDF and MP4/WebM/MOV video are accepted (images and PDFs
+     up to 5 MB, video up to 50 MB); `documentContentTypes` has no octet-stream,
+     so an unsupported file is refused before the round trip.
    · A CNIC number may only accompany a CNIC front or back scan. */
 
 const dict = getDictionary('en');
@@ -49,6 +51,8 @@ const document_ = (over: Partial<Record<string, unknown>> = {}) => ({
 });
 
 let list = { items: [document_()], cnic: { hasCnic: true, cnicVerified: false } };
+const STORAGE_HOST = 'https://project.supabase.co';
+let storageStatus = 200;
 
 /** A File in jsdom: a real Blob with a name, so `file.type` and `file.size` work. */
 const pngFile = (name = 'cnic.png', type = 'image/png') => new File([new Uint8Array([1, 2, 3, 4])], name, { type });
@@ -58,20 +62,22 @@ const callsTo = (fragment: string, method: string) =>
 
 beforeEach(() => {
   list = { items: [document_()], cnic: { hasCnic: true, cnicVerified: false } };
+  storageStatus = 200;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : String(input);
       const method = (init?.method ?? 'GET').toUpperCase();
-      // The storage PUT goes to a third-party host and is a separate fetch.
-      if (url.startsWith('https://storage.example/')) return new Response(null, { status: 200 });
+      // The storage PUT goes to Supabase, a third-party host, as a separate fetch.
+      if (url.startsWith(STORAGE_HOST)) return new Response(storageStatus === 200 ? '{"Key":"documents/x"}' : '{"error":"expired"}', { status: storageStatus });
       if (method === 'POST' && url.includes('/uploads/presign')) {
+        const body = JSON.parse(String(init?.body)) as { contentType: string };
         return json({
           storageKey: 'provider/x/cnic-front.png',
-          url: 'https://storage.example/put/cnic-front.png',
+          url: `${STORAGE_HOST}/storage/v1/object/upload/sign/verification-documents/provider/x/cnic-front.png?token=t`,
           method: 'PUT',
           expiresAt: '2026-10-01T00:05:00.000Z',
-          maxBytes: 5 * 1024 * 1024
+          maxBytes: body.contentType.startsWith('video/') ? 50 * 1024 * 1024 : 5 * 1024 * 1024
         });
       }
       if (method === 'POST' && url.includes('/provider/documents')) return json(document_({ status: 'PENDING' }));
@@ -124,7 +130,7 @@ describe('provider documents', () => {
     expect(await screen.findByText(dict.portal.noDocuments)).toBeDefined();
   });
 
-  it('refuses a file that is not a JPEG, PNG or PDF', async () => {
+  it('refuses a file type the API does not accept', async () => {
     renderScreen();
     const input = (await screen.findByLabelText(dict.portal.chooseFileLabel)) as HTMLInputElement;
     fireEvent.change(input, { target: { files: [pngFile('notes.txt', 'text/plain')] } });
@@ -141,7 +147,7 @@ describe('provider documents', () => {
     expect(callsTo('/uploads/presign', 'POST')).toHaveLength(0);
   });
 
-  it('uploads a single inline body, not a presigned round trip', async () => {
+  it('uploads the bytes to Supabase Storage and records only the key', async () => {
     renderScreen();
     const input = (await screen.findByLabelText(dict.portal.chooseFileLabel)) as HTMLInputElement;
     fireEvent.change(input, { target: { files: [pngFile()] } });
@@ -149,17 +155,54 @@ describe('provider documents', () => {
 
     await waitFor(() => expect(screen.getByText(dict.portal.documentSubmitted)).toBeDefined());
 
-    // One POST to /provider/documents with contentBase64, no presign call.
     const presign = callsTo('/uploads/presign', 'POST');
-    expect(presign).toHaveLength(0);
+    expect(presign).toHaveLength(1);
+    expect(JSON.parse(String((presign[0][1] as RequestInit).body))).toEqual({ docType: 'CNIC_FRONT', contentType: 'image/png' });
+
+    /* The bytes go straight to storage, typed — Supabase records the header as the object's type. */
+    const put = callsTo(STORAGE_HOST, 'PUT');
+    expect(put).toHaveLength(1);
+    const putInit = put[0][1] as RequestInit;
+    expect((putInit.headers as Record<string, string>)['content-type']).toBe('image/png');
+    expect(putInit.credentials).toBe('omit');
+    expect(putInit.body).toBeInstanceOf(File);
 
     const confirm = callsTo('/provider/documents', 'POST');
     expect(confirm).toHaveLength(1);
     const body = JSON.parse(String((confirm[0][1] as RequestInit).body)) as Record<string, unknown>;
-    expect(body.contentBase64).toBeTruthy();
-    expect(body.contentType).toBe('image/png');
-    expect(body.docType).toBe('CNIC_FRONT');
-    expect(body.storageKey).toBeUndefined();
+    expect(body).toEqual({ docType: 'CNIC_FRONT', storageKey: 'provider/x/cnic-front.png' });
+  });
+
+  it('accepts a video document, typed from its extension when the browser gives none', async () => {
+    renderScreen();
+    const input = (await screen.findByLabelText(dict.portal.chooseFileLabel)) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [pngFile('walkthrough.mov', '')] } });
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.submitDocument }));
+
+    await waitFor(() => expect(screen.getByText(dict.portal.documentSubmitted)).toBeDefined());
+    expect(JSON.parse(String((callsTo('/uploads/presign', 'POST')[0][1] as RequestInit).body)).contentType).toBe('video/quicktime');
+  });
+
+  it('refuses an image over 5 MB before calling anything', async () => {
+    renderScreen();
+    const input = (await screen.findByLabelText(dict.portal.chooseFileLabel)) as HTMLInputElement;
+    const big = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'scan.jpg', { type: 'image/jpeg' });
+    fireEvent.change(input, { target: { files: [big] } });
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.submitDocument }));
+    expect(await screen.findByText(dict.portal.fileTooLarge.replace('{max}', '5'))).toBeDefined();
+    expect(callsTo('/uploads/presign', 'POST')).toHaveLength(0);
+  });
+
+  it('records nothing when storage refuses the upload', async () => {
+    storageStatus = 400;
+    renderScreen();
+    const input = (await screen.findByLabelText(dict.portal.chooseFileLabel)) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [pngFile()] } });
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.submitDocument }));
+
+    expect(await screen.findByRole('alert')).toBeDefined();
+    expect(callsTo('/provider/documents', 'POST')).toHaveLength(0);
+    expect(screen.queryByText(dict.portal.documentSubmitted)).toBeNull();
   });
 
   it('sends the CNIC number only with a CNIC scan', async () => {
@@ -176,6 +219,30 @@ describe('provider documents', () => {
     expect(JSON.parse(String((confirm[0][1] as RequestInit).body)).cnicNumber).toBe('35202-1234567-1');
     /* …and it is not read back into the page. */
     expect(document.body.textContent).not.toContain('35202-1234567-1');
+  });
+
+  /* The onboarding "documents" step is satisfied by `cnic_enc`, which only a
+     `cnicNumber` sent with a CNIC scan sets — so the first CNIC scan needs it. */
+  it('requires the CNIC number with a CNIC scan until one is on file', async () => {
+    list = { items: [], cnic: { hasCnic: false, cnicVerified: false } };
+    renderScreen();
+    const input = (await screen.findByLabelText(dict.portal.chooseFileLabel)) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [pngFile()] } });
+    expect(await screen.findByLabelText(dict.portal.cnicNumberRequiredLabel)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.submitDocument }));
+    expect(await screen.findByText(dict.portal.cnicNumberRequired)).toBeDefined();
+    expect(callsTo('/uploads/presign', 'POST')).toHaveLength(0);
+  });
+
+  it('refuses a CNIC number that is not 13 digits before uploading', async () => {
+    list = { items: [], cnic: { hasCnic: false, cnicVerified: false } };
+    renderScreen();
+    const input = (await screen.findByLabelText(dict.portal.chooseFileLabel)) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [pngFile()] } });
+    fireEvent.change(await screen.findByLabelText(dict.portal.cnicNumberRequiredLabel), { target: { value: '35202-12345' } });
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.submitDocument }));
+    expect(await screen.findByText(dict.portal.cnicNumberInvalid)).toBeDefined();
+    expect(callsTo('/uploads/presign', 'POST')).toHaveLength(0);
   });
 
   it('reports a failure without claiming the document was recorded', async () => {

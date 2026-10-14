@@ -30,7 +30,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, PageHeader } from "@/components/ui";
 import { adminApi, OPS_BOARD_STREAM_PATH, type OpsBoard } from "@/features/admin/api";
-import { API_BASE } from "@/lib/api/client";
+import { API_BASE, refreshSession } from "@/lib/api/client";
 import { readAccessToken } from "@/lib/api/access-token";
 import { adminKeys, FRESHNESS, publicRetry } from "@/lib/api/keys";
 import type { Dictionary } from "@/lib/dictionaries";
@@ -111,21 +111,35 @@ function useOpsBoardStream(locale: Locale, enabled: boolean): { board: OpsBoard 
 
     const run = async (): Promise<void> => {
       setState("connecting");
-      const headers: Record<string, string> = { accept: "text/event-stream" };
-      if (locale !== undefined) headers["accept-language"] = locale;
-      const token = readAccessToken();
-      if (token !== null) headers.authorization = `Bearer ${token}`;
-
-      try {
-        const response = await fetch(`${API_BASE}${OPS_BOARD_STREAM_PATH}`, {
+      /* Headers are rebuilt per request so a retry after a refresh carries the
+         new access token rather than the expired one. */
+      const open = (): Promise<Response> => {
+        const headers: Record<string, string> = { accept: "text/event-stream" };
+        if (locale !== undefined) headers["accept-language"] = locale;
+        const token = readAccessToken();
+        if (token !== null) headers.authorization = `Bearer ${token}`;
+        return fetch(`${API_BASE}${OPS_BOARD_STREAM_PATH}`, {
           headers,
           credentials: "include",
           signal: controller.signal
         });
+      };
 
-        /* A 403 here is the second factor, and a 401 a dead session — both are
-           answered by something other than a stream, so this is not a transient
-           failure to retry into. */
+      try {
+        let response = await open();
+
+        /* This is a raw `fetch`, so the client's own 401 → refresh → retry does
+           not apply. An access token expiring is routine on a board left open
+           all shift: refresh once, through the same single-flight refresh every
+           other request uses, and reconnect once. A second 401 is a dead
+           session, and the stream stays off. */
+        if (response.status === 401 && !cancelled && (await refreshSession(locale)) && !cancelled) {
+          response = await open();
+        }
+
+        /* A 403 here is the second factor, and a 401 that survived a refresh a
+           dead session — both are answered by something other than a stream, so
+           this is not a transient failure to retry into. */
         if (!response.ok || response.body === null) {
           if (!cancelled) setState("off");
           return;
@@ -221,7 +235,7 @@ function TileGrid({ tiles }: { tiles: Tile[] }) {
  * `AdminOps` in `ops-view.tsx` is replaced by this; that file keeps the
  * `/admin` landing (`AdminOverview`), which is a different screen.
  */
-export function AdminOpsBoard({ locale, dict }: { locale: Locale; dict: Dictionary }) {
+export function AdminOpsBoard({ locale, dict, eyebrow }: { locale: Locale; dict: Dictionary; /** The area it is shown in; FINANCE reaches it under `/finance`. */ eyebrow?: string }) {
   const snapshot = useOpsBoard(locale);
   const [liveEnabled, setLiveEnabled] = useState(true);
   const stream = useOpsBoardStream(locale, liveEnabled);
@@ -303,7 +317,7 @@ export function AdminOpsBoard({ locale, dict }: { locale: Locale; dict: Dictiona
   return (
     <div>
       <PageHeader
-        eyebrow={dict.portal.admin}
+        eyebrow={eyebrow ?? dict.portal.admin}
         title={dict.admin.ops}
         description={dict.ops.description}
         action={

@@ -38,15 +38,26 @@ export const presignUpload = (input: PresignInput, clientUuid: string, locale?: 
 /**
  * Uploads the bytes to a presigned target.
  *
+ * With `STORAGE_PROVIDER=supabase` the target is a Supabase Storage signed upload
+ * URL (`…/storage/v1/object/upload/sign/<bucket>/<key>?token=…`), which takes the
+ * raw bytes on a PUT. The `content-type` header is what Supabase records as the
+ * object's type — without it the file is stored as `application/octet-stream`
+ * and the signed link later serves a PDF or a video as an opaque download.
+ * `x-upsert` matches the API's own `upsert: true`, so a retry after a dropped
+ * connection overwrites the half-written object rather than failing with 409.
+ *
+ * With the mock adapter the target is `/api/v1/dev/storage/…`, which reads the
+ * type from its query string and ignores both headers.
+ *
  * `credentials: "omit"` — the target is a third-party host and there is no reason
- * to offer it this origin's cookies. The response carries no headers to echo back;
- * a failure is reported by status, because the store's error body is not the
- * API's problem+json and guessing at a message would be worse than the status.
+ * to offer it this origin's cookies. A failure is reported by status, because the
+ * store's error body is not the API's problem+json.
  */
-export const putToPresignedTarget = async (upload: PresignedUpload, file: Blob, signal?: AbortSignal): Promise<void> => {
+export const putToPresignedTarget = async (upload: PresignedUpload, file: Blob, contentType: string, signal?: AbortSignal): Promise<void> => {
   const response = await fetch(upload.url, {
     method: 'PUT',
     body: file,
+    headers: { 'content-type': contentType, 'x-upsert': 'true' },
     credentials: 'omit',
     ...(signal === undefined ? {} : { signal })
   });

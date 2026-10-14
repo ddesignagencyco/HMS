@@ -209,7 +209,7 @@ describe('create request body', () => {
       scheduledStart: bookingRow.scheduledStart,
       scheduledEnd: bookingRow.scheduledEnd,
       paymentMode: 'CASH'
-    });
+    }, 'shm-booking:test-attempt');
     expect('providerId' in seen[0].body).toBe(false);
   });
 
@@ -226,7 +226,7 @@ describe('create request body', () => {
       problemText: 'Kitchen tap is leaking',
       paymentMode: 'ONLINE',
       isEmergency: true
-    });
+    }, 'shm-booking:test-attempt');
     expect(Object.keys(seen[0].body).sort()).toEqual(['addressId', 'isEmergency', 'paymentMode', 'problemText', 'providerId', 'scheduledEnd', 'scheduledStart', 'serviceId'].sort());
   });
 
@@ -241,7 +241,7 @@ describe('create request body', () => {
       scheduledStart: bookingRow.scheduledStart,
       scheduledEnd: bookingRow.scheduledEnd,
       paymentMode: 'CASH'
-    });
+    }, 'shm-booking:test-attempt');
     expect(Object.values(seen[0].body)).not.toContain(undefined);
     expect('couponCode' in seen[0].body).toBe(false);
   });
@@ -256,7 +256,7 @@ describe('create request body', () => {
       scheduledStart: bookingRow.scheduledStart,
       scheduledEnd: bookingRow.scheduledEnd,
       paymentMode: 'CASH'
-    });
+    }, 'shm-booking:test-attempt');
     expect((cash as CreatedBooking).payment).toBeUndefined();
 
     const redirectUrl = '/api/v1/dev/payments/8b1f0f2a-0000-4000-8000-0000000000p1?returnUrl=%2Fcheckout%2Freturn';
@@ -267,9 +267,29 @@ describe('create request body', () => {
       scheduledStart: bookingRow.scheduledStart,
       scheduledEnd: bookingRow.scheduledEnd,
       paymentMode: 'ONLINE'
-    });
+    }, 'shm-booking:test-attempt');
     expect(online.status).toBe('PENDING_PAYMENT');
     expect(online.payment?.redirectUrl).toBe(redirectUrl);
+  });
+});
+
+describe('create idempotency', () => {
+  it('sends the checkout attempt key as Idempotency-Key', async () => {
+    /* One key per checkout attempt: the API replays the first response for a
+       repeated key, so a double-submit cannot create two bookings. */
+    const headers: Headers[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        headers.push(new Headers(init?.headers));
+        return respond(201, bookingRow);
+      })
+    );
+    await bookingApi.create(
+      { serviceId: 1, addressId: bookingRow.addressId, scheduledStart: bookingRow.scheduledStart, scheduledEnd: bookingRow.scheduledEnd, paymentMode: 'CASH' },
+      'shm-booking:attempt-1'
+    );
+    expect(headers[0].get('Idempotency-Key')).toBe('shm-booking:attempt-1');
   });
 });
 
@@ -321,7 +341,7 @@ describe('booking reads', () => {
         scheduledStart: bookingRow.scheduledStart,
         scheduledEnd: bookingRow.scheduledEnd,
         paymentMode: 'CASH'
-      })
+      }, 'shm-booking:test-attempt')
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).code).toBe('SLOT_TAKEN');

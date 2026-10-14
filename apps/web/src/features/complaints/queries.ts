@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { complaintsApi, type ComplaintCreateInput } from '@/features/complaints/api';
+import { complaintsApi, type ComplaintCreateInput, type ComplaintPhotoInput } from '@/features/complaints/api';
 import type { Locale } from '@/lib/utils';
 
 /* Complaints — the customer's side of them and the provider's are the same
@@ -67,7 +67,7 @@ export const useReplyToComplaint = (locale: Locale) => {
 export const useAddComplaintPhoto = (locale: Locale) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: string; photo: { contentType: 'image/jpeg' | 'image/png' | 'image/webp'; contentBase64: string } }) => complaintsApi.addEvidence(input.id, input.photo, { locale }),
+    mutationFn: (input: { id: string; photo: ComplaintPhotoInput }) => complaintsApi.addEvidence(input.id, input.photo, { locale }),
     onSuccess: (_result, input) => {
       void queryClient.invalidateQueries({ queryKey: complaintsKeys.detail(input.id) });
     },

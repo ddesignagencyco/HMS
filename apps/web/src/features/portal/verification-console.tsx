@@ -29,8 +29,10 @@ import type { Booking } from "@/lib/types";
 import { cn, formatMoney, localizedPath, type Locale } from "@/lib/utils";
 import { Card, PageHeader } from "@/components/ui";
 import { SelectField } from "@/components/select-field";
-import { EvidenceImage } from "@/components/evidence-image";
-import { agentApi, type AgentSubmitPayload } from "@/features/portal/api";
+import { EvidenceImage, mediaLabels } from "@/components/evidence-image";
+import { agentApi, type AgentSubmitPayload, type AttemptResult } from "@/features/portal/api";
+import { buildSubmitPayload, extraChargeAmountToPaisa } from "@/features/portal/verification-payload";
+import { detailOf } from "@/features/auth/auth-feedback";
 
 type VerificationConsoleProps = {
   locale: Locale;
@@ -48,7 +50,6 @@ export function VerificationConsole({
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const [attempt, setAttempt] = useState(1);
   const [consent, setConsent] = useState(true);
   const [callActive, setCallActive] = useState(false);
   /* The timer used to be a frozen `useState("01:24")` — a constant that never
@@ -75,6 +76,18 @@ export function VerificationConsole({
   const [extraChargeDemanded, setExtraChargeDemanded] = useState<boolean | null>(null);
   const [uniformWorn, setUniformWorn] = useState<boolean | null>(null);
   const [ownTools, setOwnTools] = useState<boolean | null>(null);
+  /* What the customer said when asked whether payment may be released. The
+   * domain refuses VERIFIED_SATISFIED *and* VERIFIED_WITH_ISSUE without it, so
+   * it is a question the agent answers, not something read off the outcome. */
+  const [consentToRelease, setConsentToRelease] = useState<boolean | null>(null);
+  /* How much was demanded beyond the approved price, in rupees as typed. The
+   * submit schema wants integer paisa and refuses a "yes" without an amount. */
+  const [extraChargeRupees, setExtraChargeRupees] = useState("");
+  /* The customer's own words, transcribed. This becomes their public review, so
+   * the console never fills it in for them — left empty, nothing is sent. */
+  const [customerRemark, setCustomerRemark] = useState("");
+  /* A bridged call's references, attached to the attempt and the submission. */
+  const [bridge, setBridge] = useState<{ callRef: string; recordingRef: string } | null>(null);
   const [scores, setScores] = useState<Record<"quality" | "punctuality" | "conduct" | "cleanliness", number | null>>({
     quality: null,
     punctuality: null,
@@ -86,6 +99,7 @@ export function VerificationConsole({
     id: string;
     kind: string;
     url?: string;
+    contentType?: string | null;
     receivedAt?: string;
     checklistItemId?: number | null;
   } | null>(null);
@@ -111,9 +125,12 @@ export function VerificationConsole({
 
   /* Everything `submitSchema` requires, minus the outcome, which has its own
    * control. `answered` is what the Commit button is gated on. */
+  const extraChargeAmountPaisa = extraChargeAmountToPaisa(extraChargeRupees);
   const answered =
     workCompleted !== null &&
     extraChargeDemanded !== null &&
+    (extraChargeDemanded === false || extraChargeAmountPaisa !== null) &&
+    consentToRelease !== null &&
     uniformWorn !== null &&
     ownTools !== null &&
     scores.quality !== null &&
@@ -127,8 +144,10 @@ export function VerificationConsole({
     scores.conduct === null ? "conduct" : null,
     scores.cleanliness === null ? "cleanliness" : null,
     extraChargeDemanded === null ? "extra charge demanded" : null,
+    extraChargeDemanded === true && extraChargeAmountPaisa === null ? "amount demanded" : null,
     uniformWorn === null ? "uniform" : null,
     ownTools === null ? "own tools" : null,
+    consentToRelease === null ? "consent to release payment" : null,
   ].filter((item) => item !== null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -141,19 +160,33 @@ export function VerificationConsole({
     mutationFn: () => agentApi.startCall(verificationId, undefined, { locale }),
     onSuccess: (res) => {
       setCallActive(true);
-      toast.success(res.customerPhone ? `Calling customer: ${res.customerPhone}` : "Call initiated via bridge");
+      if (res.mode === "BRIDGED") {
+        setBridge({ callRef: res.callRef, recordingRef: res.recordingRef });
+        toast.success("Call initiated via bridge");
+      } else {
+        setBridge(null);
+        toast.success(`Dial the customer: ${res.customerPhone}`);
+      }
     },
-    onError: (err: Error) => {
-      // In offline/dev demo mode, still allow simulating the call
-      setCallActive(true);
-      toast(err.message || "Simulating call bridge", { icon: "📞" });
+    /* No call is up when the server refused one (423 outside calling hours, a
+     * customer with no number, a lost lock) — say why instead of pretending. */
+    onError: (err: unknown) => {
+      toast.error(detailOf(err, dict));
     },
   });
 
   const attemptMutation = useMutation({
-    mutationFn: (result: "ANSWERED" | "NO_ANSWER" | "BUSY" | "SWITCHED_OFF" | "WRONG_PERSON" | "CALL_DROPPED") =>
-      agentApi.recordAttempt(verificationId, { result, durationSeconds: Math.max(callSeconds, 1) }, { locale }),
-    onSuccess: (res: any) => {
+    mutationFn: (result: AttemptResult) =>
+      agentApi.recordAttempt(
+        verificationId,
+        {
+          result,
+          ...(callSeconds > 0 ? { durationSeconds: callSeconds } : {}),
+          ...(bridge === null ? {} : { callRef: bridge.callRef, recordingRef: bridge.recordingRef }),
+        },
+        { locale },
+      ),
+    onSuccess: (res) => {
       setCallActive(false);
       if (res?.linkSent) {
         toast.success("3 call attempts recorded! Verification SMS and WhatsApp link sent to customer.");
@@ -168,21 +201,25 @@ export function VerificationConsole({
         router.push(localizedPath(locale, "/agent"));
       }
     },
-    onError: (err: Error) => {
-      toast.error(err.message || "Failed to log attempt");
+    onError: (err: unknown) => {
+      toast.error(detailOf(err, dict));
     },
   });
 
   const submitMutation = useMutation({
     mutationFn: (payload: AgentSubmitPayload) => agentApi.submit(verificationId, payload, { locale }),
     onSuccess: (res) => {
-      toast.success(`Verification posted: ${res.outcome}. Escrow unlocked.`);
+      toast.success(
+        res.released
+          ? `Verification posted: ${res.outcome}. Payment released.`
+          : `Verification posted: ${res.outcome}. Booking is now ${res.bookingStatus}.`,
+      );
       queryClient.invalidateQueries({ queryKey: ["agent", "queue"] });
       queryClient.invalidateQueries({ queryKey: ["agent", "console", verificationId] });
       router.push(localizedPath(locale, "/agent"));
     },
-    onError: (err: Error) => {
-      toast.error(err.message || "Failed to post verification decision");
+    onError: (err: unknown) => {
+      toast.error(detailOf(err, dict));
     },
   });
 
@@ -239,8 +276,9 @@ export function VerificationConsole({
   const tierName = data?.verification.tier ?? null;
   const quotedAmount = data?.booking.approvedTotalPaisa ?? fallbackBooking?.quotedPaisa ?? null;
   const providerName = data?.provider.name ?? null;
-  const providerRating = data?.provider.averageScore ? Number(data.provider.averageScore).toFixed(1) : null;
-  const providerJobs = data?.provider.verifiedJobs ?? null;
+  const averageScore = data?.providerHistory?.averageScore ?? null;
+  const providerRating = averageScore === null ? null : averageScore.toFixed(1);
+  const providerJobs = data?.providerHistory?.verifiedJobs ?? null;
   const consentText = data?.consentLine ?? dict.portal.consentRecorded;
 
   const defaultQuestions = [
@@ -261,6 +299,7 @@ export function VerificationConsole({
   const hasAnswered = attempts.some((a) => a.result === "ANSWERED");
   const distinctBands = new Set(attempts.filter((a) => a.result !== "ANSWERED").map((a) => a.band)).size;
   const isExhausted = attempts.filter((a) => a.result !== "ANSWERED").length >= 3 && distinctBands >= 2;
+  const attempt = attempts.length + (hasAnswered ? 0 : 1);
 
   const handleCommit = async () => {
     if (!outcome) {
@@ -271,7 +310,7 @@ export function VerificationConsole({
       toast.error("You must record an answered call before submitting verification.");
       return;
     }
-    if (!answered || workCompleted === null || extraChargeDemanded === null || uniformWorn === null || ownTools === null) {
+    if (!answered || workCompleted === null || extraChargeDemanded === null || uniformWorn === null || ownTools === null || consentToRelease === null) {
       toast.error(`Please answer all questions before posting: ${missing.join(", ")}`);
       return;
     }
@@ -293,21 +332,31 @@ export function VerificationConsole({
         ? "REWORK_REQUIRED"
         : "DISPUTED";
 
-    const payload: AgentSubmitPayload = {
+    /* The same rules the domain applies (`submissionProblems`), said before the
+     * 422 rather than after it. */
+    if ((extraChargeDemanded || workCompleted === "NONE") && mappedOutcome !== "DISPUTED") {
+      toast.error("With an extra charge demanded or no work done, the only allowed outcome is DISPUTED.");
+      return;
+    }
+    if ((mappedOutcome === "VERIFIED_SATISFIED" || mappedOutcome === "VERIFIED_WITH_ISSUE") && !consentToRelease) {
+      toast.error("Payment cannot be released without the customer's verbal consent. Choose REWORK REQUIRED or DISPUTED.");
+      return;
+    }
+
+    const payload = buildSubmitPayload({
       outcome: mappedOutcome,
       workCompleted,
-      quality: scores.quality,
-      punctuality: scores.punctuality,
-      conduct: scores.conduct,
-      cleanliness: scores.cleanliness,
+      scores: { quality: scores.quality, punctuality: scores.punctuality, conduct: scores.conduct, cleanliness: scores.cleanliness },
       extraChargeDemanded,
+      extraChargeAmountPaisa,
       uniformWorn,
       ownTools,
       consentLineRead: consent,
-      consentToRelease: outcome === "SATISFIED",
-      callDurationSeconds: callSeconds > 0 ? callSeconds : 60,
-      remark: `Verification completed via live agent console. Attempt ${attempt}. Outcome: ${mappedOutcome}`,
-    };
+      consentToRelease,
+      remark: customerRemark,
+      recordingRef: bridge?.recordingRef ?? null,
+      callSeconds,
+    });
 
     submitMutation.mutate(payload);
   };
@@ -483,9 +532,9 @@ export function VerificationConsole({
                   {attempts.map((att) => (
                     <div key={att.id} className="flex items-center justify-between rounded bg-white px-3 py-1.5 border border-line text-secondary">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-navy">Attempt #{att.attempt}</span>
+                        <span className="font-semibold text-navy">Attempt #{att.attemptNo}</span>
                         <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted">{att.band}</span>
-                        <span className="text-[11px] text-muted">{att.recordedAt ? new Date(att.recordedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                        <span className="text-[11px] text-muted">{new Date(att.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                       </div>
                       <span className={cn(
                         "rounded px-2 py-0.5 text-[10px] font-bold",
@@ -526,7 +575,7 @@ export function VerificationConsole({
                 <div>
                   <p className="font-semibold">Customer Has Not Answered Yet</p>
                   <p className="mt-0.5 leading-relaxed text-amber-800">
-                    Please use the call controls above to connect with the customer. If the customer does not pick up, log "No Answer", "Busy", or "Off" to schedule the next time band attempt. An answered call is required before posting a verification decision.
+                    Please use the call controls above to connect with the customer. If the customer does not pick up, log &quot;No Answer&quot;, &quot;Busy&quot;, or &quot;Off&quot; to schedule the next time band attempt. An answered call is required before posting a verification decision.
                   </p>
                 </div>
               </div>
@@ -668,6 +717,23 @@ export function VerificationConsole({
                     </button>
                   </div>
                 </div>
+                {extraChargeDemanded === true ? (
+                  <div className="mt-3">
+                    <label htmlFor="extra-charge-amount" className="text-xs font-semibold text-navy">
+                      How much was demanded? (Rs)
+                    </label>
+                    <input
+                      id="extra-charge-amount"
+                      type="number"
+                      inputMode="decimal"
+                      min={1}
+                      step="0.01"
+                      value={extraChargeRupees}
+                      onChange={(e) => setExtraChargeRupees(e.target.value)}
+                      className="mt-1 min-h-9 w-full max-w-48 rounded-[8px] border border-line bg-white px-3 text-sm text-navy outline-none focus:border-primary"
+                    />
+                  </div>
+                ) : null}
               </div>
 
               {/* 4. Uniform & Tools */}
@@ -716,6 +782,67 @@ export function VerificationConsole({
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* 5. Consent to release */}
+              <div
+                className={cn(
+                  "rounded-[10px] border p-4 transition-all",
+                  consentToRelease !== null ? "border-emerald-200 bg-emerald-50/20" : "border-line bg-white"
+                )}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-navy">5. Does the customer agree to release payment to the provider?</p>
+                    <p className="text-xs text-muted">Record only what the customer said in words. Without a yes, payment is not released.</p>
+                  </div>
+                  <div className="flex gap-2" role="group" aria-label="Customer consented to release">
+                    <button
+                      type="button"
+                      aria-pressed={consentToRelease === true}
+                      onClick={() => setConsentToRelease(true)}
+                      className={cn(
+                        "min-h-8 min-w-14 rounded-[8px] border px-3 text-xs font-semibold transition",
+                        consentToRelease === true
+                          ? "border-primary bg-primary text-white shadow-xs"
+                          : "border-line bg-white text-secondary hover:bg-slate-50"
+                      )}
+                    >
+                      {dict.common.yes}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={consentToRelease === false}
+                      onClick={() => setConsentToRelease(false)}
+                      className={cn(
+                        "min-h-8 min-w-14 rounded-[8px] border px-3 text-xs font-semibold transition",
+                        consentToRelease === false
+                          ? "border-rose-600 bg-rose-600 text-white shadow-xs"
+                          : "border-line bg-white text-secondary hover:bg-slate-50"
+                      )}
+                    >
+                      {dict.common.no}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 6. The customer's remark, in their words (optional) */}
+              <div className="rounded-[10px] border border-line bg-white p-4">
+                <label htmlFor="customer-remark" className="text-sm font-semibold text-navy">
+                  6. Customer&apos;s remark, in their own words (optional)
+                </label>
+                <p className="text-xs text-muted">
+                  Published as the customer&apos;s review under their first name and initial. Type only what the customer said; leave it empty if they said nothing.
+                </p>
+                <textarea
+                  id="customer-remark"
+                  rows={3}
+                  maxLength={1000}
+                  value={customerRemark}
+                  onChange={(e) => setCustomerRemark(e.target.value)}
+                  className="mt-2 w-full rounded-[8px] border border-line bg-white p-3 text-sm text-navy outline-none focus:border-primary"
+                />
               </div>
 
               {answered ? (
@@ -964,6 +1091,8 @@ export function VerificationConsole({
                         {typeof ev.url === "string" && ev.url !== "" ? (
                           <EvidenceImage
                             url={ev.url}
+                            contentType={ev.contentType}
+                            labels={mediaLabels(dict)}
                             alt={ev.kind}
                             className="size-full object-cover transition-transform duration-200 group-hover:scale-105"
                           />
@@ -1073,6 +1202,9 @@ export function VerificationConsole({
               {selectedEvidence.url ? (
                 <EvidenceImage
                   url={selectedEvidence.url}
+                  contentType={selectedEvidence.contentType}
+                  labels={mediaLabels(dict)}
+                  controls
                   alt={selectedEvidence.kind}
                   className="max-h-[70vh] w-auto max-w-full object-contain"
                 />

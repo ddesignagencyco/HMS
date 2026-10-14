@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { BadgeCheck, ExternalLink, Eye, FileText, Loader2, ShieldBan, X } from 'lucide-react';
 import { Button, Card, PageHeader } from '@/components/ui';
+import { isDevStorageUrl, mediaKindOf } from '@/components/evidence-image';
 import { providerDocumentsApi } from '@/features/admin/cases-api';
 import { useProviderDocuments, useReviewDocument } from '@/features/admin/cases-queries';
 import { useApproveProvider, useDeactivateProvider, useRejectProvider, useAdminUsers } from '@/features/admin/queries';
@@ -365,34 +366,54 @@ function DocumentPreviewModal({
   onClose: () => void;
   review: ReturnType<typeof useReviewDocument>;
 }) {
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  /* `src` is what the element loads — an object URL of the fetched bytes, or the
+     dev mock's unwrapped data URL. `contentType` picks the element: since the
+     Supabase switch a document may be a PDF or a video, and an <img> shows
+     neither. `external` is the signed link itself, offered as "open in a new
+     tab" (never for the mock, whose route answers JSON). */
+  const [media, setMedia] = useState<{ src: string; contentType: string; external: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /* Signed links last five minutes (`SIGNED_URL_SECONDS`), so "try again" means
+     "sign a new one", not "reload the old one". */
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
+    let objectUrl: string | null = null;
+    const controller = new AbortController();
     const fetchDoc = async () => {
       try {
         setLoading(true);
         setError(null);
+        setMedia(null);
         const signed = await providerDocumentsApi.signedUrl(documentId, { locale });
         if (!active) return;
 
-        if (signed.url.startsWith('/api/v1/dev/storage/') || signed.url.startsWith('/dev/storage/')) {
-          const res = await fetch(signed.url);
-          if (!res.ok) throw new Error('File not found in storage');
-          const data = await res.json();
-          if (data?.contentBase64) {
-            setDataUrl(`data:${data.contentType || 'image/png'};base64,${data.contentBase64}`);
-          } else {
-            setDataUrl(signed.url);
-          }
-        } else {
-          setDataUrl(signed.url);
+        if (isDevStorageUrl(signed.url)) {
+          const res = await fetch(signed.url, { signal: controller.signal, headers: { accept: 'application/json' } });
+          if (!res.ok) throw new Error(String(res.status));
+          const data = (await res.json()) as { contentType?: string; contentBase64?: string };
+          if (typeof data.contentBase64 !== 'string') throw new Error('no content');
+          const type = data.contentType ?? 'image/png';
+          if (active) setMedia({ src: `data:${type};base64,${data.contentBase64}`, contentType: type, external: null });
+          return;
         }
-      } catch (err) {
+
+        /* A real Supabase signed URL. Read once as a blob: the response's own
+           Content-Type is the only reliable statement of what the file is (the
+           row carries no type and the key has no extension). Supabase Storage
+           answers CORS for any origin, and the link is the credential, so no
+           cookies go with it. */
+        const res = await fetch(signed.url, { signal: controller.signal, credentials: 'omit' });
+        if (!res.ok) throw new Error(String(res.status));
+        const blob = await res.blob();
         if (!active) return;
-        setError(err instanceof Error ? err.message : 'Unable to preview document');
+        objectUrl = URL.createObjectURL(blob);
+        setMedia({ src: objectUrl, contentType: blob.type || res.headers.get('content-type') || 'application/octet-stream', external: signed.url });
+      } catch (err) {
+        if (!active || (err instanceof Error && err.name === 'AbortError')) return;
+        setError(err instanceof Error ? err.message : 'preview failed');
       } finally {
         if (active) setLoading(false);
       }
@@ -400,8 +421,10 @@ function DocumentPreviewModal({
     void fetchDoc();
     return () => {
       active = false;
+      controller.abort();
+      if (objectUrl !== null) URL.revokeObjectURL(objectUrl);
     };
-  }, [documentId, locale]);
+  }, [documentId, locale, attempt]);
 
   return (
     <div
@@ -439,23 +462,37 @@ function DocumentPreviewModal({
               <Loader2 className="size-8 animate-spin text-blue-600" aria-hidden="true" />
               <p className="text-sm font-medium">{dict.admin.loadingDocuments}</p>
             </div>
-          ) : error !== null ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center max-w-md">
-              <p className="text-sm font-semibold text-amber-900">Preview Unavailable in Dev Storage</p>
-              <p className="mt-2 text-xs leading-5 text-amber-800">
-                In local development, in-memory mock storage resets on API server restarts. Newly submitted documents or sample mock documents are ready for review.
-              </p>
+          ) : error !== null || media === null ? (
+            <div role="alert" className="max-w-md rounded-xl border border-amber-200 bg-amber-50 p-6 text-center">
+              <p className="text-sm font-semibold text-amber-900">{dict.admin.previewUnavailableTitle}</p>
+              <p className="mt-2 text-xs leading-5 text-amber-800">{dict.admin.previewUnavailableText}</p>
+              <Button type="button" variant="secondary" size="sm" className="mt-4" onClick={() => setAttempt((count) => count + 1)}>
+                {dict.admin.previewRetry}
+              </Button>
             </div>
-          ) : dataUrl !== null ? (
-            <div className="flex flex-col items-center max-w-full">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={dataUrl}
-                alt={docType}
-                className="max-h-[60vh] max-w-full rounded-lg border border-slate-200/80 object-contain shadow-md bg-white"
-              />
+          ) : (
+            <div className="flex w-full max-w-full flex-col items-center gap-3">
+              {mediaKindOf(media.contentType) === 'pdf' ? (
+                <iframe src={media.src} title={docType} className="h-[60vh] w-full rounded-lg border border-slate-200/80 bg-white shadow-md" />
+              ) : mediaKindOf(media.contentType) === 'video' ? (
+                <video src={media.src} controls playsInline preload="metadata" className="max-h-[60vh] max-w-full rounded-lg border border-slate-200/80 bg-black shadow-md" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element -- an object URL of a privately stored file
+                <img
+                  src={media.src}
+                  alt={docType}
+                  onError={() => setError('image failed')}
+                  className="max-h-[60vh] max-w-full rounded-lg border border-slate-200/80 object-contain shadow-md bg-white"
+                />
+              )}
+              {media.external !== null ? (
+                <a href={media.external} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-primary-strong underline">
+                  <ExternalLink className="size-3.5" aria-hidden="true" />
+                  {dict.admin.previewOpenNewTab}
+                </a>
+              ) : null}
             </div>
-          ) : null}
+          )}
         </div>
 
         {/* Footer */}

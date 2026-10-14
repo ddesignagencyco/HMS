@@ -146,7 +146,7 @@ describe("provider availability", () => {
 });
 
 describe("provider leave", () => {
-  it("turns one picked date into a half-open range", async () => {
+  it("turns one picked date into a half-open range starting at Karachi midnight", async () => {
     renderScreen();
     fireEvent.change(await screen.findByLabelText(dict.portal.leaveDateLabel), { target: { value: "2026-12-25" } });
     fireEvent.change(await screen.findByLabelText(dict.portal.leaveReasonLabel), { target: { value: "Eid" } });
@@ -154,8 +154,8 @@ describe("provider leave", () => {
 
     await waitFor(() => expect(postCall()).toBeDefined());
     expect(JSON.parse(String((postCall()?.[1] as RequestInit).body))).toEqual({
-      start: "2026-12-25T00:00:00.000Z",
-      end: "2026-12-26T00:00:00.000Z",
+      start: "2026-12-24T19:00:00.000Z",
+      end: "2026-12-25T19:00:00.000Z",
       reason: "Eid",
     });
   });
@@ -167,8 +167,8 @@ describe("provider leave", () => {
 
     await waitFor(() => expect(postCall()).toBeDefined());
     expect(JSON.parse(String((postCall()?.[1] as RequestInit).body))).toEqual({
-      start: "2026-12-25T00:00:00.000Z",
-      end: "2026-12-26T00:00:00.000Z",
+      start: "2026-12-24T19:00:00.000Z",
+      end: "2026-12-25T19:00:00.000Z",
     });
   });
 

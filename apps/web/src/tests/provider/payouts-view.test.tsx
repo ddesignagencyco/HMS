@@ -121,6 +121,21 @@ describe('provider payouts', () => {
     expect(await screen.findByText(dict.portal.payoutRequested)).toBeDefined();
   });
 
+  it('sends an Idempotency-Key, and a new one for the next payout', async () => {
+    renderScreen();
+    const keyOf = (index: number) => ((postsTo('/provider/payouts')[index][1] as RequestInit).headers as Record<string, string>)['Idempotency-Key'];
+    fireEvent.change(await screen.findByLabelText(dict.portal.payoutAmountLabel), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.requestPayout }));
+    await waitFor(() => expect(postsTo('/provider/payouts')).toHaveLength(1));
+    await screen.findByText(dict.portal.payoutRequested);
+    fireEvent.change(screen.getByLabelText(dict.portal.payoutAmountLabel), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: dict.portal.requestPayout }));
+    await waitFor(() => expect(postsTo('/provider/payouts')).toHaveLength(2));
+    expect(keyOf(0)).toMatch(/^payout-/);
+    expect(keyOf(1)).toMatch(/^payout-/);
+    expect(keyOf(1)).not.toBe(keyOf(0));
+  });
+
   it('refuses a non-numeric amount before sending it', async () => {
     renderScreen();
     await screen.findByLabelText(dict.portal.payoutAmountLabel);

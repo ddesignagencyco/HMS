@@ -9,6 +9,7 @@ import type { Booking, BookingStatus } from '@/features/booking/api';
 import { useAllServices } from '@/features/catalogue/queries';
 import { ratingOf } from '@/features/search/location';
 import { useConduct, useEarnings, useProviderDocuments, useProviderOffers, useProviderProfile, useProviderRatings, useWallet } from '@/features/provider/queries';
+import { DebtNotice } from '@/features/provider/debt-notice';
 import type { ProviderStatus } from '@/features/provider/api';
 import { useNow } from '@/features/provider/offers-view';
 import { ProviderSubmitCard } from '@/features/provider/submit-card';
@@ -148,6 +149,10 @@ export function ProviderDashboardScreen({ locale, dict }: { locale: Locale; dict
       profile.data.status !== 'BLOCKED' ? (
         <ProviderSubmitCard locale={locale} dict={dict} />
       ) : null}
+
+      {/* An offer block empties the offer inbox without a word, so its reason and
+          the way out (paying the debt) are said here, ahead of the figures. */}
+      <DebtNotice locale={locale} dict={dict} className="mt-5" />
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label={dict.portal.dashboardNeedsAttention} value={formatNumber(needsAttention, locale)} icon={needsAttention > 0 ? AlertTriangle : CheckCircle2} />
@@ -432,7 +437,9 @@ function MoneyRow({ label, value, tone }: { label: string; value: string; tone?:
  */
 const PROVIDER_STATUS_TONE: Record<ProviderStatus, 'ok' | 'warn' | 'bad' | 'muted'> = {
   APPROVED: 'ok',
+  DRAFT: 'muted',
   PENDING_APPROVAL: 'warn',
+  DEACTIVATED: 'muted',
   REJECTED: 'bad',
   SUSPENDED: 'bad',
   BLOCKED: 'bad'

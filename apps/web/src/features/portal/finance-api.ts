@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
+import { apiWrite } from "@/lib/api/idempotency";
 import type { Locale } from "@/lib/utils";
 
 export type FinanceRefund = {
@@ -13,15 +14,24 @@ export type FinanceRefund = {
   createdAt: string;
 };
 
+export type PayoutStatus = "REQUESTED" | "APPROVED" | "IN_BATCH" | "PAID" | "FAILED" | "CANCELLED";
+
+/** One row of `GET /finance/payouts` (`PayoutsService.list`). There is no
+    `createdAt`: a payout is dated by when it was asked for and when it was paid. */
 export type FinancePayout = {
   id: string;
   providerId: string;
-  providerName?: string;
+  providerName: string;
   amountPaisa: number;
-  status: "REQUESTED" | "APPROVED" | "IN_BATCH" | "PAID" | "FAILED";
-  accountLast4?: string;
-  failureReason?: string | null;
-  createdAt: string;
+  status: PayoutStatus;
+  requestedAt: string;
+  paidAt: string | null;
+  failureReason: string | null;
+  /** Set once the payout is gathered into a bank file. */
+  batchId: string | null;
+  accountTitle: string;
+  institution: string;
+  accountLast4: string;
 };
 
 export type FinanceCashReconciliationRow = {
@@ -70,18 +80,16 @@ export type FinanceLedgerEntry = {
   createdAt: string;
 };
 
+/** One row of `GET /finance/escrow` (`FinanceService.escrow`) — exactly these
+    fields; there is no service, provider name or date on it. */
 export type FinanceEscrowItem = {
   bookingId: string;
-  code?: string;
-  bookingCode?: string;
+  code: string;
   status: string;
-  paymentMode?: string;
-  providerId?: string | null;
+  paymentMode: string;
+  providerId: string | null;
   heldPaisa: number;
-  finalPaisa?: number | null;
-  serviceName?: string;
-  providerName?: string;
-  createdAt?: string;
+  finalPaisa: number | null;
 };
 
 export type LedgerQueryParams = {
@@ -323,28 +331,30 @@ export const financeApi = {
   /** 201 with the new batch, or 409 "There are no approved payouts waiting for a batch". */
   createPayoutBatch: (
     input: { periodStart: string; periodEnd: string },
+    idempotencyKey: string,
     options?: { locale?: Locale }
-  ) => apiRequest<FinancePayoutBatchCreated>("/finance/payout-batches", { method: "POST", body: { ...input }, locale: options?.locale }),
+  ) => apiWrite<FinancePayoutBatchCreated>("/finance/payout-batches", { method: "POST", body: { ...input }, idempotencyKey }, options?.locale),
 
   /**
-   * Settles a batch against the bank's answer.
+   * Settles a batch against the bank's answer, one result per payout.
    *
-   * **Leave `results` off to mark every payout in the batch paid.** Sending an
-   * empty array is *not* the same thing — `markSchema` requires `.min(1)` when
-   * `results` is present at all, so `results: []` is a 422. A payout named here
-   * that is not in the batch is a 400, and a payout already settled is skipped,
-   * so repeating the call is safe.
+   * The server would treat a missing `results` as "every payout paid", which is
+   * exactly the claim a screen cannot make before the bank has answered — so
+   * this client always sends the results it was given. `markSchema` requires
+   * `.min(1)`, so an empty list is a 422. A payout named here that is not in the
+   * batch is a 400; one already settled is skipped, so repeating is safe.
    */
   markPayoutBatchPaid: (
     id: string,
-    results?: FinancePayoutResult[],
+    results: FinancePayoutResult[],
+    idempotencyKey: string,
     options?: { locale?: Locale }
   ) =>
-    apiRequest<FinancePayoutBatchSettled>(`/finance/payout-batches/${encodeURIComponent(id)}/mark-paid`, {
-      method: "POST",
-      ...(results === undefined ? {} : { body: { results } }),
-      locale: options?.locale,
-    }),
+    apiWrite<FinancePayoutBatchSettled>(
+      `/finance/payout-batches/${encodeURIComponent(id)}/mark-paid`,
+      { method: "POST", body: { results }, idempotencyKey },
+      options?.locale,
+    ),
 
   /**
    * FR-PY-06: proves the books still add up — derived balances against their

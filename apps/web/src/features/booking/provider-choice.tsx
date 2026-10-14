@@ -154,7 +154,7 @@ export function ProviderChoiceStep({
             {providers.map((provider) => {
               const selected = choice?.kind === "provider" && choice.providerId === provider.providerId;
               const rating = ratingOf(provider.ratingScore);
-              const resolved = resolveProviderName(provider.providerId, provider.qualification ?? dict.booking.professionalFallback);
+              const resolved = resolveProviderName(provider.providerId, provider.qualification ?? dict.common.professional);
               return (
                 <label
                   key={provider.providerId}
@@ -177,11 +177,8 @@ export function ProviderChoiceStep({
                         <span className="block font-semibold text-navy text-base leading-snug">
                           {resolved.fullName}
                         </span>
-                        {provider.qualification ? (
-                          <span className="block text-xs font-medium text-slate-500">
-                            {provider.qualification}
-                          </span>
-                        ) : null}
+                        {/* The label above already is the qualification when there is one
+                            (no name is published), so it is not repeated here. */}
                       </div>
                       {provider.badge ? (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
@@ -190,13 +187,11 @@ export function ProviderChoiceStep({
                         </span>
                       ) : null}
                     </span>
-                    <span className="mt-1 block text-xs text-secondary line-clamp-2">
-                      {provider.bio && !/seeded|test provider|api development/i.test(provider.bio)
-                        ? provider.bio
-                        : (locale === "ur"
-                            ? "تصدیق شدہ پیشہ ور، قابل اعتماد اور معیاری خدمات کے لیے دستیاب۔"
-                            : "Verified specialist offering prompt, reliable service.")}
-                    </span>
+                    {/* The professional's own words or nothing. A stock sentence here
+                        read as their description of themselves, and it wasn't. */}
+                    {provider.bio && !/seeded|test provider|api development/i.test(provider.bio) ? (
+                      <span className="mt-1 block text-xs text-secondary line-clamp-2">{provider.bio}</span>
+                    ) : null}
                     <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium text-muted">
                       {provider.experienceYears !== null ? (
                         <span>

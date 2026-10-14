@@ -4,6 +4,7 @@ import { AlertCircle, Clock3, MapPin } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, Card, PageHeader } from '@/components/ui';
 import { useAcceptOffer, useDeclineOffer, useProviderOffers } from '@/features/provider/queries';
+import { DebtNotice } from '@/features/provider/debt-notice';
 import type { ProviderOffer } from '@/features/provider/api';
 import type { Dictionary } from '@/lib/dictionaries';
 import { formatDateTime, formatMoney, type Locale } from '@/lib/utils';
@@ -95,6 +96,8 @@ export function ProviderOffersView({ locale, dict }: { locale: Locale; dict: Dic
   return (
     <div>
       <PageHeader eyebrow={dict.portal.provider} title={dict.portal.offers} description={dict.portal.offersDescription} />
+      {/* An offer-blocked professional gets an empty list from the API, so the reason has to come from the wallet. */}
+      <DebtNotice locale={locale} dict={dict} className="mt-6" />
 
       {rows.length === 0 ? (
         <Card className="mt-6 p-8 text-center text-sm text-secondary">{dict.portal.noOffers}</Card>

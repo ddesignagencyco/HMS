@@ -43,10 +43,10 @@ export const fileToBase64 = (file: Blob): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
-/** The three content types `addEvidenceSchema` accepts. */
-export type EvidenceContentType = 'image/jpeg' | 'image/png' | 'image/webp';
+/** What photo preparation produces. The API accepts more (`EvidenceContentType` in booking/api.ts); a photo is always sent as one of these. */
+export type PhotoContentType = 'image/jpeg' | 'image/png' | 'image/webp';
 
-type Prepared = { base64: string; contentType: EvidenceContentType; rejected?: undefined } | { rejected: string };
+type Prepared = { base64: string; contentType: PhotoContentType; rejected?: undefined } | { rejected: string };
 
 /**
  * Downscale to `MAX_EVIDENCE_EDGE_PX` on the longest edge and re-encode as JPEG.
@@ -55,7 +55,7 @@ type Prepared = { base64: string; contentType: EvidenceContentType; rejected?: u
  * screenshot should stay lossless, but a PNG photograph is enormous and JPEG is
  * the right answer for it.
  */
-export const compressImage = async (file: File): Promise<{ blob: Blob; contentType: EvidenceContentType } | null> => {
+export const compressImage = async (file: File): Promise<{ blob: Blob; contentType: PhotoContentType } | null> => {
   if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return null;
 
   try {

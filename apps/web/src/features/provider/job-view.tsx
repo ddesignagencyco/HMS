@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, Navigation, PhoneCall, TrendingUp } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Camera, CheckCircle2, CircleDollarSign, ClipboardList, Clock3, LogIn, LogOut, MapPin, Navigation, PhoneCall, TrendingUp, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Button, Card, FileInput, Input, Label, PageHeader, Textarea } from '@/components/ui';
@@ -10,6 +10,7 @@ import {
   useAcceptBooking,
   useAddEvidence,
   useBooking,
+  useCancelBooking,
   useCashReceived,
   useChecklist,
   useCompleteBooking,
@@ -19,14 +20,16 @@ import {
   useEvidenceList,
   useMarkChecklistDone,
   useOnBehalfContact,
+  useReportNoShow,
   useServiceAddress,
   useStartBooking
 } from '@/features/booking/queries';
 import type { Booking, BookingStatus, Evidence, EvidenceKind } from '@/features/booking/api';
 import { prepareEvidenceImage } from '@/features/uploads/image';
-import { EvidenceImage } from '@/components/evidence-image';
+import { EvidenceImage, mediaLabels } from '@/components/evidence-image';
 import { BookingChat } from '@/features/booking/booking-chat';
 import type { Dictionary } from '@/lib/dictionaries';
+import { ApiError } from '@/lib/api/problem';
 import { cn, formatDateTime, formatMoney, type Locale } from '@/lib/utils';
 
 /* One job, for the professional who has it.
@@ -90,8 +93,6 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
   const cashReceived = useCashReceived(locale);
   const raiseRevision = useCreateRevision(locale);
   const addEvidence = useAddEvidence(locale);
-  const checklist = useChecklist(bookingId, locale);
-  const markChecklist = useMarkChecklistDone(locale);
 
   const [otp, setOtp] = useState('');
   const [finalAmount, setFinalAmount] = useState('');
@@ -196,6 +197,11 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
    * or a `rejected` sentence for a file it cannot get under the limit. Taking its
    * `rejected` branch at face value is deliberate: it has already tried resizing and
    * re-encoding, so there is nothing left to attempt here.
+   *
+   * A BEFORE or AFTER photo is only that. It is not re-filed as CHECKLIST evidence
+   * and does not tick a step: guessing which step a photo belongs to from label
+   * keywords or position recorded steps the professional never did. Steps are
+   * ticked one by one in `ChecklistCard`, each with its own photo.
    */
   const attachPhoto = async (file: File, kind: EvidenceKind, checklistItemId?: number): Promise<void> => {
     setBusy(true);
@@ -216,37 +222,6 @@ export function ProviderJobScreen({ locale, bookingId, dict }: { locale: Locale;
           ...(checklistItemId === undefined ? {} : { checklistItemId })
         }
       });
-      // Synchronize with checklist if photo wasn't already targeted at an item
-      if (checklistItemId === undefined && checklist.data?.items) {
-        const targetStep = checklist.data.items.find((item) => {
-          if (!item.requiresPhoto || item.done) return false;
-          if (kind === 'BEFORE') {
-            return item.labelEn.toLowerCase().includes('before') || item.position <= 2;
-          }
-          if (kind === 'AFTER') {
-            return item.labelEn.toLowerCase().includes('after') || item.labelEn.toLowerCase().includes('finish') || item.position > 2;
-          }
-          return false;
-        });
-        if (targetStep) {
-          try {
-            const chkUuid = crypto.randomUUID();
-            const added = await addEvidence.mutateAsync({
-              id: bookingId,
-              payload: {
-                kind: 'CHECKLIST',
-                clientUuid: chkUuid,
-                checklistItemId: targetStep.itemId,
-                contentType: prepared.contentType,
-                contentBase64: prepared.base64
-              }
-            });
-            await markChecklist.mutateAsync({ id: bookingId, itemId: targetStep.itemId, evidenceId: added.id });
-          } catch {
-            // Non-blocking sync attempt
-          }
-        }
-      }
       toast.success(locale === 'ur' ? 'تصویر کامیابی سے محفوظ ہو گئی' : 'Photo recorded successfully');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : (locale === 'ur' ? 'تصویر محفوظ کرنے میں مسئلہ پیش آیا' : 'Failed to record photo'));
@@ -603,32 +578,6 @@ function ChecklistCard({ locale, dict, bookingId, canTick }: { locale: Locale; d
       });
       await mark.mutateAsync({ id: bookingId, itemId, evidenceId: added.id });
 
-      // Automatically satisfy BEFORE or AFTER requirements if matching step
-      const stepItem = items.find((i) => i.itemId === itemId);
-      const currentPhotos = evidence.data?.items ?? [];
-      const isBefore = stepItem?.labelEn.toLowerCase().includes('before') || (stepItem?.position ?? 0) <= 2;
-      const isAfter = stepItem?.labelEn.toLowerCase().includes('after') || stepItem?.labelEn.toLowerCase().includes('finish') || (stepItem?.position ?? 0) > 2;
-
-      if (isBefore && !currentPhotos.some((p) => p.kind === 'BEFORE')) {
-        try {
-          await addEvidence.mutateAsync({
-            id: bookingId,
-            payload: { kind: 'BEFORE', clientUuid: crypto.randomUUID(), contentType: prepared.contentType, contentBase64: prepared.base64 }
-          });
-        } catch {
-          // Non-blocking
-        }
-      } else if (isAfter && !currentPhotos.some((p) => p.kind === 'AFTER')) {
-        try {
-          await addEvidence.mutateAsync({
-            id: bookingId,
-            payload: { kind: 'AFTER', clientUuid: crypto.randomUUID(), contentType: prepared.contentType, contentBase64: prepared.base64 }
-          });
-        } catch {
-          // Non-blocking
-        }
-      }
-
       setPhotoFor(null);
       toast.success(locale === 'ur' ? 'تصویر کامیابی سے محفوظ ہو گئی' : 'Photo recorded successfully');
     } catch (caught) {
@@ -785,10 +734,11 @@ function PhotosCard({
   onAttach: (file: File, kind: EvidenceKind) => Promise<void>;
 }) {
   const mine = photos.filter((photo) => photo.kind !== 'CUSTOMER_PROBLEM');
-  /* BEFORE is for on arrival and AFTER is for on finishing, so each upload only
-     appears once the job is far enough along for it to mean anything. */
-  const canTakeBefore = status === 'EN_ROUTE' || status === 'IN_PROGRESS';
-  const canTakeAfter = status === 'IN_PROGRESS';
+  /* `POST /bookings/:id/evidence` accepts a provider's photos only while the job
+     is IN_PROGRESS or QUOTE_REVISION (`PROVIDER_EVIDENCE_STATUSES` in
+     execution.service.ts). A picker shown EN_ROUTE was a guaranteed 409, so the
+     BEFORE photo is taken once the start code has opened the job. */
+  const canTakePhotos = status === 'IN_PROGRESS' || status === 'QUOTE_REVISION';
 
   return (
     <Card className="p-6">
@@ -813,7 +763,7 @@ function PhotosCard({
               {/* Signed, short-lived object-store URLs in production, which next/image's
                   loader has nothing to optimise; `EvidenceImage` also unwraps the
                   mock storage's JSON envelope in development. */}
-              <EvidenceImage url={photo.url} alt={dict.job.photoAlt.replace('{kind}', dict.job.photoKinds[photo.kind])} className="aspect-4/3 w-full" />
+              <EvidenceImage url={photo.url} contentType={photo.contentType} alt={dict.job.photoAlt.replace('{kind}', dict.job.photoKinds[photo.kind])} className="aspect-4/3 w-full" labels={mediaLabels(dict)} />
               <p className="px-2.5 py-2 text-xs text-muted">
                 {dict.job.photoKinds[photo.kind]} · {formatDateTime(photo.receivedAt, locale)}
               </p>
@@ -822,10 +772,10 @@ function PhotosCard({
         </ul>
       )}
 
-      {status === 'IN_PROGRESS' || status === 'EN_ROUTE' ? (
+      {canTakePhotos ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {canTakeBefore ? <PhotoPicker id={`before-${bookingId}`} label={dict.job.addBeforePhoto} chooseLabel={dict.common.chooseFile} selectedLabel={dict.common.chosenFile} disabled={pending} onPick={(file) => void onAttach(file, 'BEFORE')} /> : null}
-          {canTakeAfter ? <PhotoPicker id={`after-${bookingId}`} label={dict.job.addAfterPhoto} chooseLabel={dict.common.chooseFile} selectedLabel={dict.common.chosenFile} disabled={pending} onPick={(file) => void onAttach(file, 'AFTER')} /> : null}
+          <PhotoPicker id={`before-${bookingId}`} label={dict.job.addBeforePhoto} chooseLabel={dict.common.chooseFile} selectedLabel={dict.common.chosenFile} disabled={pending} onPick={(file) => void onAttach(file, 'BEFORE')} />
+          <PhotoPicker id={`after-${bookingId}`} label={dict.job.addAfterPhoto} chooseLabel={dict.common.chooseFile} selectedLabel={dict.common.chosenFile} disabled={pending} onPick={(file) => void onAttach(file, 'AFTER')} />
         </div>
       ) : null}
     </Card>
@@ -917,6 +867,7 @@ function ActionsCard({
      (§3.11), which the screen says rather than hides. */
   const photosReady = hasBefore && hasAfter;
   const isTooEarly = new Date(booking.scheduledStart).getTime() > now + 30 * 60 * 1000;
+  const startTooEarly = isTooEarly && booking.status === 'EN_ROUTE';
 
   return (
     <Card className="p-6">
@@ -957,10 +908,13 @@ function ActionsCard({
         </div>
       ) : null}
 
-      {booking.status === 'EN_ROUTE' ? (
+      {/* `start` is legal from EN_ROUTE and from REWORK_REQUIRED (T12: the rework
+          visit needs a fresh start code). The original slot is in the past on a
+          rework, so the too-early gate only applies to a first visit. */}
+      {booking.status === 'EN_ROUTE' || booking.status === 'REWORK_REQUIRED' ? (
         <div className="mt-4 grid gap-3">
-          <p className="text-sm leading-6 text-secondary">{dict.job.otpExplainer}</p>
-          {isTooEarly ? (
+          <p className="text-sm leading-6 text-secondary">{booking.status === 'REWORK_REQUIRED' ? dict.job.reworkExplainer : dict.job.otpExplainer}</p>
+          {startTooEarly ? (
             <p className="rounded-[9px] border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
               {locale === 'ur'
                 ? `یہ بکنگ ابھی کے لیے نہیں ہے۔ آپ وقت آنے پر اسٹارٹ کوڈ درج کر سکتے ہیں۔`
@@ -978,15 +932,17 @@ function ActionsCard({
               onChange={(event) => setOtp(event.target.value.replace(/\D/g, ''))}
               placeholder="••••••"
               className="font-mono tracking-[0.4em]"
-              disabled={isTooEarly}
+              disabled={startTooEarly}
             />
           </div>
-          <Button type="button" onClick={onStart} disabled={pending || isTooEarly}>
+          <Button type="button" onClick={onStart} disabled={pending || startTooEarly}>
             <LogIn className="size-4" aria-hidden="true" />
             {dict.job.startJob}
           </Button>
         </div>
       ) : null}
+
+      {booking.status === 'SCHEDULED' || booking.status === 'EN_ROUTE' ? <ProviderExitActions locale={locale} dict={dict} booking={booking} now={now} /> : null}
 
       {booking.status === 'IN_PROGRESS' ? (
         <div className="mt-4 grid gap-5">
@@ -1070,5 +1026,102 @@ function ActionsCard({
         <InvoiceDownload bookingId={booking.id} locale={locale} dict={dict} />
       ) : null}
     </Card>
+  );
+}
+
+/* ---- Leaving a job ---------------------------------------------------------
+   The two ways a professional can end a job before it starts:
+
+   · `POST /bookings/:id/cancel` — legal for a provider only from SCHEDULED.
+     Free in money, but cancelling inside `booking.free_cancel_hours` proposes a
+     LATE_CANCEL breach, so it sits behind a confirm step.
+   · `POST /bookings/:id/no-show` with `party: CUSTOMER` — legal from SCHEDULED and
+     EN_ROUTE once `booking.no_show_grace_min` has passed after the start. The
+     grace is an admin setting this screen cannot read, so the option appears from
+     the start time and the server's own sentence explains a report that is still
+     too early.
+
+   Each refusal shows the server's `problem.detail`, which names the reason. */
+
+function ProviderExitActions({ locale, dict, booking, now }: { locale: Locale; dict: Dictionary; booking: Booking; now: number }) {
+  const cancel = useCancelBooking(locale);
+  const noShow = useReportNoShow(locale);
+  const [confirming, setConfirming] = useState<'cancel' | 'noShow' | null>(null);
+  const [reason, setReason] = useState('');
+
+  const cancelAllowed = booking.status === 'SCHEDULED';
+  const noShowAllowed = now >= new Date(booking.scheduledStart).getTime();
+  if (!cancelAllowed && !noShowAllowed) return null;
+
+  const failed = cancel.error ?? noShow.error;
+  const errorText = failed === null ? null : failed instanceof ApiError && failed.problem.detail !== '' ? failed.problem.detail : dict.job.actionFailed;
+  const working = cancel.isPending || noShow.isPending;
+  /* The error stays on the mutation and is rendered below. */
+  const ignore = (): void => undefined;
+
+  return (
+    <div className="mt-5 grid gap-3 border-t border-line pt-4">
+      {cancelAllowed ? (
+        <div className="rounded-[10px] border border-line p-4">
+          <p className="text-sm font-semibold text-navy">{dict.job.providerCancelTitle}</p>
+          <p className="mt-1 text-sm leading-6 text-secondary">{dict.job.providerCancelNote}</p>
+          {confirming === 'cancel' ? (
+            <div className="mt-3 grid gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="provider-cancel-reason">{dict.job.providerCancelReasonLabel}</Label>
+                <Textarea id="provider-cancel-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder={dict.job.providerCancelReasonPlaceholder} maxLength={500} />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={working}
+                  onClick={() => void cancel.mutateAsync({ id: booking.id, ...(reason.trim() === '' ? {} : { reason: reason.trim() }) }).catch(ignore)}
+                >
+                  {cancel.isPending ? dict.job.exitActionWorking : dict.job.providerCancelConfirm}
+                </Button>
+                <Button type="button" variant="secondary" size="sm" disabled={working} onClick={() => setConfirming(null)}>
+                  {dict.job.keepJob}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button type="button" variant="secondary" size="sm" className="mt-3" disabled={working} onClick={() => setConfirming('cancel')}>
+              <XCircle className="size-4" aria-hidden="true" />
+              {dict.job.providerCancelAction}
+            </Button>
+          )}
+        </div>
+      ) : null}
+
+      {noShowAllowed ? (
+        <div className="rounded-[10px] border border-line p-4">
+          <p className="text-sm font-semibold text-navy">{dict.job.customerNoShowTitle}</p>
+          <p className="mt-1 text-sm leading-6 text-secondary">{dict.job.customerNoShowNote}</p>
+          {confirming === 'noShow' ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" size="sm" disabled={working} onClick={() => void noShow.mutateAsync({ id: booking.id, party: 'CUSTOMER' }).catch(ignore)}>
+                {noShow.isPending ? dict.job.exitActionWorking : dict.job.customerNoShowConfirm}
+              </Button>
+              <Button type="button" variant="secondary" size="sm" disabled={working} onClick={() => setConfirming(null)}>
+                {dict.job.keepJob}
+              </Button>
+            </div>
+          ) : (
+            <Button type="button" variant="secondary" size="sm" className="mt-3" disabled={working} onClick={() => setConfirming('noShow')}>
+              <AlertTriangle className="size-4" aria-hidden="true" />
+              {dict.job.customerNoShowAction}
+            </Button>
+          )}
+        </div>
+      ) : null}
+
+      {errorText !== null ? (
+        <p role="alert" className="rounded-[9px] bg-rose-50 p-3 text-sm text-rose-700">
+          {errorText}
+        </p>
+      ) : null}
+    </div>
   );
 }
