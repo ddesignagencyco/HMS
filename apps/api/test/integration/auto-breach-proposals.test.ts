@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { callApi, adminSession, createTestApp, postJson, registerAndVerify, type TestUser } from './harness.js';
 import { AppClock } from '../../src/platform/app-clock.js';
-import { bearer, freezeInsideCallingHours, newProvider, prisma, unfreeze, completedJob, agentSession, dropLocks, claim, answeredCall, startVisit, doWorkAndComplete } from './flow.js';
+import { bearer, freezeInsideCallingHours, newProvider, prisma, unfreeze, completedJob, agentSession, dropLocks, claim, answeredCall, startVisit, doWorkAndComplete, departProvider } from './flow.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -337,7 +337,7 @@ describe('LATE_CANCEL — provider cancels inside free-cancel window', () => {
       const bookingId = created.body.id;
       if (created.body.payment) await callApi(app, `/dev/payments/${created.body.payment.paymentId}/complete?outcome=captured`, { method: 'POST' });
       await callApi(app, `/bookings/${bookingId}/accept`, bearer(provider.accessToken, { method: 'POST' }));
-      await callApi(app, `/bookings/${bookingId}/depart`, bearer(provider.accessToken, { method: 'POST' }));
+      await departProvider(app, bookingId, bearer(provider.accessToken, { method: 'POST' }));
       await startVisit(app, provider, customer, bookingId);
       
       // Complete the job normally first

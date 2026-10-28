@@ -12,6 +12,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { PrismaService } from '../../src/database/prisma.service.js';
 import { AppClock } from '../../src/platform/app-clock.js';
 import { callApi, createTestApp, postJson, readyBookableProvider, registerAndVerify } from './harness.js';
+import { departProvider } from './flow.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -151,14 +152,14 @@ describe('FR-EX-01 / FR-BK-06 / SHM-034: depart, cancel and no-show', () => {
   /** A `scheduledBooking()` moved on to EN_ROUTE, for the no-show tests. */
   const enRouteBooking = async (): Promise<{ id: string; customerAccessToken: string; scheduledStart: string }> => {
     const booking = await scheduledBooking();
-    await callApi(app, `/bookings/${booking.id}/depart`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
+    await departProvider(app, booking.id, asCustomer(shared.providerAccessToken, { method: 'POST' }));
     return booking;
   };
 
   it('lets the provider mark themselves en route on a SCHEDULED booking', async () => {
     const booking = await scheduledBooking();
 
-    const response = await callApi<{ status: string }>(app, `/bookings/${booking.id}/depart`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
+    const response = await departProvider<{ status: string }>(app, booking.id, asCustomer(shared.providerAccessToken, { method: 'POST' }));
     expect(response.status).toBe(200);
     expect(response.body.status).toBe('EN_ROUTE');
   });

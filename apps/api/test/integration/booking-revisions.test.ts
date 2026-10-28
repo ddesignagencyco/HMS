@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { EnvironmentService } from '../../src/config/environment.service.js';
 import { callApi, createTestApp, postJson, readOtpFromInbox, readyBookableProvider, registerAndVerify, type TestUser } from './harness.js';
+import { departProvider, startProvider } from './flow.js';
 
 const prisma = new PrismaClient();
 
@@ -75,9 +76,9 @@ describe('SHM-042: revised quotes and top-up', () => {
     const id = created.body.id;
     if (created.body.payment !== undefined) await capture(created.body.payment.paymentId);
     await callApi(app, `/bookings/${id}/accept`, asProvider({ method: 'POST' }));
-    await callApi(app, `/bookings/${id}/depart`, asProvider({ method: 'POST' }));
+    await departProvider(app, id, asProvider({ method: 'POST' }));
     const code = await readOtpFromInbox(app, customer.phoneE164);
-    const started = await callApi(app, `/bookings/${id}/start`, asProvider(postJson({ code, ...(start ?? {}) })));
+    const started = await startProvider(app, id, asProvider(postJson({ code, ...(start ?? {}) })));
     expect(started.status).toBe(200);
     return { id, customer, customerPhone: customer.phoneE164 };
   };
@@ -171,9 +172,9 @@ describe('FR-EX-11: an inspection-first job whose extra work is rejected', () =>
     expect(BigInt(created.body.quotedAmountPaisa)).toBe(visitFee);
 
     await callApi(app, `/bookings/${id}/accept`, bearer(provider.accessToken, { method: 'POST' }));
-    await callApi(app, `/bookings/${id}/depart`, bearer(provider.accessToken, { method: 'POST' }));
+    await departProvider(app, id, bearer(provider.accessToken, { method: 'POST' }));
     const code = await readOtpFromInbox(app, customer.phoneE164);
-    await callApi(app, `/bookings/${id}/start`, bearer(provider.accessToken, postJson({ code })));
+    await startProvider(app, id, bearer(provider.accessToken, postJson({ code })));
     await callApi(app, `/bookings/${id}/revisions`, bearer(provider.accessToken, postJson({ deltaPaisa: 2_000_000, reason: 'Full membrane treatment needed' })));
 
     const rejected = await callApi<Booking>(app, `/bookings/${id}/revisions/reject`, bearer(customer.accessToken, { method: 'POST' }));

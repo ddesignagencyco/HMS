@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { BOOKING_STATUS_VALUES } from '@smart-home/domain';
 import { callApi, createTestApp, postJson, readOtpFromInbox, readyBookableProvider, refreshCookieOf, registerAndVerify, uniquePhone, type TestUser } from './harness.js';
+import { departProvider, startProvider } from './flow.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -383,9 +384,9 @@ describe('booking: a checklist is readable, so itemId is discoverable and the 40
       bearer(customer.accessToken, postJson({ providerId: shared.providerId, serviceId: shared.serviceId, addressId: address.body.id, ...slot }))
     );
     await callApi(app, `/bookings/${created.body.id}/accept`, bearer(shared.providerAccessToken, { method: 'POST' }));
-    await callApi(app, `/bookings/${created.body.id}/depart`, bearer(shared.providerAccessToken, { method: 'POST' }));
+    await departProvider(app, created.body.id, bearer(shared.providerAccessToken, { method: 'POST' }));
     const code = await readOtpFromInbox(app, customer.phoneE164);
-    await callApi(app, `/bookings/${created.body.id}/start`, bearer(shared.providerAccessToken, postJson({ code })));
+    await startProvider(app, created.body.id, bearer(shared.providerAccessToken, postJson({ code })));
     const checklist = (await callApi<{ checklist: { id: number; requiresPhoto: boolean }[] }>(app, '/catalogue/services/leak-repair')).body.checklist;
     return { id: created.body.id, customer, checklist };
   };

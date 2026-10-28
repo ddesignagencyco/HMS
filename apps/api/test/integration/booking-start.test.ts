@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { callApi, createTestApp, postJson, readOtpFromInbox, readyBookableProvider, registerAndVerify } from './harness.js';
-import { prisma } from './flow.js';
+import { departProvider, prisma, startProvider } from './flow.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -53,7 +53,7 @@ describe('FR-EX-02 / SHM-041: start OTP', () => {
 
   const enRouteBooking = async (): Promise<{ id: string; customerPhone: string }> => {
     const booking = await acceptedBooking();
-    await callApi(app, `/bookings/${booking.id}/depart`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
+    await departProvider(app, booking.id, asCustomer(shared.providerAccessToken, { method: 'POST' }));
     return booking;
   };
 
@@ -61,7 +61,7 @@ describe('FR-EX-02 / SHM-041: start OTP', () => {
     const booking = await enRouteBooking();
     const code = await readOtpFromInbox(app, booking.customerPhone);
 
-    const response = await callApi<{ status: string; startOtpVerifiedAt: string | null }>(app, `/bookings/${booking.id}/start`, asCustomer(shared.providerAccessToken, postJson({ code })));
+    const response = await startProvider<{ status: string; startOtpVerifiedAt: string | null }>(app, booking.id, asCustomer(shared.providerAccessToken, postJson({ code })));
     expect(response.status).toBe(200);
     expect(response.body.status).toBe('IN_PROGRESS');
     expect(response.body.startOtpVerifiedAt).not.toBeNull();
@@ -70,7 +70,7 @@ describe('FR-EX-02 / SHM-041: start OTP', () => {
   it('rejects a wrong code with 422 OTP_INVALID, reporting remaining attempts', async () => {
     const booking = await enRouteBooking();
 
-    const response = await callApi<{ code: string; detail: string }>(app, `/bookings/${booking.id}/start`, asCustomer(shared.providerAccessToken, postJson({ code: '000000' })));
+    const response = await startProvider<{ code: string; detail: string }>(app, booking.id, asCustomer(shared.providerAccessToken, postJson({ code: '000000' })));
     expect(response.status).toBe(422);
     expect(response.body.code).toBe('OTP_INVALID');
     expect(response.body.detail).toContain('4 attempt');
@@ -81,10 +81,10 @@ describe('FR-EX-02 / SHM-041: start OTP', () => {
     const correctCode = await readOtpFromInbox(app, booking.customerPhone);
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      await callApi(app, `/bookings/${booking.id}/start`, asCustomer(shared.providerAccessToken, postJson({ code: '000000' })));
+      await startProvider(app, booking.id, asCustomer(shared.providerAccessToken, postJson({ code: '000000' })));
     }
 
-    const response = await callApi<{ code: string }>(app, `/bookings/${booking.id}/start`, asCustomer(shared.providerAccessToken, postJson({ code: correctCode })));
+    const response = await startProvider<{ code: string }>(app, booking.id, asCustomer(shared.providerAccessToken, postJson({ code: correctCode })));
     expect(response.status).toBe(423);
     expect(response.body.code).toBe('OTP_LOCKED');
   });
@@ -150,19 +150,20 @@ describe('the start code on the customer’s own screen', () => {
     // same code that opens the job. A response that looked right but carried a code nothing verified
     // would pass a shape-only test and fail at the customer's front door.
     const booking = await bookingFor('CUSTOMER');
-    await callApi(app, `/bookings/${booking.id}/depart`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
+    await departProvider(app, booking.id, asCustomer(shared.providerAccessToken, { method: 'POST' }));
 
     const shown = await callApi<{ code: string; expiresInSeconds: number }>(app, `/bookings/${booking.id}/start-code`, asCustomer(booking.accessToken, { method: 'POST' }));
     expect(shown.status).toBe(200);
     expect(shown.body.code).toMatch(/^\d{6}$/);
 
-    const started = await callApi<{ status: string }>(app, `/bookings/${booking.id}/start`, asCustomer(shared.providerAccessToken, postJson({ code: shown.body.code })));
+    const started = await startProvider<{ status: string }>(app, booking.id, asCustomer(shared.providerAccessToken, postJson({ code: shown.body.code })));
     expect(started.status).toBe(200);
     expect(started.body.status).toBe('IN_PROGRESS');
   });
 
   it('still sends the SMS, unchanged, so the existing mechanism keeps working', async () => {
     const booking = await bookingFor('CUSTOMER');
+    await departProvider(app, booking.id, asCustomer(shared.providerAccessToken, { method: 'POST' }));
     await callApi(app, `/bookings/${booking.id}/start-code`, asCustomer(booking.accessToken, { method: 'POST' }));
 
     const sms = await readOtpFromInbox(app, booking.phone);
@@ -174,6 +175,7 @@ describe('the start code on the customer’s own screen', () => {
     // customer, so "it is hashed at rest" stops being an assumption about a column nobody reads and
     // becomes the thing standing between a leaked database and jobs started in other people's houses.
     const booking = await bookingFor('CUSTOMER');
+    await departProvider(app, booking.id, asCustomer(shared.providerAccessToken, { method: 'POST' }));
     const shown = await callApi<{ code: string }>(app, `/bookings/${booking.id}/start-code`, asCustomer(booking.accessToken, { method: 'POST' }));
 
     const stored = await prisma.$queryRaw<{ startOtpHash: string | null }[]>`
@@ -217,26 +219,26 @@ describe('the start code on the customer’s own screen', () => {
     // behaviour, not a bug — but it is the footgun of this feature, so it is pinned by a test rather
     // than discovered by a provider standing at a door.
     const booking = await bookingFor('CUSTOMER');
-    await callApi(app, `/bookings/${booking.id}/depart`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
+    await departProvider(app, booking.id, asCustomer(shared.providerAccessToken, { method: 'POST' }));
 
     const first = await callApi<{ code: string }>(app, `/bookings/${booking.id}/start-code`, asCustomer(booking.accessToken, { method: 'POST' }));
     const second = await callApi<{ code: string }>(app, `/bookings/${booking.id}/start-code`, asCustomer(booking.accessToken, { method: 'POST' }));
     expect(second.body.code).not.toBe(first.body.code);
 
-    const stale = await callApi<{ code: string; detail: string }>(app, `/bookings/${booking.id}/start`, asCustomer(shared.providerAccessToken, postJson({ code: first.body.code })));
+    const stale = await startProvider<{ code: string; detail: string }>(app, booking.id, asCustomer(shared.providerAccessToken, postJson({ code: first.body.code })));
     expect(stale.status).toBe(422);
     expect(stale.body.code).toBe('OTP_INVALID');
 
     // ...and the current one still works, so a refresh is recoverable rather than fatal.
-    const fresh = await callApi<{ status: string }>(app, `/bookings/${booking.id}/start`, asCustomer(shared.providerAccessToken, postJson({ code: second.body.code })));
+    const fresh = await startProvider<{ status: string }>(app, booking.id, asCustomer(shared.providerAccessToken, postJson({ code: second.body.code })));
     expect(fresh.status).toBe(200);
   });
 
   it('refuses once the job has started, when there is nothing left to authorise', async () => {
     const booking = await bookingFor('CUSTOMER');
-    await callApi(app, `/bookings/${booking.id}/depart`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
+    await departProvider(app, booking.id, asCustomer(shared.providerAccessToken, { method: 'POST' }));
     const shown = await callApi<{ code: string }>(app, `/bookings/${booking.id}/start-code`, asCustomer(booking.accessToken, { method: 'POST' }));
-    await callApi(app, `/bookings/${booking.id}/start`, asCustomer(shared.providerAccessToken, postJson({ code: shown.body.code })));
+    await startProvider(app, booking.id, asCustomer(shared.providerAccessToken, postJson({ code: shown.body.code })));
 
     const response = await callApi<{ code: string; detail: string }>(app, `/bookings/${booking.id}/start-code`, asCustomer(booking.accessToken, { method: 'POST' }));
     expect(response.status).toBe(409);

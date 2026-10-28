@@ -23,6 +23,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { PrismaService } from '../../src/database/prisma.service.js';
 import { AppClock } from '../../src/platform/app-clock.js';
 import { callApi, createTestApp, postJson, readyBookableProvider, registerAndVerify, type TestUser } from './harness.js';
+import { departProvider } from './flow.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -71,7 +72,7 @@ const onlineBookingEnRoute = async (provider: Provider): Promise<{ id: string; c
     expect(captured.status).toBeLessThan(300);
   }
   await callApi(app, `/bookings/${created.body.id}/accept`, bearer(provider.accessToken, { method: 'POST' }));
-  await callApi(app, `/bookings/${created.body.id}/depart`, bearer(provider.accessToken, { method: 'POST' }));
+  await departProvider(app, created.body.id, bearer(provider.accessToken, { method: 'POST' }));
   return { id: created.body.id, customer, scheduledStart: new Date(slot.scheduledStart), totalPaisa: created.body.approvedTotalPaisa };
 };
 
@@ -155,7 +156,7 @@ describe('FR-BK-06 / SRS §7.4: a no-show refunds the customer', () => {
     );
     expect(created.status).toBe(201);
     await callApi(app, `/bookings/${created.body.id}/accept`, bearer(provider.accessToken, { method: 'POST' }));
-    await callApi(app, `/bookings/${created.body.id}/depart`, bearer(provider.accessToken, { method: 'POST' }));
+    await departProvider(app, created.body.id, bearer(provider.accessToken, { method: 'POST' }));
 
     app.get(AppClock).travelTo(new Date(new Date(slot.scheduledStart).getTime() + 40 * 60_000));
     const reported = await callApi<{ status: string }>(app, `/bookings/${created.body.id}/no-show`, bearer(customer.accessToken, postJson({ party: 'PROVIDER' })));

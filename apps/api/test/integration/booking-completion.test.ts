@@ -11,6 +11,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { isBusinessInstant, isWithinBusinessHours } from '@smart-home/domain';
 import { EnvironmentService } from '../../src/config/environment.service.js';
 import { callApi, createTestApp, postJson, readOtpFromInbox, readyBookableProvider, registerAndVerify, type TestUser } from './harness.js';
+import { departProvider, startProvider } from './flow.js';
 
 const prisma = new PrismaClient();
 
@@ -79,9 +80,9 @@ describe('SHM-041 / SHM-042 / SHM-043: execution, revisions and completion', () 
     const id = created.body.id;
     if (created.body.payment !== undefined) await capture(created.body.payment.paymentId);
     await callApi(app, `/bookings/${id}/accept`, asProvider({ method: 'POST' }));
-    await callApi(app, `/bookings/${id}/depart`, asProvider({ method: 'POST' }));
+    await departProvider(app, id, asProvider({ method: 'POST' }));
     const code = await readOtpFromInbox(app, customer.phoneE164);
-    const started = await callApi(app, `/bookings/${id}/start`, asProvider(postJson({ code, ...(start ?? {}) })));
+    const started = await startProvider(app, id, asProvider(postJson({ code, ...(start ?? {}) })));
     expect(started.status).toBe(200);
     return { id, customer, customerPhone: customer.phoneE164 };
   };
@@ -122,9 +123,9 @@ describe('SHM-041 / SHM-042 / SHM-043: execution, revisions and completion', () 
       nextSlotOffsetHours += 24;
       const created = await callApi<{ id: string }>(app, '/bookings', bearer(customer.accessToken, postJson({ providerId: shared.providerId, serviceId: shared.serviceId, addressId: address.body.id, ...slot })));
       await callApi(app, `/bookings/${created.body.id}/accept`, asProvider({ method: 'POST' }));
-      await callApi(app, `/bookings/${created.body.id}/depart`, asProvider({ method: 'POST' }));
+      await departProvider(app, created.body.id, asProvider({ method: 'POST' }));
       const code = await readOtpFromInbox(app, customer.phoneE164);
-      const started = await callApi<{ status: string; checkin: { distanceM: number; withinGeofence: boolean } }>(app, `/bookings/${created.body.id}/start`, asProvider(postJson({ code, lat: 31.6, lng: 74.5 })));
+      const started = await startProvider<{ status: string; checkin: { distanceM: number; withinGeofence: boolean } }>(app, created.body.id, asProvider(postJson({ code, lat: 31.6, lng: 74.5 })));
       expect(started.status).toBe(200);
       expect(started.body.status).toBe('IN_PROGRESS');
       expect(started.body.checkin.withinGeofence).toBe(false);

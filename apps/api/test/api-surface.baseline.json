@@ -445,6 +445,24 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/badge/approve",
+      "operationId": "ReputationController_approveBadge",
+      "summary": "Approve a provider’s pending badge",
+      "tags": [
+        "reputation"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/providers/{providerId}/badge/reject",
+      "operationId": "ReputationController_rejectBadge",
+      "summary": "Reject a provider’s pending badge",
+      "tags": [
+        "reputation"
+      ]
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/admin/providers/{providerId}/block",
       "operationId": "ProviderAdminController_block",
       "summary": "Block a provider",
@@ -495,6 +513,15 @@
       "summary": "Unblock a provider",
       "tags": [
         "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/providers/badges/pending",
+      "operationId": "ReputationController_pendingBadges",
+      "summary": "List providers awaiting badge approval",
+      "tags": [
+        "reputation"
       ]
     },
     {
