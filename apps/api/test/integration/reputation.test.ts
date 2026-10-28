@@ -124,17 +124,23 @@ describe('SHM-063: ratings and the public reputation', () => {
     expect((await reputationOf(provider)).ratingCount).toBe(0);
   });
 
-  it('awards a badge from verified jobs only: nine verified jobs and a dispute earn nothing, the tenth verified job earns TRUSTED', async () => {
+  it('computes a badge from verified jobs only, but it stays off the public profile until an admin approves it: nine verified jobs and a dispute earn nothing, the tenth verified job qualifies for TRUSTED', async () => {
     const provider = await newProvider(app);
     const disputed = await completedJob(app, provider, { mode: 'ONLINE' });
     await agentVerify(app, agent, disputed, { ...satisfied, extraChargeDemanded: true, extraChargeAmountPaisa: 1000, consentToRelease: false, outcome: 'DISPUTED' });
     for (let index = 0; index < 9; index += 1) await ratedJob(provider, { quality: 5, punctuality: 5, conduct: 5, cleanliness: 5 });
-    const badgeOf = async (): Promise<string | null> => (await prisma.$queryRaw<{ b: string | null }[]>(Prisma.sql`SELECT tier_badge as b FROM providers WHERE user_id = ${provider.id}::uuid`))[0]!.b;
+    // `tier_badge` is the live, public badge -- only an admin approval ever writes it.
+    // `pending_tier_badge` is the freshly computed one, which is what this is really testing.
+    const tierBadgeOf = async (): Promise<string | null> => (await prisma.$queryRaw<{ b: string | null }[]>(Prisma.sql`SELECT tier_badge as b FROM providers WHERE user_id = ${provider.id}::uuid`))[0]!.b;
+    const pendingBadgeOf = async (): Promise<string | null> => (await prisma.$queryRaw<{ b: string | null }[]>(Prisma.sql`SELECT pending_tier_badge as b FROM providers WHERE user_id = ${provider.id}::uuid`))[0]!.b;
     expect(await reputationOf(provider)).toMatchObject({ verifiedJobs: 9, badge: null });
-    expect(await badgeOf()).toBeNull();
+    expect(await tierBadgeOf()).toBeNull();
+    expect(await pendingBadgeOf()).toBeNull();
     await ratedJob(provider, { quality: 5, punctuality: 5, conduct: 5, cleanliness: 5 });
-    expect(await reputationOf(provider)).toMatchObject({ verifiedJobs: 10, badge: 'TRUSTED' });
-    expect(await badgeOf()).toBe('TRUSTED');
+    // Still null on the public profile -- qualifying for a tier is not the same as it being live.
+    expect(await reputationOf(provider)).toMatchObject({ verifiedJobs: 10, badge: null });
+    expect(await tierBadgeOf()).toBeNull();
+    expect(await pendingBadgeOf()).toBe('TRUSTED');
   }, 240_000);
 
   it('flags a provider once their average falls to the poor threshold with enough ratings', async () => {
