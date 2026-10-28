@@ -85,6 +85,8 @@ The full catalog is `packages/contracts/src/errors.ts`. The ones that matter for
 | `NOT_FOUND` | 404 | Generic "not found" — see below |
 | `SLOT_TAKEN` | 409 | Someone got there first — refresh the slot list |
 | `ILLEGAL_TRANSITION` | 409 | Action no longer valid in this state; re-read the booking |
+| `TOO_EARLY` | 400 | Depart/start-code/start called before the scheduled-start gate opens — show `detail` verbatim and the countdown to it |
+| `ADDRESS_LOCKED` | 409 | Editing/archiving an address in use by an active on-behalf booking — show `detail`, don't let it fall through as a generic save failure |
 | `OTP_INVALID` / `OTP_LOCKED` | 422 / 423 | Wrong code / too many tries |
 | `RATE_LIMITED` | 429 | Countdown, then retry |
 | `DEBT_BLOCKED` | 409 | Provider is over their commission ceiling |

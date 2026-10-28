@@ -35,6 +35,8 @@ genuinely-historical documents were still sitting in the old locations. Now ther
 | `API_HANDOFF.md` | The API contract for frontend developers: conventions (auth, idempotency, errors, status codes), the booking and verification flows, per-screen notes, and what is **not** built yet | **Doc of record for the frontend. Update it in the same change as any API work.** Includes `api-handoff-index.md`. |
 | `api-handoff-index.md` | Every operation, grouped by screen area | **Generated - do not edit.** Regenerate with `npm run api:handoff --workspace @smart-home/api`. |
 | `DIRECTION_FRONTEND_CONFIRM_THE_WORK.md` | Implementation brief for the customer's own work-confirmation and rating form (FR-VC-16…19) — placement, states, error handling, and what is *not* built yet | **Doc of record for the frontend.** Companion to `API_HANDOFF.md` §2.4.1. |
+| `DIRECTION_FRONTEND_EMERGENCY_AND_SCHEDULED_BOOKINGS.md` | Emergency booking fallback (no slots today) and the scheduled-start timing gates — three-tier fallback, depart/start-code/start gates, error handling matrix | **Doc of record for the frontend.** Companion to `API_HANDOFF.md` §2.2/§2.3. |
+| `DIRECTION_FRONTEND_SCHEDULING_BADGES_PENALTIES_AND_ADDRESS_LOCK.md` | The `TOO_EARLY`/`ADDRESS_LOCKED` error codes, the badge-approval `pendingBadge` field and new admin endpoints, the `ACCEPTED_THEN_DECLINED` breach code, and the seeded Homes plans | **Doc of record for the frontend.** Companion to `API_HANDOFF.md` and `DIRECTION_FRONTEND_EMERGENCY_AND_SCHEDULED_BOOKINGS.md`. |
 
 ### The API handoff rule
 
