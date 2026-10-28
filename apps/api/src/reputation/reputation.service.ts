@@ -20,7 +20,10 @@ export type Reputation = {
   /** How many ratings fall in each whole-star bucket, 1 to 5. */
   distribution: Record<'1' | '2' | '3' | '4' | '5', number>;
   verifiedJobs: number;
+  /** The live, admin-approved badge shown publicly — `providers.tier_badge`, never the freshly computed one. */
   badge: string | null;
+  /** The badge the verified-job count now qualifies for, when it differs from `badge` and is awaiting admin approval. Null once approved or unchanged. */
+  pendingBadge: string | null;
 };
 
 /** How many verified jobs earn each badge, highest first (FR-AD-11, from verified jobs only). */
@@ -70,6 +73,11 @@ export class ReputationService {
       Prisma.sql`SELECT count(DISTINCT v.booking_id)::bigint as n FROM verification_calls v JOIN bookings b ON b.id = v.booking_id WHERE b.provider_id = ${providerId}::uuid AND v.outcome IN ('VERIFIED_SATISFIED','VERIFIED_WITH_ISSUE','LINK_CONFIRMED')`
     );
     const verifiedJobs = Number(jobs[0]?.n ?? 0n);
+    const providerRows = await client.$queryRaw<{ tierBadge: string | null }[]>(
+      Prisma.sql`SELECT tier_badge as "tierBadge" FROM providers WHERE user_id = ${providerId}::uuid`
+    );
+    const approvedBadge = providerRows[0]?.tierBadge ?? null;
+    const computedBadge = badgeFor(verifiedJobs);
     const distribution: Reputation['distribution'] = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
     for (const value of hundredths) distribution[String(Math.min(5, Math.max(1, Math.round(value / 100)))) as keyof Reputation['distribution']] += 1;
     return {
@@ -77,26 +85,103 @@ export class ReputationService {
       ratingCount: hundredths.length,
       distribution,
       verifiedJobs,
-      badge: badgeFor(verifiedJobs)
+      // Published badge is always the stored, admin-approved one (FR-AD-11 admin approval) —
+      // never the freshly computed value, so a tier change cannot reach a profile before an
+      // admin has signed off on it.
+      badge: approvedBadge,
+      pendingBadge: computedBadge === approvedBadge ? null : computedBadge
     };
   }
 
   async publicReputation(providerId: string): Promise<Reputation> {
     const found = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT user_id as id FROM providers WHERE user_id = ${providerId}::uuid AND status = 'APPROVED'`);
     if (found[0] === undefined) throw notFound('Provider');
-    return this.reputation(this.prisma, providerId);
+    // The pending badge is an internal/admin-review detail, never shown to the public.
+    return { ...(await this.reputation(this.prisma, providerId)), pendingBadge: null };
   }
 
   /**
    * The projector, run inside the transaction that published a rating: recompute the badge from verified jobs and, if the plain average has
    * fallen to the poor threshold (with enough ratings for it to mean something), flag the provider for review once. It is derived data —
    * calling it twice changes nothing.
+   *
+   * The computed badge never overwrites `tier_badge` directly: it lands in `pending_tier_badge`
+   * and only becomes the live, public badge once an admin approves it
+   * (`BadgeApprovalAdminController`). This runs every time a rating is published, so a provider
+   * who no longer qualifies for their pending tier (or has caught back up to their approved one)
+   * has the pending value cleared or updated the same way.
    */
   async refresh(tx: Prisma.TransactionClient, providerId: string): Promise<void> {
     const reputation = await this.reputation(tx, providerId);
-    await tx.$executeRaw(Prisma.sql`UPDATE providers SET tier_badge = ${reputation.badge} WHERE user_id = ${providerId}::uuid AND tier_badge IS DISTINCT FROM ${reputation.badge}`);
+    if (reputation.pendingBadge === null) {
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE providers SET pending_tier_badge = NULL, badge_pending_since = NULL WHERE user_id = ${providerId}::uuid AND pending_tier_badge IS NOT NULL`
+      );
+    } else {
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE providers SET pending_tier_badge = ${reputation.pendingBadge}, badge_pending_since = now()
+          WHERE user_id = ${providerId}::uuid AND pending_tier_badge IS DISTINCT FROM ${reputation.pendingBadge}`
+      );
+    }
     await this.refreshLowRatingFlag(tx, providerId, reputation.ratingCount);
     await this.proposePoorStreak(tx, providerId);
+  }
+
+  /** Admin queue (FR-AD-11): every provider whose computed tier is sitting unapproved. */
+  async pendingBadges(): Promise<{ providerId: string; currentBadge: string | null; pendingBadge: string; pendingSince: Date }[]> {
+    return this.prisma.$queryRaw<{ providerId: string; currentBadge: string | null; pendingBadge: string; pendingSince: Date }[]>(
+      Prisma.sql`SELECT user_id as "providerId", tier_badge as "currentBadge", pending_tier_badge as "pendingBadge", badge_pending_since as "pendingSince"
+        FROM providers WHERE pending_tier_badge IS NOT NULL ORDER BY badge_pending_since ASC`
+    );
+  }
+
+  /** Admin approves a provider's computed tier change, which then becomes the live, public badge. */
+  async approveBadge(providerId: string, adminId: string): Promise<{ providerId: string; badge: string | null }> {
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.$queryRaw<{ tierBadge: string | null; pendingTierBadge: string | null }[]>(
+        Prisma.sql`SELECT tier_badge as "tierBadge", pending_tier_badge as "pendingTierBadge" FROM providers WHERE user_id = ${providerId}::uuid FOR UPDATE`
+      );
+      const row = before[0];
+      if (row === undefined) throw notFound('Provider');
+      if (row.pendingTierBadge === null) throw new DomainError('CONFLICT', 'This provider has no pending badge change to approve');
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE providers SET tier_badge = pending_tier_badge, pending_tier_badge = NULL, badge_pending_since = NULL,
+          badge_approved_by = ${adminId}::uuid, badge_approved_at = now() WHERE user_id = ${providerId}::uuid`
+      );
+      await this.audit.append(
+        { actorUserId: adminId, actorRole: 'ADMIN', action: 'provider.badge_approval', entityType: 'provider', entityId: providerId, before: { badge: row.tierBadge }, after: { badge: row.pendingTierBadge } },
+        tx
+      );
+      return { providerId, badge: row.pendingTierBadge };
+    });
+  }
+
+  /** Admin rejects a provider's computed tier change; the live badge is untouched and the provider keeps earning toward it. */
+  async rejectBadge(providerId: string, reason: string, adminId: string): Promise<{ providerId: string; badge: string | null }> {
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.$queryRaw<{ tierBadge: string | null; pendingTierBadge: string | null }[]>(
+        Prisma.sql`SELECT tier_badge as "tierBadge", pending_tier_badge as "pendingTierBadge" FROM providers WHERE user_id = ${providerId}::uuid FOR UPDATE`
+      );
+      const row = before[0];
+      if (row === undefined) throw notFound('Provider');
+      if (row.pendingTierBadge === null) throw new DomainError('CONFLICT', 'This provider has no pending badge change to reject');
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE providers SET pending_tier_badge = NULL, badge_pending_since = NULL WHERE user_id = ${providerId}::uuid`
+      );
+      await this.audit.append(
+        {
+          actorUserId: adminId,
+          actorRole: 'ADMIN',
+          action: 'provider.badge_rejection',
+          entityType: 'provider',
+          entityId: providerId,
+          before: { pendingBadge: row.pendingTierBadge },
+          after: { pendingBadge: null, reason }
+        },
+        tx
+      );
+      return { providerId, badge: row.tierBadge };
+    });
   }
 
   /** SRS §8.2 POOR_STREAK: three consecutive rated jobs each under 3.0. Proposed once per streak — the same three ratings never propose it twice. */

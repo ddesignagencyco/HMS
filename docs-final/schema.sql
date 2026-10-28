@@ -207,10 +207,10 @@ CREATE TABLE services (
   description           text NOT NULL,
   pricing_model         pricing_model NOT NULL,
   time_unit             time_unit,
-  base_price_paisa      bigint NOT NULL CHECK (base_price_paisa >= 0),
-  min_price_paisa       bigint NOT NULL CHECK (min_price_paisa >= 0),
+  base_price_paisa      bigint NOT NULL CHECK (base_price_paisa > 0),
+  min_price_paisa       bigint NOT NULL CHECK (min_price_paisa > 0),
   max_price_paisa       bigint NOT NULL,
-  visit_fee_paisa       bigint NOT NULL DEFAULT 0,
+  visit_fee_paisa       bigint NOT NULL DEFAULT 0 CONSTRAINT services_visit_fee_paisa_check CHECK (visit_fee_paisa >= 0),
   expected_duration_min int NOT NULL CHECK (expected_duration_min > 0),
   is_emergency_eligible boolean NOT NULL DEFAULT false,
   is_plan_eligible      boolean NOT NULL DEFAULT false,
@@ -303,9 +303,14 @@ CREATE TABLE providers (
   suspended_until              timestamptz,
   blocked_reason               text,
   offer_blocked_reason         text,                     -- 'DEBT' | 'SUSPENDED' | null
-  tier_badge                   text,
+  tier_badge                   text,                     -- the live, public badge; only ever set by an admin's approval
+  pending_tier_badge           text,                     -- FR-AD-11: the computed badge awaiting admin approval, if different from tier_badge
+  badge_pending_since          timestamptz,
+  badge_approved_by            uuid REFERENCES users(id),
+  badge_approved_at            timestamptz,
   created_at                   timestamptz NOT NULL DEFAULT now(),
-  updated_at                   timestamptz NOT NULL DEFAULT now()
+  updated_at                   timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT providers_badge_pending_consistent CHECK ((pending_tier_badge IS NULL) = (badge_pending_since IS NULL))
 );
 CREATE INDEX providers_status_idx ON providers(status);
 CREATE INDEX providers_city_idx ON providers(city_id);

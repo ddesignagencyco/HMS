@@ -71,6 +71,7 @@ export class BookingStateService {
     // Checked before the status is written, so a refused report leaves no history row
     // and no half-applied change behind.
     if (event === 'noShow') await this.assertNoShowIsReportable(row);
+    if (event === 'depart') await this.assertNotTooEarlyToDepart(row);
 
     // `cancel`'s target depends on which role fired it — see the comment on
     // BOOKING_TRANSITIONS in @smart-home/domain for why the table can't encode this.
@@ -239,6 +240,20 @@ export class BookingStateService {
     }
   }
 
+  /**
+   * A provider may not depart earlier than `booking.travel_buffer_min` before the
+   * scheduled visit -- the same buffer already reserved either side of the slot
+   * (BR-08) -- so an early departure can never put them at the door before the
+   * window the customer was promised even opens.
+   */
+  private async assertNotTooEarlyToDepart(row: BookingRowRaw): Promise<void> {
+    const bufferMin = await this.settings.getNumber('booking.travel_buffer_min');
+    const earliestDepartAt = row.scheduledStart.getTime() - bufferMin * 60_000;
+    if (this.clock.now().getTime() < earliestDepartAt) {
+      throw new DomainError('TOO_EARLY', `You cannot depart earlier than ${bufferMin} minutes before the scheduled visit.`);
+    }
+  }
+
   /** SHM-080: a provider no-show, or a provider cancelling inside the free-cancel window, is a breach on the schedule. Proposed, never applied. */
   private async proposeBreach(tx: Prisma.TransactionClient, row: BookingRowRaw, event: BookingEvent, actorRole: BookingActorRole, options: ApplyOptions): Promise<void> {
     if (row.providerId === null) return;
@@ -256,6 +271,16 @@ export class BookingStateService {
         await this.conduct.autoPropose(tx, {
           providerId: row.providerId,
           breachCode: 'LATE_CANCEL',
+          bookingId: row.id,
+          evidence: { hoursBeforeSlot: Math.max(0, Math.round(hoursAhead * 10) / 10), bookingCode: row.code }
+        });
+      } else {
+        // Outside the free-cancel window, but the provider had already accepted the
+        // job -- a lighter breach than LATE_CANCEL, but not free: backing out after
+        // committing still costs the provider something, even with plenty of notice.
+        await this.conduct.autoPropose(tx, {
+          providerId: row.providerId,
+          breachCode: 'ACCEPTED_THEN_DECLINED',
           bookingId: row.id,
           evidence: { hoursBeforeSlot: Math.max(0, Math.round(hoursAhead * 10) / 10), bookingCode: row.code }
         });

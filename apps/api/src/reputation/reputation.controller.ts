@@ -83,4 +83,34 @@ export class ReputationController {
   async unpublish(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return this.reputation.unpublish(principal.userId, id, parseWith(unpublishSchema, body).reason);
   }
+
+  @Get('admin/providers/badges/pending')
+  @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'List providers awaiting badge approval',
+    description: 'Admin only. Every provider whose verified-job count now qualifies for a different tier badge (ELITE/PRO/TRUSTED) than the one currently shown publicly, oldest pending first. The badge only becomes public once approved here.'
+  })
+  async pendingBadges() {
+    return { items: await this.reputation.pendingBadges() };
+  }
+
+  @Post('admin/providers/:providerId/badge/approve')
+  @HttpCode(200)
+  @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Approve a provider’s pending badge', description: 'Admin only. The computed tier becomes the live, public badge.' })
+  async approveBadge(@Param('providerId', ParseUUIDPipe) providerId: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.reputation.approveBadge(providerId, principal.userId);
+  }
+
+  @Post('admin/providers/:providerId/badge/reject')
+  @HttpCode(200)
+  @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Reject a provider’s pending badge', description: 'Admin only. The live, public badge is left untouched; the provider keeps earning toward the pending tier.' })
+  @ApiZodBody(unpublishSchema, { default: { summary: 'Needs more recent verified jobs', value: { reason: 'Verified-job count includes disputed bookings pending review' } } })
+  async rejectBadge(@Param('providerId', ParseUUIDPipe) providerId: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.reputation.rejectBadge(providerId, parseWith(unpublishSchema, body).reason, principal.userId);
+  }
 }

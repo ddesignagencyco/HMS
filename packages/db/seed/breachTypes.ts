@@ -17,6 +17,7 @@ export const breachTypes: readonly BreachSeed[] = [
   { code: 'OFF_PLATFORM', nameEn: 'Off-platform payment', nameUr: 'پلیٹ فارم سے باہر ادائیگی', category: 'INTEGRITY', points: 20, fineRule: { type: 'max_fine' }, scheduleConsequence: 'SUSPENSION_30D' },
   { code: 'FALSIFIED_EVIDENCE', nameEn: 'Falsified evidence', nameUr: 'جھوٹی ثبوت', category: 'INTEGRITY', points: 25, fineRule: { type: 'max_fine' }, scheduleConsequence: 'PERMANENT_BLOCK' },
   { code: 'ABANDONED_JOB', nameEn: 'Abandoned job after acceptance', nameUr: 'قبول کرنے کے بعد کام چھوڑ دیا', category: 'RELIABILITY', points: 20, fineRule: { type: 'max_fine' }, scheduleConsequence: 'SUSPENSION_30D' },
+  { code: 'ACCEPTED_THEN_DECLINED', nameEn: 'Cancelled after accepting the job', nameUr: 'کام قبول کرنے کے بعد منسوخ کیا', category: 'RELIABILITY', points: 2, fineRule: { type: 'fixed', amountPaisa: 20_000 }, scheduleConsequence: null },
   { code: 'HARASSMENT', nameEn: 'Harassment or abuse of a customer', nameUr: 'کسٹمر کے ساتھ بدسلوکی', category: 'CONDUCT', points: 30, fineRule: { type: 'max_fine' }, scheduleConsequence: 'PERMANENT_BLOCK' },
   { code: 'FAKE_RATINGS', nameEn: 'Manipulating ratings', nameUr: 'ریٹنگ کی نقل', category: 'INTEGRITY', points: 30, fineRule: { type: 'max_fine' }, scheduleConsequence: 'PERMANENT_BLOCK' }
 ];

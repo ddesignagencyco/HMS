@@ -17,6 +17,7 @@ export const settingsDefinitions: readonly SettingsDefinition[] = [
   S('booking.max_offers', 5, 'Maximum providers offered per booking before UNFULFILLED.'),
   S('booking.max_offer_window_min', 60, 'Total auto-assign offer window in minutes.'),
   S('booking.travel_buffer_min', 30, 'BR-08: travel buffer added either side of a slot.'),
+  S('booking.early_start_grace_min', 15, 'Minutes before scheduled start that the start code may be revealed and work may begin, if the provider has not already departed.'),
   S('booking.max_free_reschedules', 1, 'Reschedules allowed without a fee.'),
   S('booking.evidence_required', true, 'Before and after photos are mandatory to complete a job.'),
   S('booking.emergency_surcharge_pct', 25, 'Surcharge applied to emergency bookings.'),

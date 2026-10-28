@@ -400,8 +400,8 @@ export class BookingService {
    *   left to authorise, and issuing more would be attack surface for no benefit.
    */
   async requestStartCode(bookingId: string, customerId: string): Promise<{ code: string; expiresInSeconds: number }> {
-    const rows = await this.prisma.$queryRaw<{ customerId: string; started: boolean }[]>(
-      Prisma.sql`SELECT customer_id as "customerId", start_otp_verified_at IS NOT NULL as started
+    const rows = await this.prisma.$queryRaw<{ customerId: string; started: boolean; status: BookingStatus; scheduledStart: Date }[]>(
+      Prisma.sql`SELECT customer_id as "customerId", start_otp_verified_at IS NOT NULL as started, status, scheduled_start as "scheduledStart"
         FROM bookings WHERE id = ${bookingId}::uuid`
     );
     const row = rows[0];
@@ -410,6 +410,17 @@ export class BookingService {
     if (row === undefined || row.customerId !== customerId) throw notFound('Booking');
     if (row.started) {
       throw conflict('This job has already been started, so there is no code to show.');
+    }
+
+    // The code is only worth showing once the technician is actually on the way, or
+    // the appointment is imminent -- otherwise it could leak over a phone call days
+    // in advance and let work start somewhere it was never scheduled.
+    if (row.status !== 'EN_ROUTE') {
+      const graceMin = await this.settings.getNumber('booking.early_start_grace_min');
+      const earliestRevealAt = row.scheduledStart.getTime() - graceMin * 60_000;
+      if (this.clock.now().getTime() < earliestRevealAt) {
+        throw new DomainError('TOO_EARLY', `Your start code will be shown once your technician departs, or ${graceMin} minutes before the scheduled visit.`);
+      }
     }
 
     // Re-uses `issueStartOtp`, so the SMS that has always been sent on accept keeps being sent, with
@@ -447,6 +458,14 @@ export class BookingService {
 
       const transition = canTransition(row.status as BookingStatus, 'start', 'PROVIDER');
       if (transition === null) throw new DomainError('ILLEGAL_TRANSITION', `Cannot start a booking in status ${row.status}`);
+
+      // A job scheduled for a given day/time can never be started earlier, even with a
+      // correct code: the grace window is the only early margin the schedule allows.
+      const graceMin = await this.settings.getNumber('booking.early_start_grace_min');
+      const earliestStartAt = row.scheduledStart.getTime() - graceMin * 60_000;
+      if (this.clock.now().getTime() < earliestStartAt) {
+        return { ok: false as const, code: 'TOO_EARLY' as const, detail: `Cannot start job before the scheduled appointment time (scheduled: ${row.scheduledStart.toISOString()}).` };
+      }
 
       // The injected clock, not `Date.now()`: the lockout is a timed rule, and the rest of the start-code
       // flow (issue, expiry) reads `this.clock`, so the two must agree or a lock can outlive its window

@@ -3,6 +3,7 @@ import { seedBreachTypes } from './breachTypes.js';
 import { seedCatalogue } from './catalogue.js';
 import { seedNotificationTemplates } from './notificationTemplates.js';
 import { seedPlaces } from './places.js';
+import { seedPlans } from './plans.js';
 import { seedRolesAndPermissions } from './roles.js';
 import { developmentStaffPassword, seedStaff, staffAccounts } from './staff.js';
 import { settingsDefinitions } from './settings.js';
@@ -21,6 +22,7 @@ const seedSettings = async (): Promise<void> => {
 const steps: readonly SeedStep[] = [
   { name: 'places (Lahore and its areas)', run: seedPlaces },
   { name: 'catalogue (categories, services, checklists)', run: seedCatalogue },
+  { name: 'subscription plans for Homes', run: seedPlans },
   { name: 'roles and permissions', run: seedRolesAndPermissions },
   { name: 'staff users and global commission', run: seedStaff },
   { name: 'test provider and customer accounts', run: seedTestAccounts },

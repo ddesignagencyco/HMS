@@ -27,6 +27,9 @@ export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
 export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
 
 const paisa = z.number().int().min(0);
+// A service must have a real value: base and minimum price can never be zero, matching the
+// `services_base_price_paisa_check`/`services_min_price_paisa_check` CHECKs in the database.
+const positivePaisa = z.number().int().positive();
 const pricingModel = z.enum(['FLAT', 'TIME_BASED', 'INSPECTION_FIRST']);
 const timeUnit = z.enum(['HOUR', 'DAY']);
 
@@ -44,8 +47,8 @@ export const serviceCreateSchema = z
     description: z.string().trim().min(1).max(2000),
     pricingModel,
     timeUnit: timeUnit.nullish(),
-    basePricePaisa: paisa,
-    minPricePaisa: paisa,
+    basePricePaisa: positivePaisa,
+    minPricePaisa: positivePaisa,
     maxPricePaisa: paisa,
     visitFeePaisa: paisa.default(0),
     expectedDurationMin: z.number().int().positive(),
@@ -63,8 +66,8 @@ export const serviceUpdateSchema = z
     nameEn: name.optional(),
     nameUr: name.optional(),
     description: z.string().trim().min(1).max(2000).optional(),
-    basePricePaisa: paisa.optional(),
-    minPricePaisa: paisa.optional(),
+    basePricePaisa: positivePaisa.optional(),
+    minPricePaisa: positivePaisa.optional(),
     maxPricePaisa: paisa.optional(),
     visitFeePaisa: paisa.optional(),
     expectedDurationMin: z.number().int().positive().optional(),
