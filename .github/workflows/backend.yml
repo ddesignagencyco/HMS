@@ -55,15 +55,17 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
+    # DATABASE_URL's connection_limit/pool_timeout: Prisma's default pool is numCPUs*2+1 -- 5 on
+    # this runner's 2 vCPUs -- and booking-checkout.test.ts's "50 concurrent checkouts" test opens
+    # 50 simultaneous transactions against it, which queue past the default 10s pool_timeout and
+    # surface as raw 500s instead of the 409 SLOT_TAKEN the test expects. Postgres's own default
+    # max_connections (100) has room for far more than this.
+    #
+    # This comment must stay above `env:`, never inside it: check-ci-env.ts parses this block
+    # line-by-line and stops at the first non-"KEY: value" line, deliberately, so a change here
+    # can't silently become a no-op -- an embedded comment line breaks it exactly that way.
     env:
       NODE_ENV: test
-      # connection_limit/pool_timeout: Prisma's default pool is numCPUs*2+1 -- 5 on this runner's
-      # 2 vCPUs -- and booking-checkout.test.ts's "50 concurrent checkouts for one slot" test opens
-      # 50 simultaneous transactions against it. With only 5 connections, most of those queue past
-      # Prisma's default 10s pool_timeout and surface as a raw 500 INTERNAL_ERROR instead of ever
-      # reaching the exclusion-constraint race the test is actually about (already translated to
-      # 409 SLOT_TAKEN in BookingService.create's catch block). Postgres's own default
-      # max_connections (100) has room for far more than this.
       DATABASE_URL: postgresql://smart_home:smart_home@localhost:5432/smart_home?schema=public&connection_limit=25&pool_timeout=30
       DIRECT_URL: postgresql://smart_home:smart_home@localhost:5432/smart_home?schema=public
       REDIS_URL: redis://localhost:6379
