@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Put, Query, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { DomainError } from '../common/domain-error.js';
@@ -49,11 +50,24 @@ export class DevController {
     summary: 'Download a file from the mock file storage',
     description: "Development-only: retrieves a file that was 'uploaded' to the mock storage adapter, which stands in for a real object store (like S3 or MinIO) in this environment."
   })
-  storageObject(@Param('bucket') bucket: string, @Param('key') key: string) {
+  storageObject(
+    @Param('bucket') bucket: string,
+    @Param('key') key: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response
+  ) {
     this.assertEnabled();
     const parsedBucket = parseWith(bucketSchema, bucket);
     const object = this.storage.read(parsedBucket, decodeURIComponent(key));
     if (object === null) throw new DomainError('NOT_FOUND', 'The object does not exist in the mock storage adapter');
+
+    const accept = (req.headers['accept'] ?? '') as string;
+    const wantsRaw = req.query['raw'] === '1' || req.query['raw'] === 'true' || accept.includes('image/');
+    if (wantsRaw && !accept.includes('application/json')) {
+      res.type(object.contentType);
+      return res.send(Buffer.from(object.content));
+    }
+
     return { bucket: parsedBucket, key: decodeURIComponent(key), contentType: object.contentType, sizeBytes: object.content.byteLength, contentBase64: Buffer.from(object.content).toString('base64') };
   }
 

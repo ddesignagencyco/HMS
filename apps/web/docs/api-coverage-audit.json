@@ -1,0 +1,3179 @@
+[
+  {
+    "module": "health",
+    "method": "GET",
+    "path": "/",
+    "summary": "Welcome message",
+    "matchedFiles": [
+      "src/features/account/addresses-view.tsx",
+      "src/features/account/api.ts",
+      "src/features/account/me-api.ts",
+      "src/features/account/me-queries.ts",
+      "src/features/account/profile-view.tsx",
+      "src/features/admin/api.ts",
+      "src/features/admin/approvals-view.tsx",
+      "src/features/admin/audit-view.tsx",
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/cases-queries.ts",
+      "src/features/admin/catalogue-view.tsx",
+      "src/features/admin/commission-rules.tsx",
+      "src/features/admin/complaints-view.tsx",
+      "src/features/admin/conduct-view.tsx",
+      "src/features/admin/customers-view.tsx",
+      "src/features/admin/disputes-view.tsx",
+      "src/features/admin/ops-board.tsx",
+      "src/features/admin/ops-view.tsx",
+      "src/features/admin/provider-ratings.tsx",
+      "src/features/admin/queries.ts",
+      "src/features/admin/roles-view.tsx",
+      "src/features/admin/settings-view.tsx",
+      "src/features/admin/templates-view.tsx",
+      "src/features/auth/account-security.tsx",
+      "src/features/auth/api.ts",
+      "src/features/auth/auth-actions.ts",
+      "src/features/auth/auth-background.tsx",
+      "src/features/auth/auth-feedback.ts",
+      "src/features/auth/auth-fields.tsx",
+      "src/features/auth/auth-shell.tsx",
+      "src/features/auth/change-password-form.tsx",
+      "src/features/auth/forgot-form.tsx",
+      "src/features/auth/otp-field.tsx",
+      "src/features/auth/password-popover.tsx",
+      "src/features/auth/register-form.tsx",
+      "src/features/auth/reset-password-form.tsx",
+      "src/features/auth/routing.ts",
+      "src/features/auth/schemas.ts",
+      "src/features/auth/session.tsx",
+      "src/features/auth/sign-in-form.tsx",
+      "src/features/auth/social-buttons.tsx",
+      "src/features/auth/target.ts",
+      "src/features/auth/totp-form.tsx",
+      "src/features/auth/totp-qr.tsx",
+      "src/features/auth/verify-otp-form.tsx",
+      "src/features/booking/address-step.tsx",
+      "src/features/booking/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-chat.tsx",
+      "src/features/booking/booking-detail.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/booking/booking-list.tsx",
+      "src/features/booking/booking-stepper.tsx",
+      "src/features/booking/checkout-return.tsx",
+      "src/features/booking/inbox-view.tsx",
+      "src/features/booking/invoice-download.tsx",
+      "src/features/booking/provider-choice.tsx",
+      "src/features/booking/queries.ts",
+      "src/features/booking/revision-card.tsx",
+      "src/features/booking/service-names.ts",
+      "src/features/booking/start-code-card.tsx",
+      "src/features/booking/status.ts",
+      "src/features/catalogue/api.ts",
+      "src/features/catalogue/pricing.ts",
+      "src/features/catalogue/queries.ts",
+      "src/features/complaints/api.ts",
+      "src/features/complaints/queries.ts",
+      "src/features/complaints/receipt-complaint-view.tsx",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/customer/bookings-view.tsx",
+      "src/features/customer/dashboard-view.tsx",
+      "src/features/customer/favourites-view.tsx",
+      "src/features/customer/plans-view.tsx",
+      "src/features/discovery/availability-panel.tsx",
+      "src/features/discovery/catalogue-explorer.tsx",
+      "src/features/discovery/profile-sections.tsx",
+      "src/features/discovery/provider-card.tsx",
+      "src/features/discovery/provider-profile.tsx",
+      "src/features/discovery/providers-search.tsx",
+      "src/features/discovery/save-provider-button.tsx",
+      "src/features/discovery/search-refinements.tsx",
+      "src/features/discovery/service-detail.tsx",
+      "src/features/discovery/states.tsx",
+      "src/features/discovery/track-booking.tsx",
+      "src/features/home/faq-accordion.tsx",
+      "src/features/home/hero-search.tsx",
+      "src/features/home/home-catalogue.tsx",
+      "src/features/home/home-platform.tsx",
+      "src/features/home/home-sections.tsx",
+      "src/features/notifications/api.ts",
+      "src/features/places/api.ts",
+      "src/features/places/queries.ts",
+      "src/features/plans/admin-plans-view.tsx",
+      "src/features/plans/api.ts",
+      "src/features/plans/customer-plans-view.tsx",
+      "src/features/plans/public-plans-view.tsx",
+      "src/features/plans/queries.ts",
+      "src/features/portal/api.ts",
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/finance-views.tsx",
+      "src/features/portal/payout-batches-view.tsx",
+      "src/features/portal/reports-views.tsx",
+      "src/features/portal/staff-views.tsx",
+      "src/features/portal/verification-console.tsx",
+      "src/features/provider/api.ts",
+      "src/features/provider/areas-view.tsx",
+      "src/features/provider/calendar-view.tsx",
+      "src/features/provider/conduct-view.tsx",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/documents-view.tsx",
+      "src/features/provider/earnings-view.tsx",
+      "src/features/provider/job-view.tsx",
+      "src/features/provider/limits.ts",
+      "src/features/provider/offers-view.tsx",
+      "src/features/provider/payouts-view.tsx",
+      "src/features/provider/profile-view.tsx",
+      "src/features/provider/queries.ts",
+      "src/features/provider/ratings-view.tsx",
+      "src/features/provider/services-view.tsx",
+      "src/features/provider/submit-card.tsx",
+      "src/features/provider/today-view.tsx",
+      "src/features/search/api.ts",
+      "src/features/search/location.ts",
+      "src/features/search/queries.ts",
+      "src/features/search/types.ts",
+      "src/features/uploads/api.ts",
+      "src/features/uploads/image.ts",
+      "src/features/verification/api.ts",
+      "src/features/verification/verification-flow.tsx"
+    ],
+    "frontendStatus": "Not required for product UI (System Health Probe)",
+    "userJourney": "Infrastructure / Liveness"
+  },
+  {
+    "module": "health",
+    "method": "GET",
+    "path": "/health/live",
+    "summary": "Is the server process running?",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for product UI (System Health Probe)",
+    "userJourney": "Infrastructure / Liveness"
+  },
+  {
+    "module": "health",
+    "method": "GET",
+    "path": "/health/ready",
+    "summary": "Is the API fully ready to handle requests?",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for product UI (System Health Probe)",
+    "userJourney": "Infrastructure / Liveness"
+  },
+  {
+    "module": "health",
+    "method": "GET",
+    "path": "/health/queues",
+    "summary": "How many jobs are waiting in each background queue",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for product UI (System Health Probe)",
+    "userJourney": "Infrastructure / Liveness"
+  },
+  {
+    "module": "development",
+    "method": "GET",
+    "path": "/api/v1/dev/inbox",
+    "summary": "View messages the mock SMS/email/WhatsApp senders \"sent\"",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for customer UI (Development / Mock only)",
+    "userJourney": "Development & Testing"
+  },
+  {
+    "module": "development",
+    "method": "GET",
+    "path": "/api/v1/dev/storage/{bucket}/{key}",
+    "summary": "Download a file from the mock file storage",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for customer UI (Development / Mock only)",
+    "userJourney": "Development & Testing"
+  },
+  {
+    "module": "development",
+    "method": "PUT",
+    "path": "/api/v1/dev/storage/{bucket}/{key}",
+    "summary": "Upload a file to the mock file storage",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for customer UI (Development / Mock only)",
+    "userJourney": "Development & Testing"
+  },
+  {
+    "module": "settings",
+    "method": "GET",
+    "path": "/api/v1/admin/settings",
+    "summary": "List all platform settings",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/cases-queries.ts",
+      "src/features/admin/settings-view.tsx",
+      "src/features/provider/payouts-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active settings journey"
+  },
+  {
+    "module": "settings",
+    "method": "GET",
+    "path": "/api/v1/admin/settings/{key}",
+    "summary": "Read one setting's current value",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/settings-view.tsx",
+      "src/features/provider/payouts-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active settings journey"
+  },
+  {
+    "module": "settings",
+    "method": "PUT",
+    "path": "/api/v1/admin/settings/{key}",
+    "summary": "Change a setting's value",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/settings-view.tsx",
+      "src/features/provider/payouts-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active settings journey"
+  },
+  {
+    "module": "webhooks",
+    "method": "POST",
+    "path": "/api/v1/webhooks/payments/{provider}",
+    "summary": "Payment provider webhook (not for direct use)",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for product UI (Inbound Gateway Webhook)",
+    "userJourney": "External Gateway Integration"
+  },
+  {
+    "module": "development",
+    "method": "GET",
+    "path": "/api/v1/dev/payments/{paymentId}",
+    "summary": "Mock payment page (where the mock gateway redirects to)",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for customer UI (Development / Mock only)",
+    "userJourney": "Development & Testing"
+  },
+  {
+    "module": "development",
+    "method": "GET",
+    "path": "/api/v1/dev/payments/{paymentId}/complete",
+    "summary": "Complete a mock payment (browser-navigable)",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for customer UI (Development / Mock only)",
+    "userJourney": "Development & Testing"
+  },
+  {
+    "module": "development",
+    "method": "POST",
+    "path": "/api/v1/dev/payments/{paymentId}/complete",
+    "summary": "Complete a mock payment",
+    "matchedFiles": [],
+    "frontendStatus": "Not required for customer UI (Development / Mock only)",
+    "userJourney": "Development & Testing"
+  },
+  {
+    "module": "payment",
+    "method": "GET",
+    "path": "/api/v1/provider/wallet",
+    "summary": "See my wallet and commission debt",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/earnings-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active payment journey"
+  },
+  {
+    "module": "payment",
+    "method": "POST",
+    "path": "/api/v1/provider/debt/pay",
+    "summary": "Pay commission debt online",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active payment journey"
+  },
+  {
+    "module": "payment",
+    "method": "GET",
+    "path": "/api/v1/provider/payout-accounts",
+    "summary": "List my payout accounts",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active payment journey"
+  },
+  {
+    "module": "payment",
+    "method": "POST",
+    "path": "/api/v1/provider/payout-accounts",
+    "summary": "Add a payout account",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active payment journey"
+  },
+  {
+    "module": "payment",
+    "method": "GET",
+    "path": "/api/v1/provider/earnings",
+    "summary": "See my earnings",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/earnings-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active payment journey"
+  },
+  {
+    "module": "payment",
+    "method": "GET",
+    "path": "/api/v1/provider/payouts",
+    "summary": "List my payouts",
+    "matchedFiles": [
+      "src/features/portal/payout-batches-view.tsx",
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active payment journey"
+  },
+  {
+    "module": "payment",
+    "method": "POST",
+    "path": "/api/v1/provider/payouts",
+    "summary": "Request a payout",
+    "matchedFiles": [
+      "src/features/portal/payout-batches-view.tsx",
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active payment journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/escrow",
+    "summary": "See the money held in escrow",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/ops-view.tsx",
+      "src/features/admin/queries.ts",
+      "src/features/auth/routing.ts",
+      "src/features/portal/finance-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/refunds",
+    "summary": "List refunds",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/finance-views.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "POST",
+    "path": "/api/v1/finance/refunds",
+    "summary": "Refund a disputed booking by hand",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/finance-views.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/payouts",
+    "summary": "List payout requests",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/payout-batches-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "POST",
+    "path": "/api/v1/finance/payouts/{id}/approve",
+    "summary": "Approve a payout",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/payout-batches-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/payout-batches",
+    "summary": "List payout batches",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/finance-views.tsx",
+      "src/features/portal/payout-batches-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "POST",
+    "path": "/api/v1/finance/payout-batches",
+    "summary": "Create a payout batch",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/finance-views.tsx",
+      "src/features/portal/payout-batches-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/payout-batches/{id}/export.csv",
+    "summary": "Download the bank file",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/payout-batches/{id}/statements/{providerId}",
+    "summary": "A provider’s statement for a batch",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "POST",
+    "path": "/api/v1/finance/payout-batches/{id}/mark-paid",
+    "summary": "Record the bank’s result for a batch",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/cash-reconciliation",
+    "summary": "Reconcile cash jobs",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/debts",
+    "summary": "List commission debts",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/ledger",
+    "summary": "Explore the ledger",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/finance-views.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "POST",
+    "path": "/api/v1/finance/reconciliation/run",
+    "summary": "Run the ledger reconciliation now",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/finance-views.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/reports",
+    "summary": "My reports",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/reports-views.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "POST",
+    "path": "/api/v1/finance/reports",
+    "summary": "Ask for a report",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/reports-views.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/reports/{id}",
+    "summary": "One report run",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/reports-views.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "finance",
+    "method": "GET",
+    "path": "/api/v1/finance/reports/{id}/download",
+    "summary": "Download a finished report",
+    "matchedFiles": [
+      "src/features/portal/finance-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active finance journey"
+  },
+  {
+    "module": "notifications",
+    "method": "GET",
+    "path": "/api/v1/notifications",
+    "summary": "My notification centre",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/cases-queries.ts",
+      "src/features/admin/ops-board.tsx",
+      "src/features/admin/templates-view.tsx",
+      "src/features/notifications/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active notifications journey"
+  },
+  {
+    "module": "notifications",
+    "method": "POST",
+    "path": "/api/v1/notifications/read-all",
+    "summary": "Mark all my notifications read",
+    "matchedFiles": [
+      "src/features/notifications/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active notifications journey"
+  },
+  {
+    "module": "notifications",
+    "method": "POST",
+    "path": "/api/v1/notifications/{id}/read",
+    "summary": "Mark one notification read",
+    "matchedFiles": [
+      "src/features/notifications/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active notifications journey"
+  },
+  {
+    "module": "notifications",
+    "method": "GET",
+    "path": "/api/v1/admin/notifications",
+    "summary": "The notification delivery log",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/templates-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active notifications journey"
+  },
+  {
+    "module": "notifications",
+    "method": "GET",
+    "path": "/api/v1/admin/templates",
+    "summary": "List notification templates",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/templates-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active notifications journey"
+  },
+  {
+    "module": "notifications",
+    "method": "POST",
+    "path": "/api/v1/admin/templates",
+    "summary": "Create a template",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/templates-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active notifications journey"
+  },
+  {
+    "module": "notifications",
+    "method": "POST",
+    "path": "/api/v1/admin/templates/preview",
+    "summary": "Preview a template",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/templates-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active notifications journey"
+  },
+  {
+    "module": "notifications",
+    "method": "GET",
+    "path": "/api/v1/admin/templates/{id}",
+    "summary": "Read a template",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/templates-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active notifications journey"
+  },
+  {
+    "module": "notifications",
+    "method": "PUT",
+    "path": "/api/v1/admin/templates/{id}",
+    "summary": "Edit a template",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/templates-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active notifications journey"
+  },
+  {
+    "module": "notifications",
+    "method": "POST",
+    "path": "/api/v1/webhooks/sms/{provider}",
+    "summary": "SMS delivery receipt (not for direct use)",
+    "matchedFiles": [],
+    "frontendStatus": "Backend implemented but frontend integration missing",
+    "userJourney": "Staff / Internal / System"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/register",
+    "summary": "Sign up for a new account",
+    "matchedFiles": [
+      "src/features/auth/api.ts",
+      "src/features/auth/auth-shell.tsx",
+      "src/features/auth/schemas.ts",
+      "src/features/auth/sign-in-form.tsx",
+      "src/features/auth/verify-otp-form.tsx",
+      "src/features/plans/public-plans-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/otp/request",
+    "summary": "Send a one-time verification code",
+    "matchedFiles": [
+      "src/features/auth/api.ts",
+      "src/features/auth/schemas.ts",
+      "src/features/auth/verify-otp-form.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/otp/verify",
+    "summary": "Verify a one-time code",
+    "matchedFiles": [
+      "src/features/auth/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "summary": "Log in with a password",
+    "matchedFiles": [
+      "src/features/auth/api.ts",
+      "src/features/auth/totp-form.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/refresh",
+    "summary": "Get a new access token",
+    "matchedFiles": [],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/logout",
+    "summary": "Log out",
+    "matchedFiles": [
+      "src/features/auth/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/password/forgot",
+    "summary": "Request a password reset code",
+    "matchedFiles": [
+      "src/features/auth/api.ts",
+      "src/features/auth/forgot-form.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/password/reset",
+    "summary": "Reset your password",
+    "matchedFiles": [
+      "src/features/auth/api.ts",
+      "src/features/auth/schemas.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "summary": "Get your own profile",
+    "matchedFiles": [
+      "src/features/account/me-api.ts",
+      "src/features/auth/api.ts",
+      "src/features/auth/routing.ts",
+      "src/features/auth/session.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "GET",
+    "path": "/api/v1/auth/session",
+    "summary": "Ask whether there is a session, without failing when there is not",
+    "matchedFiles": [
+      "src/features/account/me-queries.ts",
+      "src/features/account/profile-view.tsx",
+      "src/features/auth/api.ts",
+      "src/features/auth/session.tsx",
+      "src/features/booking/address-step.tsx",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/discovery/save-provider-button.tsx",
+      "src/features/discovery/track-booking.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/totp/setup",
+    "summary": "Start setting up two-factor authentication",
+    "matchedFiles": [
+      "src/features/auth/account-security.tsx",
+      "src/features/auth/api.ts",
+      "src/features/auth/totp-form.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "POST",
+    "path": "/api/v1/auth/totp/verify",
+    "summary": "Confirm and turn on two-factor authentication",
+    "matchedFiles": [
+      "src/features/auth/account-security.tsx",
+      "src/features/auth/api.ts",
+      "src/features/auth/totp-form.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "auth",
+    "method": "DELETE",
+    "path": "/api/v1/auth/totp",
+    "summary": "Turn off two-factor authentication",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/auth/account-security.tsx",
+      "src/features/auth/api.ts",
+      "src/features/auth/routing.ts",
+      "src/features/auth/sign-in-form.tsx",
+      "src/features/auth/totp-form.tsx",
+      "src/features/auth/verify-otp-form.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active auth journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "GET",
+    "path": "/api/v1/catalogue/categories",
+    "summary": "Browse the service categories",
+    "matchedFiles": [
+      "src/features/admin/catalogue-view.tsx",
+      "src/features/catalogue/api.ts",
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "GET",
+    "path": "/api/v1/catalogue/categories/{slug}/services",
+    "summary": "Browse the services in a category",
+    "matchedFiles": [
+      "src/features/catalogue/api.ts",
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "GET",
+    "path": "/api/v1/catalogue/services/{slug}/issue-options",
+    "summary": "The common faults a customer can pick from when booking this service",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/catalogue/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "GET",
+    "path": "/api/v1/catalogue/services/{slug}",
+    "summary": "Get one service, including its checklist",
+    "matchedFiles": [
+      "src/features/admin/catalogue-view.tsx",
+      "src/features/booking/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/catalogue/api.ts",
+      "src/features/discovery/service-detail.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "POST",
+    "path": "/api/v1/admin/catalogue/categories",
+    "summary": "Create a service category",
+    "matchedFiles": [
+      "src/features/admin/catalogue-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "PATCH",
+    "path": "/api/v1/admin/catalogue/categories/{id}",
+    "summary": "Update a service category",
+    "matchedFiles": [
+      "src/features/admin/catalogue-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "POST",
+    "path": "/api/v1/admin/catalogue/services",
+    "summary": "Create a bookable service",
+    "matchedFiles": [
+      "src/features/admin/catalogue-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "PATCH",
+    "path": "/api/v1/admin/catalogue/services/{id}",
+    "summary": "Update a bookable service",
+    "matchedFiles": [
+      "src/features/admin/catalogue-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "PUT",
+    "path": "/api/v1/admin/catalogue/services/{id}/checklist",
+    "summary": "Replace a service's checklist",
+    "matchedFiles": [],
+    "frontendStatus": "Backend implemented but frontend integration missing",
+    "userJourney": "Staff / Internal / System"
+  },
+  {
+    "module": "catalogue",
+    "method": "PUT",
+    "path": "/api/v1/admin/catalogue/services/{id}/issue-options",
+    "summary": "Replace a service's common-faults list",
+    "matchedFiles": [],
+    "frontendStatus": "Backend implemented but frontend integration missing",
+    "userJourney": "Staff / Internal / System"
+  },
+  {
+    "module": "catalogue",
+    "method": "GET",
+    "path": "/api/v1/admin/catalogue/commission-rules",
+    "summary": "List commission rules",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/commission-rules.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "POST",
+    "path": "/api/v1/admin/catalogue/commission-rules",
+    "summary": "Set a commission rate",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/commission-rules.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "POST",
+    "path": "/api/v1/admin/catalogue/commission-rules/{id}/end",
+    "summary": "Close a commission rule",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "GET",
+    "path": "/api/v1/provider/services",
+    "summary": "List the services I offer",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/services-view.tsx",
+      "src/features/provider/submit-card.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "PUT",
+    "path": "/api/v1/provider/services/{serviceId}",
+    "summary": "Offer a service at your price",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "DELETE",
+    "path": "/api/v1/provider/services/{serviceId}",
+    "summary": "Stop offering a service",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "GET",
+    "path": "/api/v1/admin/provider-services",
+    "summary": "Review provider service offers",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "POST",
+    "path": "/api/v1/admin/provider-services/{providerId}/{serviceId}/approve",
+    "summary": "Approve a provider's offer to provide a service",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "catalogue",
+    "method": "POST",
+    "path": "/api/v1/admin/provider-services/{providerId}/{serviceId}/reject",
+    "summary": "Reject a provider's offer to provide a service",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active catalogue journey"
+  },
+  {
+    "module": "places",
+    "method": "GET",
+    "path": "/api/v1/places/cities",
+    "summary": "List the cities the platform operates in",
+    "matchedFiles": [
+      "src/features/places/api.ts",
+      "src/features/provider/areas-view.tsx",
+      "src/features/search/location.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active places journey"
+  },
+  {
+    "module": "places",
+    "method": "GET",
+    "path": "/api/v1/places/cities/{cityId}/areas",
+    "summary": "List the areas within a city",
+    "matchedFiles": [
+      "src/features/places/api.ts",
+      "src/features/search/location.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active places journey"
+  },
+  {
+    "module": "customer",
+    "method": "GET",
+    "path": "/api/v1/customer/addresses",
+    "summary": "List my saved addresses",
+    "matchedFiles": [
+      "src/features/account/addresses-view.tsx",
+      "src/features/account/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/customer/booking-detail-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "POST",
+    "path": "/api/v1/customer/addresses",
+    "summary": "Save a new address",
+    "matchedFiles": [
+      "src/features/account/addresses-view.tsx",
+      "src/features/account/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/customer/booking-detail-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "PATCH",
+    "path": "/api/v1/customer/addresses/{id}",
+    "summary": "Update a saved address",
+    "matchedFiles": [
+      "src/features/account/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "DELETE",
+    "path": "/api/v1/customer/addresses/{id}",
+    "summary": "Remove a saved address",
+    "matchedFiles": [
+      "src/features/account/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "GET",
+    "path": "/api/v1/me",
+    "summary": "Get your own profile",
+    "matchedFiles": [
+      "src/features/account/addresses-view.tsx",
+      "src/features/account/api.ts",
+      "src/features/account/me-api.ts",
+      "src/features/account/me-queries.ts",
+      "src/features/account/profile-view.tsx",
+      "src/features/admin/api.ts",
+      "src/features/admin/approvals-view.tsx",
+      "src/features/admin/audit-view.tsx",
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/cases-queries.ts",
+      "src/features/admin/catalogue-view.tsx",
+      "src/features/admin/commission-rules.tsx",
+      "src/features/admin/complaints-view.tsx",
+      "src/features/admin/conduct-view.tsx",
+      "src/features/admin/customers-view.tsx",
+      "src/features/admin/disputes-view.tsx",
+      "src/features/admin/ops-board.tsx",
+      "src/features/admin/ops-view.tsx",
+      "src/features/admin/provider-ratings.tsx",
+      "src/features/admin/queries.ts",
+      "src/features/admin/roles-view.tsx",
+      "src/features/admin/settings-view.tsx",
+      "src/features/admin/templates-view.tsx",
+      "src/features/auth/account-security.tsx",
+      "src/features/auth/api.ts",
+      "src/features/auth/auth-actions.ts",
+      "src/features/auth/auth-background.tsx",
+      "src/features/auth/auth-feedback.ts",
+      "src/features/auth/auth-fields.tsx",
+      "src/features/auth/auth-shell.tsx",
+      "src/features/auth/change-password-form.tsx",
+      "src/features/auth/forgot-form.tsx",
+      "src/features/auth/otp-field.tsx",
+      "src/features/auth/password-popover.tsx",
+      "src/features/auth/register-form.tsx",
+      "src/features/auth/reset-password-form.tsx",
+      "src/features/auth/routing.ts",
+      "src/features/auth/schemas.ts",
+      "src/features/auth/session.tsx",
+      "src/features/auth/sign-in-form.tsx",
+      "src/features/auth/social-buttons.tsx",
+      "src/features/auth/target.ts",
+      "src/features/auth/totp-form.tsx",
+      "src/features/auth/totp-qr.tsx",
+      "src/features/auth/verify-otp-form.tsx",
+      "src/features/booking/address-step.tsx",
+      "src/features/booking/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-chat.tsx",
+      "src/features/booking/booking-detail.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/booking/booking-list.tsx",
+      "src/features/booking/booking-stepper.tsx",
+      "src/features/booking/checkout-return.tsx",
+      "src/features/booking/inbox-view.tsx",
+      "src/features/booking/invoice-download.tsx",
+      "src/features/booking/provider-choice.tsx",
+      "src/features/booking/queries.ts",
+      "src/features/booking/revision-card.tsx",
+      "src/features/booking/service-names.ts",
+      "src/features/booking/start-code-card.tsx",
+      "src/features/booking/status.ts",
+      "src/features/catalogue/api.ts",
+      "src/features/catalogue/pricing.ts",
+      "src/features/catalogue/queries.ts",
+      "src/features/complaints/api.ts",
+      "src/features/complaints/queries.ts",
+      "src/features/complaints/receipt-complaint-view.tsx",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/customer/bookings-view.tsx",
+      "src/features/customer/dashboard-view.tsx",
+      "src/features/customer/favourites-view.tsx",
+      "src/features/customer/plans-view.tsx",
+      "src/features/discovery/availability-panel.tsx",
+      "src/features/discovery/catalogue-explorer.tsx",
+      "src/features/discovery/profile-sections.tsx",
+      "src/features/discovery/provider-card.tsx",
+      "src/features/discovery/provider-profile.tsx",
+      "src/features/discovery/providers-search.tsx",
+      "src/features/discovery/save-provider-button.tsx",
+      "src/features/discovery/search-refinements.tsx",
+      "src/features/discovery/service-detail.tsx",
+      "src/features/discovery/states.tsx",
+      "src/features/discovery/track-booking.tsx",
+      "src/features/home/faq-accordion.tsx",
+      "src/features/home/hero-search.tsx",
+      "src/features/home/home-catalogue.tsx",
+      "src/features/home/home-platform.tsx",
+      "src/features/home/home-sections.tsx",
+      "src/features/notifications/api.ts",
+      "src/features/places/api.ts",
+      "src/features/places/queries.ts",
+      "src/features/plans/admin-plans-view.tsx",
+      "src/features/plans/api.ts",
+      "src/features/plans/customer-plans-view.tsx",
+      "src/features/plans/public-plans-view.tsx",
+      "src/features/plans/queries.ts",
+      "src/features/portal/api.ts",
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/finance-views.tsx",
+      "src/features/portal/payout-batches-view.tsx",
+      "src/features/portal/reports-views.tsx",
+      "src/features/portal/staff-views.tsx",
+      "src/features/portal/verification-console.tsx",
+      "src/features/provider/api.ts",
+      "src/features/provider/areas-view.tsx",
+      "src/features/provider/calendar-view.tsx",
+      "src/features/provider/conduct-view.tsx",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/documents-view.tsx",
+      "src/features/provider/earnings-view.tsx",
+      "src/features/provider/job-view.tsx",
+      "src/features/provider/limits.ts",
+      "src/features/provider/offers-view.tsx",
+      "src/features/provider/payouts-view.tsx",
+      "src/features/provider/profile-view.tsx",
+      "src/features/provider/queries.ts",
+      "src/features/provider/ratings-view.tsx",
+      "src/features/provider/services-view.tsx",
+      "src/features/provider/submit-card.tsx",
+      "src/features/provider/today-view.tsx",
+      "src/features/search/api.ts",
+      "src/features/search/location.ts",
+      "src/features/search/queries.ts",
+      "src/features/search/types.ts",
+      "src/features/uploads/api.ts",
+      "src/features/uploads/image.ts",
+      "src/features/verification/api.ts",
+      "src/features/verification/verification-flow.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "PATCH",
+    "path": "/api/v1/me",
+    "summary": "Update your own profile",
+    "matchedFiles": [
+      "src/features/account/addresses-view.tsx",
+      "src/features/account/api.ts",
+      "src/features/account/me-api.ts",
+      "src/features/account/me-queries.ts",
+      "src/features/account/profile-view.tsx",
+      "src/features/admin/api.ts",
+      "src/features/admin/approvals-view.tsx",
+      "src/features/admin/audit-view.tsx",
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/cases-queries.ts",
+      "src/features/admin/catalogue-view.tsx",
+      "src/features/admin/commission-rules.tsx",
+      "src/features/admin/complaints-view.tsx",
+      "src/features/admin/conduct-view.tsx",
+      "src/features/admin/customers-view.tsx",
+      "src/features/admin/disputes-view.tsx",
+      "src/features/admin/ops-board.tsx",
+      "src/features/admin/ops-view.tsx",
+      "src/features/admin/provider-ratings.tsx",
+      "src/features/admin/queries.ts",
+      "src/features/admin/roles-view.tsx",
+      "src/features/admin/settings-view.tsx",
+      "src/features/admin/templates-view.tsx",
+      "src/features/auth/account-security.tsx",
+      "src/features/auth/api.ts",
+      "src/features/auth/auth-actions.ts",
+      "src/features/auth/auth-background.tsx",
+      "src/features/auth/auth-feedback.ts",
+      "src/features/auth/auth-fields.tsx",
+      "src/features/auth/auth-shell.tsx",
+      "src/features/auth/change-password-form.tsx",
+      "src/features/auth/forgot-form.tsx",
+      "src/features/auth/otp-field.tsx",
+      "src/features/auth/password-popover.tsx",
+      "src/features/auth/register-form.tsx",
+      "src/features/auth/reset-password-form.tsx",
+      "src/features/auth/routing.ts",
+      "src/features/auth/schemas.ts",
+      "src/features/auth/session.tsx",
+      "src/features/auth/sign-in-form.tsx",
+      "src/features/auth/social-buttons.tsx",
+      "src/features/auth/target.ts",
+      "src/features/auth/totp-form.tsx",
+      "src/features/auth/totp-qr.tsx",
+      "src/features/auth/verify-otp-form.tsx",
+      "src/features/booking/address-step.tsx",
+      "src/features/booking/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-chat.tsx",
+      "src/features/booking/booking-detail.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/booking/booking-list.tsx",
+      "src/features/booking/booking-stepper.tsx",
+      "src/features/booking/checkout-return.tsx",
+      "src/features/booking/inbox-view.tsx",
+      "src/features/booking/invoice-download.tsx",
+      "src/features/booking/provider-choice.tsx",
+      "src/features/booking/queries.ts",
+      "src/features/booking/revision-card.tsx",
+      "src/features/booking/service-names.ts",
+      "src/features/booking/start-code-card.tsx",
+      "src/features/booking/status.ts",
+      "src/features/catalogue/api.ts",
+      "src/features/catalogue/pricing.ts",
+      "src/features/catalogue/queries.ts",
+      "src/features/complaints/api.ts",
+      "src/features/complaints/queries.ts",
+      "src/features/complaints/receipt-complaint-view.tsx",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/customer/bookings-view.tsx",
+      "src/features/customer/dashboard-view.tsx",
+      "src/features/customer/favourites-view.tsx",
+      "src/features/customer/plans-view.tsx",
+      "src/features/discovery/availability-panel.tsx",
+      "src/features/discovery/catalogue-explorer.tsx",
+      "src/features/discovery/profile-sections.tsx",
+      "src/features/discovery/provider-card.tsx",
+      "src/features/discovery/provider-profile.tsx",
+      "src/features/discovery/providers-search.tsx",
+      "src/features/discovery/save-provider-button.tsx",
+      "src/features/discovery/search-refinements.tsx",
+      "src/features/discovery/service-detail.tsx",
+      "src/features/discovery/states.tsx",
+      "src/features/discovery/track-booking.tsx",
+      "src/features/home/faq-accordion.tsx",
+      "src/features/home/hero-search.tsx",
+      "src/features/home/home-catalogue.tsx",
+      "src/features/home/home-platform.tsx",
+      "src/features/home/home-sections.tsx",
+      "src/features/notifications/api.ts",
+      "src/features/places/api.ts",
+      "src/features/places/queries.ts",
+      "src/features/plans/admin-plans-view.tsx",
+      "src/features/plans/api.ts",
+      "src/features/plans/customer-plans-view.tsx",
+      "src/features/plans/public-plans-view.tsx",
+      "src/features/plans/queries.ts",
+      "src/features/portal/api.ts",
+      "src/features/portal/finance-api.ts",
+      "src/features/portal/finance-views.tsx",
+      "src/features/portal/payout-batches-view.tsx",
+      "src/features/portal/reports-views.tsx",
+      "src/features/portal/staff-views.tsx",
+      "src/features/portal/verification-console.tsx",
+      "src/features/provider/api.ts",
+      "src/features/provider/areas-view.tsx",
+      "src/features/provider/calendar-view.tsx",
+      "src/features/provider/conduct-view.tsx",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/documents-view.tsx",
+      "src/features/provider/earnings-view.tsx",
+      "src/features/provider/job-view.tsx",
+      "src/features/provider/limits.ts",
+      "src/features/provider/offers-view.tsx",
+      "src/features/provider/payouts-view.tsx",
+      "src/features/provider/profile-view.tsx",
+      "src/features/provider/queries.ts",
+      "src/features/provider/ratings-view.tsx",
+      "src/features/provider/services-view.tsx",
+      "src/features/provider/submit-card.tsx",
+      "src/features/provider/today-view.tsx",
+      "src/features/search/api.ts",
+      "src/features/search/location.ts",
+      "src/features/search/queries.ts",
+      "src/features/search/types.ts",
+      "src/features/uploads/api.ts",
+      "src/features/uploads/image.ts",
+      "src/features/verification/api.ts",
+      "src/features/verification/verification-flow.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "PATCH",
+    "path": "/api/v1/me/password",
+    "summary": "Change your password",
+    "matchedFiles": [
+      "src/features/account/me-api.ts",
+      "src/features/account/me-queries.ts",
+      "src/features/auth/account-security.tsx",
+      "src/features/auth/change-password-form.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "POST",
+    "path": "/api/v1/me/deactivate",
+    "summary": "Deactivate your account",
+    "matchedFiles": [
+      "src/features/account/me-api.ts",
+      "src/features/account/me-queries.ts",
+      "src/features/account/profile-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "GET",
+    "path": "/api/v1/me/favourites",
+    "summary": "List your favourite providers",
+    "matchedFiles": [
+      "src/features/account/me-api.ts",
+      "src/features/account/me-queries.ts",
+      "src/features/customer/favourites-view.tsx",
+      "src/features/discovery/provider-profile.tsx",
+      "src/features/discovery/save-provider-button.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "POST",
+    "path": "/api/v1/me/favourites/{providerId}",
+    "summary": "Add a provider to your favourites",
+    "matchedFiles": [
+      "src/features/account/me-api.ts",
+      "src/features/account/me-queries.ts",
+      "src/features/customer/favourites-view.tsx",
+      "src/features/discovery/save-provider-button.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "customer",
+    "method": "DELETE",
+    "path": "/api/v1/me/favourites/{providerId}",
+    "summary": "Remove a provider from your favourites",
+    "matchedFiles": [
+      "src/features/account/me-api.ts",
+      "src/features/account/me-queries.ts",
+      "src/features/customer/favourites-view.tsx",
+      "src/features/discovery/save-provider-button.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active customer journey"
+  },
+  {
+    "module": "provider",
+    "method": "GET",
+    "path": "/api/v1/provider/profile",
+    "summary": "Read my provider profile",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/profile-view.tsx",
+      "src/features/provider/submit-card.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "PATCH",
+    "path": "/api/v1/provider/profile",
+    "summary": "Update my provider profile",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/profile-view.tsx",
+      "src/features/provider/submit-card.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "GET",
+    "path": "/api/v1/provider/availability",
+    "summary": "Read my weekly availability calendar",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "PUT",
+    "path": "/api/v1/provider/availability",
+    "summary": "Replace my weekly availability calendar",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "GET",
+    "path": "/api/v1/provider/time-off",
+    "summary": "List my recorded leave periods",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/provider/time-off",
+    "summary": "Record a leave period",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "DELETE",
+    "path": "/api/v1/provider/time-off/{id}",
+    "summary": "Cancel a leave period",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "GET",
+    "path": "/api/v1/provider/service-areas",
+    "summary": "List the areas I serve",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/areas-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "PUT",
+    "path": "/api/v1/provider/service-areas",
+    "summary": "Replace the areas I serve",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/areas-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/provider/submit",
+    "summary": "Submit my profile for approval",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/submit-card.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/admin/providers/{providerId}/approve",
+    "summary": "Approve a provider",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/admin/providers/{providerId}/reject",
+    "summary": "Reject a provider",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/queries.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/admin/providers/{providerId}/block",
+    "summary": "Block a provider",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/admin/providers/{providerId}/unblock",
+    "summary": "Unblock a provider",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/admin/providers/{providerId}/deactivate",
+    "summary": "Deactivate a provider",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "GET",
+    "path": "/api/v1/provider/documents",
+    "summary": "List my uploaded documents",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/documents-view.tsx",
+      "src/features/provider/submit-card.tsx",
+      "src/features/uploads/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/provider/documents",
+    "summary": "Submit an identity document",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/documents-view.tsx",
+      "src/features/provider/submit-card.tsx",
+      "src/features/uploads/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "GET",
+    "path": "/api/v1/admin/providers/{providerId}/documents",
+    "summary": "List a provider's documents for review",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "GET",
+    "path": "/api/v1/admin/documents/{documentId}/url",
+    "summary": "Get a short-lived link to a document",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/admin/documents/{documentId}/review",
+    "summary": "Verify or reject a document",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "provider",
+    "method": "POST",
+    "path": "/api/v1/uploads/presign",
+    "summary": "Get an upload target for a document",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/documents-view.tsx",
+      "src/features/uploads/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active provider journey"
+  },
+  {
+    "module": "search",
+    "method": "GET",
+    "path": "/api/v1/search/providers",
+    "summary": "Find providers who offer a service near a point",
+    "matchedFiles": [
+      "src/features/account/me-api.ts",
+      "src/features/admin/provider-ratings.tsx",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/booking/provider-choice.tsx",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/discovery/availability-panel.tsx",
+      "src/features/discovery/profile-sections.tsx",
+      "src/features/discovery/provider-card.tsx",
+      "src/features/discovery/provider-profile.tsx",
+      "src/features/discovery/providers-search.tsx",
+      "src/features/home/hero-search.tsx",
+      "src/features/home/home-platform.tsx",
+      "src/features/home/home-sections.tsx",
+      "src/features/provider/api.ts",
+      "src/features/search/api.ts",
+      "src/features/search/location.ts",
+      "src/features/search/types.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active search journey"
+  },
+  {
+    "module": "search",
+    "method": "GET",
+    "path": "/api/v1/search/providers/{providerId}/slots",
+    "summary": "List the times a provider can be booked on a day",
+    "matchedFiles": [
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/provider-choice.tsx",
+      "src/features/discovery/availability-panel.tsx",
+      "src/features/search/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active search journey"
+  },
+  {
+    "module": "search",
+    "method": "GET",
+    "path": "/api/v1/search/providers/{providerId}/next-slots",
+    "summary": "When is this provider next free?",
+    "matchedFiles": [
+      "src/features/search/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active search journey"
+  },
+  {
+    "module": "search",
+    "method": "GET",
+    "path": "/api/v1/search/providers/{providerId}",
+    "summary": "Get a provider’s full public profile",
+    "matchedFiles": [
+      "src/features/account/me-api.ts",
+      "src/features/admin/provider-ratings.tsx",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/provider-choice.tsx",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/discovery/availability-panel.tsx",
+      "src/features/discovery/profile-sections.tsx",
+      "src/features/discovery/provider-profile.tsx",
+      "src/features/home/home-sections.tsx",
+      "src/features/provider/api.ts",
+      "src/features/search/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active search journey"
+  },
+  {
+    "module": "booking",
+    "method": "GET",
+    "path": "/api/v1/provider/offers",
+    "summary": "List the jobs currently offered to me",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/today-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/provider/offers/{id}/accept",
+    "summary": "Accept an offered job",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/provider/offers/{id}/decline",
+    "summary": "Decline an offered job",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "GET",
+    "path": "/api/v1/bookings/{id}/messages",
+    "summary": "Read the booking chat",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/booking/booking-chat.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/messages",
+    "summary": "Send a chat message",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/booking/booking-chat.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/quote",
+    "summary": "Price a booking before committing to it",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/booking/queries.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "GET",
+    "path": "/api/v1/bookings",
+    "summary": "List my bookings",
+    "matchedFiles": [
+      "src/features/account/api.ts",
+      "src/features/account/me-api.ts",
+      "src/features/account/profile-view.tsx",
+      "src/features/admin/api.ts",
+      "src/features/admin/customers-view.tsx",
+      "src/features/admin/ops-board.tsx",
+      "src/features/admin/ops-view.tsx",
+      "src/features/auth/auth-shell.tsx",
+      "src/features/auth/session.tsx",
+      "src/features/auth/sign-in-form.tsx",
+      "src/features/booking/address-step.tsx",
+      "src/features/booking/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-chat.tsx",
+      "src/features/booking/booking-detail.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/booking/booking-list.tsx",
+      "src/features/booking/booking-stepper.tsx",
+      "src/features/booking/checkout-return.tsx",
+      "src/features/booking/inbox-view.tsx",
+      "src/features/booking/invoice-download.tsx",
+      "src/features/booking/provider-choice.tsx",
+      "src/features/booking/queries.ts",
+      "src/features/booking/service-names.ts",
+      "src/features/booking/start-code-card.tsx",
+      "src/features/booking/status.ts",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/customer/bookings-view.tsx",
+      "src/features/customer/dashboard-view.tsx",
+      "src/features/discovery/availability-panel.tsx",
+      "src/features/discovery/track-booking.tsx",
+      "src/features/portal/finance-views.tsx",
+      "src/features/portal/reports-views.tsx",
+      "src/features/portal/staff-views.tsx",
+      "src/features/portal/verification-console.tsx",
+      "src/features/provider/api.ts",
+      "src/features/provider/calendar-view.tsx",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/job-view.tsx",
+      "src/features/provider/today-view.tsx",
+      "src/features/uploads/image.ts",
+      "src/features/verification/verification-flow.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings",
+    "summary": "Check out a booking",
+    "matchedFiles": [
+      "src/features/account/api.ts",
+      "src/features/account/me-api.ts",
+      "src/features/account/profile-view.tsx",
+      "src/features/admin/api.ts",
+      "src/features/admin/customers-view.tsx",
+      "src/features/admin/ops-board.tsx",
+      "src/features/admin/ops-view.tsx",
+      "src/features/auth/auth-shell.tsx",
+      "src/features/auth/session.tsx",
+      "src/features/auth/sign-in-form.tsx",
+      "src/features/booking/address-step.tsx",
+      "src/features/booking/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-chat.tsx",
+      "src/features/booking/booking-detail.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/booking/booking-list.tsx",
+      "src/features/booking/booking-stepper.tsx",
+      "src/features/booking/checkout-return.tsx",
+      "src/features/booking/inbox-view.tsx",
+      "src/features/booking/invoice-download.tsx",
+      "src/features/booking/provider-choice.tsx",
+      "src/features/booking/queries.ts",
+      "src/features/booking/service-names.ts",
+      "src/features/booking/start-code-card.tsx",
+      "src/features/booking/status.ts",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/customer/bookings-view.tsx",
+      "src/features/customer/dashboard-view.tsx",
+      "src/features/discovery/availability-panel.tsx",
+      "src/features/discovery/track-booking.tsx",
+      "src/features/portal/finance-views.tsx",
+      "src/features/portal/reports-views.tsx",
+      "src/features/portal/staff-views.tsx",
+      "src/features/portal/verification-console.tsx",
+      "src/features/provider/api.ts",
+      "src/features/provider/calendar-view.tsx",
+      "src/features/provider/dashboard-view.tsx",
+      "src/features/provider/job-view.tsx",
+      "src/features/provider/today-view.tsx",
+      "src/features/uploads/image.ts",
+      "src/features/verification/verification-flow.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/checkout",
+    "summary": "Check out a booking (alias of POST /bookings)",
+    "matchedFiles": [],
+    "frontendStatus": "Backend implemented but frontend integration missing",
+    "userJourney": "Staff / Internal / System"
+  },
+  {
+    "module": "booking",
+    "method": "GET",
+    "path": "/api/v1/bookings/{id}",
+    "summary": "Read one booking",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/booking/book-service.tsx",
+      "src/features/booking/booking-chat.tsx",
+      "src/features/booking/booking-detail.tsx",
+      "src/features/booking/booking-flow.tsx",
+      "src/features/booking/booking-list.tsx",
+      "src/features/booking/checkout-return.tsx",
+      "src/features/booking/inbox-view.tsx",
+      "src/features/booking/invoice-download.tsx",
+      "src/features/booking/queries.ts",
+      "src/features/booking/status.ts",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/customer/dashboard-view.tsx",
+      "src/features/discovery/track-booking.tsx",
+      "src/features/provider/job-view.tsx",
+      "src/features/uploads/image.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "GET",
+    "path": "/api/v1/bookings/{id}/on-behalf-contact",
+    "summary": "Who will receive the provider, when the booking is for someone else",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "GET",
+    "path": "/api/v1/bookings/{id}/service-address",
+    "summary": "Where this job is",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/provider/job-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/accept",
+    "summary": "Accept a booking request",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/decline",
+    "summary": "Decline a booking request",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/depart",
+    "summary": "Mark yourself en route",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/start-code",
+    "summary": "Show the start code on the customer’s screen",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/start",
+    "summary": "Start the job with the customer’s code",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/reschedule",
+    "summary": "Reschedule a booking",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "GET",
+    "path": "/api/v1/bookings/{id}/checklist",
+    "summary": "Read the service’s checklist for this booking",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/provider/job-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/checklist/{itemId}",
+    "summary": "Mark a checklist item done",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/provider/job-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "GET",
+    "path": "/api/v1/bookings/{id}/evidence",
+    "summary": "List a booking’s photos",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/booking/booking-detail.tsx",
+      "src/features/booking/queries.ts",
+      "src/features/provider/job-view.tsx",
+      "src/features/uploads/image.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/evidence",
+    "summary": "Upload a photo",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/booking/booking-detail.tsx",
+      "src/features/booking/queries.ts",
+      "src/features/provider/job-view.tsx",
+      "src/features/uploads/image.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/complete",
+    "summary": "Mark the job complete",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/provider/job-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/cash-received",
+    "summary": "Confirm the customer paid cash",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/warranty-claim",
+    "summary": "Claim under warranty",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "GET",
+    "path": "/api/v1/bookings/{id}/invoice.pdf",
+    "summary": "Download the invoice",
+    "matchedFiles": [
+      "src/features/booking/invoice-download.tsx",
+      "src/features/provider/job-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/revisions",
+    "summary": "Raise a revised quote for extra work",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/revisions/approve",
+    "summary": "Approve the pending revised quote",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/revisions/reject",
+    "summary": "Reject the pending revised quote",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/cancel",
+    "summary": "Cancel a scheduled booking",
+    "matchedFiles": [
+      "src/features/booking/api.ts",
+      "src/features/booking/booking-detail.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "booking",
+    "method": "POST",
+    "path": "/api/v1/bookings/{id}/no-show",
+    "summary": "Report a no-show",
+    "matchedFiles": [
+      "src/features/booking/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active booking journey"
+  },
+  {
+    "module": "verification",
+    "method": "GET",
+    "path": "/api/v1/agent/queue",
+    "summary": "See the verification queue",
+    "matchedFiles": [
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "POST",
+    "path": "/api/v1/agent/queue/claim",
+    "summary": "Claim the next call",
+    "matchedFiles": [
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "POST",
+    "path": "/api/v1/agent/verifications/{id}/release-lock",
+    "summary": "Put a claimed call back",
+    "matchedFiles": [
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "GET",
+    "path": "/api/v1/agent/verifications/{id}",
+    "summary": "Open the console for a call you hold",
+    "matchedFiles": [
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "POST",
+    "path": "/api/v1/agent/verifications/{id}/call",
+    "summary": "Call the customer",
+    "matchedFiles": [
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "GET",
+    "path": "/api/v1/agent/verifications/{id}/attempts",
+    "summary": "List the call attempts so far",
+    "matchedFiles": [
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "POST",
+    "path": "/api/v1/agent/verifications/{id}/attempts",
+    "summary": "Log a call attempt",
+    "matchedFiles": [
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "POST",
+    "path": "/api/v1/agent/verifications/{id}/submit",
+    "summary": "Submit the verification",
+    "matchedFiles": [
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "GET",
+    "path": "/api/v1/v/{token}",
+    "summary": "Open a verification link (customer)",
+    "matchedFiles": [
+      "src/features/booking/booking-flow.tsx",
+      "src/features/portal/api.ts",
+      "src/features/provider/documents-view.tsx",
+      "src/features/verification/api.ts",
+      "src/features/verification/verification-flow.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "POST",
+    "path": "/api/v1/v/{token}",
+    "summary": "Answer a verification link (customer)",
+    "matchedFiles": [
+      "src/features/booking/booking-flow.tsx",
+      "src/features/portal/api.ts",
+      "src/features/provider/documents-view.tsx",
+      "src/features/verification/api.ts",
+      "src/features/verification/verification-flow.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "verification",
+    "method": "GET",
+    "path": "/api/v1/finance/recordings/{attemptId}",
+    "summary": "Play a call recording",
+    "matchedFiles": [
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active verification journey"
+  },
+  {
+    "module": "reputation",
+    "method": "GET",
+    "path": "/api/v1/search/providers/{providerId}/reputation",
+    "summary": "A provider’s public reputation",
+    "matchedFiles": [
+      "src/features/discovery/profile-sections.tsx",
+      "src/features/search/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active reputation journey"
+  },
+  {
+    "module": "reputation",
+    "method": "GET",
+    "path": "/api/v1/search/providers/{providerId}/remarks",
+    "summary": "A provider’s published remarks",
+    "matchedFiles": [
+      "src/features/admin/provider-ratings.tsx",
+      "src/features/home/home-sections.tsx",
+      "src/features/provider/api.ts",
+      "src/features/search/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active reputation journey"
+  },
+  {
+    "module": "reputation",
+    "method": "GET",
+    "path": "/api/v1/provider/ratings",
+    "summary": "See the ratings I received",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active reputation journey"
+  },
+  {
+    "module": "reputation",
+    "method": "POST",
+    "path": "/api/v1/provider/remarks/{id}/reply",
+    "summary": "Reply to a remark",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/ratings-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active reputation journey"
+  },
+  {
+    "module": "reputation",
+    "method": "GET",
+    "path": "/api/v1/admin/providers/{providerId}/ratings",
+    "summary": "Review a provider’s ratings",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/provider-ratings.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active reputation journey"
+  },
+  {
+    "module": "reputation",
+    "method": "POST",
+    "path": "/api/v1/admin/remarks/{id}/unpublish",
+    "summary": "Unpublish an abusive remark",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/provider-ratings.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active reputation journey"
+  },
+  {
+    "module": "conduct",
+    "method": "GET",
+    "path": "/api/v1/admin/penalties",
+    "summary": "List penalties",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/conduct-view.tsx",
+      "src/features/admin/ops-view.tsx",
+      "src/features/provider/conduct-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "POST",
+    "path": "/api/v1/admin/penalties",
+    "summary": "Propose a penalty",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/conduct-view.tsx",
+      "src/features/admin/ops-view.tsx",
+      "src/features/provider/conduct-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "GET",
+    "path": "/api/v1/admin/penalties/{id}",
+    "summary": "Read a penalty",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "POST",
+    "path": "/api/v1/admin/penalties/{id}/apply",
+    "summary": "Apply a penalty",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "POST",
+    "path": "/api/v1/admin/penalties/{id}/withdraw",
+    "summary": "Withdraw a proposed penalty",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "GET",
+    "path": "/api/v1/admin/appeals",
+    "summary": "List appeals",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/conduct-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "POST",
+    "path": "/api/v1/admin/appeals/{id}/decide",
+    "summary": "Decide an appeal",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "GET",
+    "path": "/api/v1/provider/penalties",
+    "summary": "See my penalties",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "GET",
+    "path": "/api/v1/provider/penalties/{id}",
+    "summary": "Read one of my penalties",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "POST",
+    "path": "/api/v1/provider/penalties/{id}/reply",
+    "summary": "Reply to a proposed penalty",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "POST",
+    "path": "/api/v1/provider/penalties/{id}/appeal",
+    "summary": "Appeal an applied penalty",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "conduct",
+    "method": "GET",
+    "path": "/api/v1/provider/conduct",
+    "summary": "See my conduct record",
+    "matchedFiles": [
+      "src/features/provider/api.ts",
+      "src/features/provider/dashboard-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active conduct journey"
+  },
+  {
+    "module": "complaints",
+    "method": "GET",
+    "path": "/api/v1/complaints",
+    "summary": "List my complaints",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/cases-queries.ts",
+      "src/features/admin/complaints-view.tsx",
+      "src/features/admin/ops-board.tsx",
+      "src/features/admin/ops-view.tsx",
+      "src/features/complaints/api.ts",
+      "src/features/complaints/queries.ts",
+      "src/features/complaints/receipt-complaint-view.tsx",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/customer/dashboard-view.tsx",
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "POST",
+    "path": "/api/v1/complaints",
+    "summary": "Raise a complaint",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/cases-queries.ts",
+      "src/features/admin/complaints-view.tsx",
+      "src/features/admin/ops-board.tsx",
+      "src/features/admin/ops-view.tsx",
+      "src/features/complaints/api.ts",
+      "src/features/complaints/queries.ts",
+      "src/features/complaints/receipt-complaint-view.tsx",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/customer/dashboard-view.tsx",
+      "src/features/portal/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "POST",
+    "path": "/api/v1/complaints/from-receipt",
+    "summary": "Report a problem from a receipt link",
+    "matchedFiles": [
+      "src/features/complaints/api.ts",
+      "src/features/complaints/receipt-complaint-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "GET",
+    "path": "/api/v1/complaints/{id}",
+    "summary": "Read a complaint and its timeline",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/complaints/api.ts",
+      "src/features/complaints/queries.ts",
+      "src/features/complaints/receipt-complaint-view.tsx",
+      "src/features/customer/booking-detail-view.tsx",
+      "src/features/customer/dashboard-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "POST",
+    "path": "/api/v1/complaints/{id}/reply",
+    "summary": "Reply on a complaint",
+    "matchedFiles": [
+      "src/features/complaints/api.ts",
+      "src/features/complaints/queries.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "POST",
+    "path": "/api/v1/complaints/{id}/evidence",
+    "summary": "Add a photo to a complaint",
+    "matchedFiles": [
+      "src/features/complaints/api.ts",
+      "src/features/complaints/queries.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "GET",
+    "path": "/api/v1/admin/complaints",
+    "summary": "The complaint queue",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/complaints-view.tsx",
+      "src/features/admin/ops-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "GET",
+    "path": "/api/v1/admin/complaints/{id}",
+    "summary": "Open a complaint",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "POST",
+    "path": "/api/v1/admin/complaints/{id}/assign",
+    "summary": "Assign a complaint",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "POST",
+    "path": "/api/v1/admin/complaints/{id}/transition",
+    "summary": "Move a complaint along, or decide it",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "complaints",
+    "method": "POST",
+    "path": "/api/v1/admin/complaints/{id}/open-dispute",
+    "summary": "Freeze the job’s money as a dispute",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active complaints journey"
+  },
+  {
+    "module": "disputes",
+    "method": "GET",
+    "path": "/api/v1/admin/disputes",
+    "summary": "The dispute queue",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/disputes-view.tsx",
+      "src/features/admin/ops-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active disputes journey"
+  },
+  {
+    "module": "disputes",
+    "method": "GET",
+    "path": "/api/v1/admin/disputes/{id}",
+    "summary": "Open a dispute: the evidence floor",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/disputes-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active disputes journey"
+  },
+  {
+    "module": "disputes",
+    "method": "POST",
+    "path": "/api/v1/admin/disputes/{id}/resolve",
+    "summary": "Rule on a dispute",
+    "matchedFiles": [
+      "src/features/admin/cases-api.ts",
+      "src/features/admin/disputes-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active disputes journey"
+  },
+  {
+    "module": "disputes",
+    "method": "GET",
+    "path": "/api/v1/provider/disputes",
+    "summary": "See my disputes",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active disputes journey"
+  },
+  {
+    "module": "disputes",
+    "method": "GET",
+    "path": "/api/v1/provider/disputes/{id}",
+    "summary": "Read a dispute on my job",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active disputes journey"
+  },
+  {
+    "module": "disputes",
+    "method": "POST",
+    "path": "/api/v1/provider/disputes/{id}/reply",
+    "summary": "Reply to a dispute",
+    "matchedFiles": [
+      "src/features/provider/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active disputes journey"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/api/v1/admin/users",
+    "summary": "List user accounts",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/approvals-view.tsx",
+      "src/features/admin/queries.ts",
+      "src/features/admin/roles-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/api/v1/admin/users/{userId}/block",
+    "summary": "Block a user",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/api/v1/admin/users/{userId}/unblock",
+    "summary": "Unblock a user",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/api/v1/admin/users/{userId}/deactivate",
+    "summary": "Deactivate a user",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/api/v1/admin/users/{userId}/send-reset",
+    "summary": "Send a password reset",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/api/v1/admin/roles",
+    "summary": "List roles and their permissions",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/queries.ts",
+      "src/features/admin/roles-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/api/v1/admin/users/{userId}/roles/{roleCode}",
+    "summary": "Grant a role",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/roles-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "DELETE",
+    "path": "/api/v1/admin/users/{userId}/roles/{roleCode}",
+    "summary": "Revoke a role",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/roles-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/api/v1/admin/customers",
+    "summary": "List customer accounts",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/customers-view.tsx",
+      "src/features/admin/ops-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/api/v1/admin/customers/{customerId}/deactivate",
+    "summary": "Deactivate a customer",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/customers-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/api/v1/admin/staff-conflicts",
+    "summary": "List declared staff conflicts",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/api/v1/admin/staff-conflicts",
+    "summary": "Declare a staff conflict",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "DELETE",
+    "path": "/api/v1/admin/staff-conflicts/{id}",
+    "summary": "Withdraw a declared conflict",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/api/v1/admin/audit",
+    "summary": "Query the audit log",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/audit-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/api/v1/admin/ops-board",
+    "summary": "The operations board",
+    "matchedFiles": [
+      "src/features/admin/api.ts",
+      "src/features/admin/ops-board.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/api/v1/admin/ops-board/stream",
+    "summary": "The operations board, live",
+    "matchedFiles": [
+      "src/features/admin/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "plans",
+    "method": "GET",
+    "path": "/api/v1/plans",
+    "summary": "Browse available maintenance plans",
+    "matchedFiles": [
+      "src/features/customer/plans-view.tsx",
+      "src/features/plans/admin-plans-view.tsx",
+      "src/features/plans/api.ts",
+      "src/features/plans/customer-plans-view.tsx",
+      "src/features/plans/public-plans-view.tsx",
+      "src/features/plans/queries.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active plans journey"
+  },
+  {
+    "module": "plans",
+    "method": "GET",
+    "path": "/api/v1/plans/{id}",
+    "summary": "Get details of a maintenance plan",
+    "matchedFiles": [
+      "src/features/plans/admin-plans-view.tsx",
+      "src/features/plans/api.ts",
+      "src/features/plans/customer-plans-view.tsx",
+      "src/features/plans/public-plans-view.tsx",
+      "src/features/plans/queries.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active plans journey"
+  },
+  {
+    "module": "plans",
+    "method": "POST",
+    "path": "/api/v1/plans/{id}/subscribe",
+    "summary": "Subscribe to a maintenance plan",
+    "matchedFiles": [
+      "src/features/plans/api.ts",
+      "src/features/plans/customer-plans-view.tsx",
+      "src/features/plans/queries.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active plans journey"
+  },
+  {
+    "module": "plans",
+    "method": "GET",
+    "path": "/api/v1/me/subscriptions",
+    "summary": "List my plan subscriptions",
+    "matchedFiles": [
+      "src/features/plans/api.ts",
+      "src/features/plans/customer-plans-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active plans journey"
+  },
+  {
+    "module": "plans",
+    "method": "GET",
+    "path": "/api/v1/subscriptions/{id}",
+    "summary": "Get details of a subscription",
+    "matchedFiles": [
+      "src/features/plans/api.ts",
+      "src/features/plans/customer-plans-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active plans journey"
+  },
+  {
+    "module": "plans",
+    "method": "POST",
+    "path": "/api/v1/subscriptions/{id}/cancel",
+    "summary": "Cancel a maintenance plan subscription",
+    "matchedFiles": [
+      "src/features/plans/api.ts",
+      "src/features/plans/customer-plans-view.tsx"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active plans journey"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/api/v1/admin/plans",
+    "summary": "List all maintenance plans (admin)",
+    "matchedFiles": [
+      "src/features/plans/admin-plans-view.tsx",
+      "src/features/plans/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "POST",
+    "path": "/api/v1/admin/plans",
+    "summary": "Create a maintenance plan",
+    "matchedFiles": [
+      "src/features/plans/admin-plans-view.tsx",
+      "src/features/plans/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "GET",
+    "path": "/api/v1/admin/plans/{id}",
+    "summary": "Get plan details (admin)",
+    "matchedFiles": [
+      "src/features/plans/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "PATCH",
+    "path": "/api/v1/admin/plans/{id}",
+    "summary": "Update a maintenance plan",
+    "matchedFiles": [
+      "src/features/plans/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  },
+  {
+    "module": "admin",
+    "method": "DELETE",
+    "path": "/api/v1/admin/plans/{id}",
+    "summary": "Deactivate a maintenance plan",
+    "matchedFiles": [
+      "src/features/plans/api.ts"
+    ],
+    "frontendStatus": "Frontend integrated and verified",
+    "userJourney": "Active admin journey"
+  }
+]

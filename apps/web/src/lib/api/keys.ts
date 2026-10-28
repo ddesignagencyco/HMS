@@ -1,0 +1,275 @@
+/* Query-key factories.
+
+   Every response-affecting input is part of the key. A provider search keyed
+   only by the service would serve one location's results for another, and slots
+   keyed only by the provider would show yesterday's availability for a new
+   date — so the coordinates and the date are in the key, not bolted on.
+
+   `publicKeys` are the `@Public()` reads of module 2. `accountKeys` and
+   `bookingKeys` belong to the authenticated account of whoever is signed in;
+   the session provider clears every non-`auth` key on sign-out, so nothing here
+   survives into the next account. */
+
+import type { ProviderSearchFilters } from '@/features/search/types';
+import type { BookingListStatus } from '@/features/booking/api';
+import { ApiError } from '@/lib/api/problem';
+
+export const publicKeys = {
+  categories: ['public', 'categories'] as const,
+  categoryServices: (slug: string) => ['public', 'categories', slug, 'services'] as const,
+  service: (slug: string) => ['public', 'services', slug] as const,
+  issueOptions: (slug: string) => ['public', 'services', slug, 'issue-options'] as const,
+  cities: ['public', 'places', 'cities'] as const,
+  areas: (cityId: number) => ['public', 'places', 'cities', cityId, 'areas'] as const,
+  /** Every effective filter, in a fixed order, so equivalent searches share a key.
+   *
+   *  **A resolved point is part of the key, not a raw coordinate.** A search may
+   *  arrive as `addressId` or as `lat`/`lng`, and both are answers to the same
+   *  question — where is the work. When both are present `addressId` wins (see
+   *  `providerSearchQuery`), so the key hashes the address, never both.
+   *
+   *  The five refinements are in the key too. Two people a kilometre apart
+   *  searching the same service with different price bands are asking different
+   *  questions, and serving one the other's results is a confident wrong answer
+   *  rather than a stale one. */
+  providerSearch: (filters: ProviderSearchFilters) =>
+    [
+      'public',
+      'search',
+      'providers',
+      filters.serviceSlug,
+      filters.addressId ?? `${filters.lat ?? ''},${filters.lng ?? ''}`,
+      filters.minExperienceYears ?? '',
+      filters.minCompletedJobs ?? '',
+      filters.minPricePaisa ?? '',
+      filters.maxPricePaisa ?? '',
+      filters.availableToday ?? '',
+      filters.verifiedDocsOnly ?? ''
+    ] as const,
+  provider: (providerId: string) => ['public', 'providers', providerId] as const,
+  reputation: (providerId: string) => ['public', 'providers', providerId, 'reputation'] as const,
+  remarks: (providerId: string, limit: number) => ['public', 'providers', providerId, 'remarks', limit] as const,
+  slots: (providerId: string, serviceId: number, date: string) => ['public', 'providers', providerId, 'slots', serviceId, date] as const,
+  /** "When can they get in soonest?" — needs a service, because the slot length comes from it. */
+  nextSlots: (providerId: string, serviceId: number) => ['public', 'providers', providerId, 'next-slots', serviceId] as const
+} as const;
+
+export const accountKeys = {
+  all: ['account'] as const,
+  /** The signed-in customer's saved addresses. Theirs alone; never shared. */
+  addresses: ['account', 'addresses'] as const,
+  /** `GET /me/favourites` — a CUSTOMER-only shortlist of approved providers. */
+  favourites: ['account', 'favourites'] as const,
+  /**
+   * `GET /me/subscriptions` — the caller's own maintenance plans.
+   *
+   * Nested under `all` so signing out drops them with the rest of the
+   * account. A subscription is bound to a customer and an address, so
+   * one customer's plan must never survive into another's session.
+   */
+  subscriptions: ['account', 'subscriptions'] as const,
+  subscription: (id: string) => ['account', 'subscriptions', 'detail', id] as const
+} as const;
+
+/**
+ * Maintenance plans.
+ *
+ * The public list is reference data an admin publishes rarely, so it
+ * gets a long window — but it is keyed separately from the catalogue
+ * because it is a different resource with a different invalidation
+ * story: activating a plan is an admin write, and the admin mutations
+ * clear this key as well as `adminKeys.all`.
+ */
+export const planKeys = {
+  all: ['plans'] as const,
+  list: ['plans', 'list'] as const,
+  detail: (planId: string) => ['plans', 'detail', planId] as const
+} as const;
+
+/**
+ * The signed-in professional's own records.
+ *
+ * Every route is `PROVIDER`-guarded and identified by the access token, so
+ * **nothing here is keyed on a provider id** — there is no provider id in these
+ * paths, and adding one would be inventing a contract. Keys are per-account and
+ * are purged on sign-out by the same rule as every other non-`auth` key, so a
+ * second professional signing in on the same browser never sees the first one's
+ * earnings.
+ */
+export const providerKeys = {
+  all: ['provider'] as const,
+  profile: ['provider', 'profile'] as const,
+  services: ['provider', 'services'] as const,
+  serviceAreas: ['provider', 'service-areas'] as const,
+  availability: ['provider', 'availability'] as const,
+  timeOff: ['provider', 'time-off'] as const,
+  /** Offers are perishable — `expiresAt` on each row — so never cached. */
+  offers: ['provider', 'offers'] as const,
+  earnings: ['provider', 'earnings'] as const,
+  wallet: ['provider', 'wallet'] as const,
+  payouts: ['provider', 'payouts'] as const,
+  payoutAccounts: ['provider', 'payout-accounts'] as const,
+  ratings: ['provider', 'ratings'] as const,
+  conduct: ['provider', 'conduct'] as const,
+  penalties: ['provider', 'penalties'] as const,
+  appeals: ['provider', 'appeals'] as const,
+  disputes: ['provider', 'disputes'] as const,
+  dispute: (id: string) => ['provider', 'disputes', id] as const,
+  /** The CNIC banner reads from the same response, so this key is invalidated
+      alongside it when a document is submitted. */
+  documents: ['provider', 'documents'] as const
+} as const;
+
+/**
+ * Booking keys.
+ *
+ * The booking list is keyed by the status filter because it is part of the
+ * request, and the detail key is scoped under the list so invalidating one
+ * invalidates the other — a cancelled booking must stop being shown as active
+ * in both places at once, not only on the page that performed the cancellation.
+ *
+ * `quote` and `messages` are deliberately *not* here. A quote is a mutation
+ * (`POST /bookings/quote`) whose whole point is to be re-read when the basket
+ * changes, and reading the chat marks the other side's messages as read, so it
+ * is a mutation for the same reason.
+ */
+/**
+ * The signed-in administrator's own view of the platform.
+ *
+ * Every route is ADMIN-guarded and identified by the access token, so like
+ * `providerKeys` nothing here is keyed on the id of the thing being administered —
+ * except where the id *is* the filter the admin chose. A users list filtered by
+ * `role=PROVIDER` is a different answer from the same route unfiltered, and
+ * serving one for the other would show an admin the wrong set of accounts after
+ * they typed a filter. Read-only reference data (roles) is keyed by nothing.
+ */
+export const adminKeys = {
+  all: ['admin'] as const,
+  users: (role?: string, status?: string, q?: string) => ['admin', 'users', role ?? 'all', status ?? 'all', q ?? ''] as const,
+  customers: (q?: string) => ['admin', 'customers', q ?? ''] as const,
+  roles: ['admin', 'roles'] as const,
+  staffConflicts: ['admin', 'staff-conflicts'] as const,
+  audit: (action?: string, entityType?: string, entityId?: string, from?: string, to?: string) =>
+    ['admin', 'audit', action ?? 'all', entityType ?? 'all', entityId ?? '', from ?? '', to ?? ''] as const,
+  providers: (status?: string, q?: string) => ['admin', 'providers', status ?? 'all', q ?? ''] as const,
+  /* A finance route, read by an admin. Keyed under `admin` because that is the
+     surface it is displayed on and so that an admin-wide invalidation refreshes
+     it alongside the rest of the admin numbers. */
+  escrow: () => ['admin', 'escrow'] as const,
+  /* `GET /admin/plans`. Keyed under `admin` for the same reason, and kept as
+     its own key rather than folded into `all` so a plan write invalidates the
+     list an operator is editing without discarding every other admin read. */
+  plans: ['admin', 'plans'] as const,
+  /* The operations board. It is a *live* surface, so it gets its own key and is
+     refreshed by the SSE stream rather than by refetching this on a timer.
+     Not nested under `escrow` or `all`: an admin-wide invalidation should not
+     blank the board an operator is watching while it reconnects. */
+  opsBoard: ['admin', 'ops-board'] as const,
+  /* `GET /admin/catalogue/commission-rules`. Its own key because closing a rule
+     is a write that must invalidate the list being edited without discarding
+     the catalogue read next to it. */
+  commissionRules: (scope?: string) => ['admin', 'commission-rules', scope ?? 'all'] as const,
+  /* The moderation view. Scoped by provider so one provider's read is not
+     invalidated by another provider's. */
+  providerRatings: (providerId: string) => ['admin', 'providers', providerId, 'ratings'] as const
+} as const;
+
+/**
+ * The finance surface.
+ *
+ * **Separate from `adminKeys`**, because the policy is different in kind even
+ * though ADMIN is allowed on it: these are `FINANCE` routes that happen to admit
+ * an administrator. Signing a finance session in and signing an admin session in
+ * must not share one another's caches, and a report run queued by one is not
+ * something the other should see listed.
+ *
+ * `reports` is separate from `batches` because one is polled to completion and
+ * the other is settled by hand — invalidating a report list because a batch was
+ * marked paid would be noise, and they share nothing.
+ */
+export const financeKeys = {
+  all: ['finance'] as const,
+  reports: ['finance', 'reports'] as const,
+  report: (id: string) => ['finance', 'reports', 'detail', id] as const,
+  payoutBatches: ['finance', 'payout-batches'] as const,
+  ledger: (accountType?: string, before?: number) => ['finance', 'ledger', accountType ?? 'all', before ?? 'first'] as const,
+  escrow: ['finance', 'escrow'] as const,
+  /** The ledger's own proof that it balances. Never cached — it is a mutation. */
+  reconciliation: ['finance', 'reconciliation'] as const
+} as const;
+
+export const bookingKeys = {
+  all: ['account', 'bookings'] as const,
+  list: (status?: BookingListStatus) => ['account', 'bookings', 'list', status ?? 'all'] as const,
+  detail: (bookingId: string) => ['account', 'bookings', 'detail', bookingId] as const,
+  checklist: (bookingId: string) => ['account', 'bookings', bookingId, 'checklist'] as const,
+  serviceAddress: (bookingId: string) => ['account', 'bookings', bookingId, 'service-address'] as const,
+  /** FR-VC-16: the customer's own "confirm the work" form. Under `all`, so every booking action refreshes it. */
+  selfConfirmation: (bookingId: string) => ['account', 'bookings', bookingId, 'self-confirmation'] as const
+} as const;
+
+/**
+ * Freshness by data type. Catalogue and places are reference data an admin
+ * publishes rarely; a profile moves slowly; availability is the opposite of
+ * static — a slot listed now can be taken a moment later, so it is never
+ * treated as cached for long.
+ */
+export const FRESHNESS = {
+  categories: { staleTime: 30 * 60_000, gcTime: 60 * 60_000 },
+  categoryServices: { staleTime: 30 * 60_000, gcTime: 60 * 60_000 },
+  service: { staleTime: 15 * 60_000, gcTime: 60 * 60_000 },
+  places: { staleTime: 60 * 60_000, gcTime: 24 * 60 * 60_000 },
+  search: { staleTime: 60_000, gcTime: 5 * 60_000 },
+  profile: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
+  reputation: { staleTime: 2 * 60_000, gcTime: 15 * 60_000 },
+  /** Availability: no stale window, re-read when the window regains focus. */
+  slots: { staleTime: 0, gcTime: 60_000, refetchOnWindowFocus: true },
+  /* The operations board. Server-side it is recomputed every five seconds and
+     cached for fifteen, so the REST read that paints the first frame is always
+     at most fifteen seconds behind. No stale window at all here: the SSE stream
+     is what keeps it current, and a "cached" board is one nobody is watching. */
+  opsBoard: { staleTime: 0, gcTime: 5 * 60_000 },
+  /* Authenticated reads. Short windows throughout: every one of these belongs
+     to a person who is waiting on a job, and a stale status is worse than a
+     slow page. */
+  addresses: { staleTime: 5 * 60_000, gcTime: 30 * 60_000 },
+  bookingList: { staleTime: 30_000, gcTime: 5 * 60_000 },
+  /** One booking's state moves several times in an hour; do not remember it. */
+  booking: { staleTime: 15_000, gcTime: 5 * 60_000 },
+  /** The chat changes when the provider replies, and reading it has a side effect. */
+  messages: { staleTime: 0, gcTime: 60_000, refetchOnWindowFocus: true },
+  /* The professional's own records. Offers lapse on a clock, so they get no stale
+     window at all — an offer that expired must not still be on screen as live. */
+  providerProfile: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
+  providerServices: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
+  providerAreas: { staleTime: 10 * 60_000, gcTime: 30 * 60_000 },
+  availability: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
+  offers: { staleTime: 0, gcTime: 60_000, refetchOnWindowFocus: true },
+  /* Money moves between screens — a payout request changes the wallet — so these
+     are short and invalidated by their own mutations. */
+  earnings: { staleTime: 60_000, gcTime: 5 * 60_000 },
+  payouts: { staleTime: 60_000, gcTime: 5 * 60_000 },
+  ratings: { staleTime: 5 * 60_000, gcTime: 15 * 60_000 },
+  conduct: { staleTime: 5 * 60_000, gcTime: 30 * 60_000 },
+  penalties: { staleTime: 5 * 60_000, gcTime: 30 * 60_000 },
+  disputes: { staleTime: 60_000, gcTime: 5 * 60_000 },
+  /* Plans. The catalogue-like list is reference data; a customer's own
+     subscription is not — its visit counts move as visits are booked,
+     consumed or refunded, so it is re-read on focus rather than
+     remembered. */
+  plans: { staleTime: 10 * 60_000, gcTime: 60 * 60_000 },
+  subscription: { staleTime: 0, gcTime: 60_000, refetchOnWindowFocus: true }
+} as const;
+
+/** True when the API is saying "this does not exist" rather than "try again". */
+export const isNotFoundError = (error: unknown): boolean => error instanceof ApiError && error.status === 404;
+
+/**
+ * A transient failure is worth one more attempt; a 404, 400 or 422 is the API
+ * answering properly and retrying it only delays the right answer.
+ */
+export const publicRetry = (failureCount: number, error: unknown): boolean => {
+  if (error instanceof ApiError) return error.status >= 500 && failureCount < 1;
+  /* A dropped connection, not a refusal. */
+  return failureCount < 1;
+};
