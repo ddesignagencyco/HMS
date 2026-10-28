@@ -26,3 +26,8 @@ Thumbs.db
 
 # Local agent/tooling runtime artifacts
 .claude/scheduled_tasks.lock
+
+# SHM-093: database dumps are large, binary, and contain every customer record in the system.
+# They belong in encrypted offsite storage, never in the repository. The retention script prunes
+# this directory; see docs-final/runbooks/restore-drill.md for how they are shipped.
+backups/

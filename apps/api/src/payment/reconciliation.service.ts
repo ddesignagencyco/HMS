@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service.js';
 import { AuditService, appendOutboxEvent } from '../platform/audit.service.js';
+import { MetricsService } from '../platform/metrics.service.js';
 import { QueueRegistry } from '../queues/queue.registry.js';
 
 export type Drift = { check: string; subject: string; expected: string; actual: string };
@@ -21,6 +22,7 @@ export class ReconciliationService implements OnModuleInit {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(MetricsService) private readonly metrics: MetricsService,
     @Inject(QueueRegistry) private readonly queues: QueueRegistry
   ) {}
 
@@ -64,13 +66,41 @@ export class ReconciliationService implements OnModuleInit {
     );
     for (const row of refundTotals) drift.push({ check: 'payment_refunded_total', subject: row.id, expected: `${row.summed}`, actual: `${row.recorded}` });
 
-    // 4. Escrow is never overdrawn, and a released booking holds nothing more than excess it has already refunded.
+    // 4. Escrow is never overdrawn, and a finished booking holds nothing.
+    //
+    // `NO_SHOW` belongs in this list because a no-show refunds the customer in full,
+    // so escrow must be empty afterwards. It was missing, which is why an online
+    // no-show could strand the captured amount indefinitely: the status is terminal,
+    // so nothing else would ever move the money, and the one job whose job is to
+    // notice exactly this was not looking at that status.
     const escrow = await this.prisma.$queryRaw<{ bookingId: string; balance: bigint }[]>(
-      Prisma.sql`SELECT a.booking_id as "bookingId", b.balance FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'ESCROW' AND (b.balance < 0 OR (b.balance > 0 AND EXISTS (SELECT 1 FROM bookings bk WHERE bk.id = a.booking_id AND bk.status IN ('PAYMENT_RELEASED','CLOSED','CANCELLED_CUSTOMER','CANCELLED_PROVIDER','UNFULFILLED','ABANDONED'))))`
+      Prisma.sql`SELECT a.booking_id as "bookingId", b.balance FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'ESCROW' AND (b.balance < 0 OR (b.balance > 0 AND EXISTS (SELECT 1 FROM bookings bk WHERE bk.id = a.booking_id AND bk.status IN ('PAYMENT_RELEASED','CLOSED','CANCELLED_CUSTOMER','CANCELLED_PROVIDER','UNFULFILLED','ABANDONED','NO_SHOW'))))`
     );
     for (const row of escrow) drift.push({ check: 'escrow', subject: row.bookingId, expected: '0 once a booking is finished, never negative', actual: `${row.balance}` });
 
-    const report: ReconciliationReport = { ranAt: new Date().toISOString(), checks: 6, drift };
+    // 5. Payout clearing holds exactly what the bank has not answered for.
+    //
+    // Money leaves a provider's wallet into PAYOUT_CLEARING when finance approves a payout and leaves
+    // that account only when the bank confirms or rejects it. A batch that is exported and then never
+    // marked — a file that never reached the bank, a finance user who closed the laptop — leaves the
+    // balance sitting there indefinitely with nothing watching it, which is the same shape of hole as
+    // the stranded NO_SHOW escrow this job already caught once. The balance must equal the approved,
+    // un-decided payouts; anything else means money is in a limbo account.
+    const clearing = await this.prisma.$queryRaw<{ balance: bigint; expected: bigint }[]>(
+      Prisma.sql`SELECT (SELECT coalesce(sum(b.balance), 0)::bigint FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id WHERE a.type = 'PAYOUT_CLEARING') as balance,
+          (SELECT coalesce(sum(amount_paisa), 0)::bigint FROM payouts WHERE status IN ('APPROVED','IN_BATCH')) as expected`
+    );
+    if ((clearing[0]?.balance ?? 0n) !== (clearing[0]?.expected ?? 0n)) {
+      drift.push({ check: 'payout_clearing', subject: 'PAYOUT_CLEARING', expected: `${clearing[0]?.expected ?? 0n} held for approved payouts`, actual: `${clearing[0]?.balance ?? 0n}` });
+    }
+
+    // FR-PY-06 / NFR-OBS: each drift, by check, is a counter the `ReconciliationDriftFound` rule
+    // fires on. It is incremented where the check actually runs — here — so a nightly reconciliation
+    // in the worker and a manual one from the finance console both count. It was declared and never
+    // incremented, so the one alert whose whole job is "the ledger does not balance" could not fire.
+    for (const entry of drift) this.metrics.reconciliationDrift.inc({ check: entry.check });
+
+    const report: ReconciliationReport = { ranAt: new Date().toISOString(), checks: 7, drift };
     await this.prisma.$transaction(async tx => {
       await this.audit.append({ actorUserId: triggeredBy, actorRole: triggeredBy === null ? 'SYSTEM' : 'FINANCE', action: 'ledger.reconcile', entityType: 'ledger', entityId: 'all', after: { checks: report.checks, drift: drift.length } }, tx);
       if (drift.length > 0) await appendOutboxEvent(tx, { aggregate: 'ledger', aggregateId: 'all', type: 'ledger.drift_detected', payload: { drift: drift.slice(0, 50) } });

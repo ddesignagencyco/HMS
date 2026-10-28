@@ -63,6 +63,8 @@ export const VerificationOutcome = enumFrom('verification_outcome', ['VERIFIED_S
 export const WorkCompletion = enumFrom('work_completion', ['FULL', 'PARTIAL', 'NONE'] as const);
 export const TimeBand = enumFrom('time_band', ['MORNING', 'AFTERNOON', 'EVENING'] as const);
 export const AttemptResult = enumFrom('attempt_result', ['ANSWERED', 'NO_ANSWER', 'BUSY', 'SWITCHED_OFF', 'WRONG_PERSON', 'CALL_DROPPED'] as const);
+/** FR-VC-14: how the customer confirmed a job. `LINK` is the texted one-tap, `IN_APP` the signed-in form; absent means an agent's call. */
+export const VerificationConfirmedVia = enumFrom('verification_confirmed_via', ['LINK', 'IN_APP'] as const);
 
 export const PaymentPurpose = enumFrom('payment_purpose', ['BOOKING', 'TOPUP', 'PLAN', 'DEBT'] as const);
 export const PaymentStatus = enumFrom('payment_status', ['INITIATED', 'CAPTURED', 'FAILED', 'EXPIRED', 'PARTIALLY_REFUNDED', 'REFUNDED'] as const);

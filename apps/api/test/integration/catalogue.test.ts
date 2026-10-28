@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { adminSession, callApi, createTestApp, deleteWith, patchJson, postJson, putJson, registerAndVerify } from './harness.js';
+import { PrismaService } from '../../src/database/prisma.service.js';
+import { adminSession, callApi, createTestApp, deleteWith, patchJson, postJson, putJson, readyBookableProvider, registerAndVerify } from './harness.js';
+
+const slotAt = (hoursFromNow: number): { scheduledStart: string; scheduledEnd: string } => {
+  const start = new Date(Date.now() + hoursFromNow * 3_600_000);
+  return { scheduledStart: start.toISOString(), scheduledEnd: new Date(start.getTime() + 3_600_000).toISOString() };
+};
+
+const postWithBearer = (payload: unknown, token: string): RequestInit => ({ method: 'POST', body: JSON.stringify(payload), headers: { authorization: `Bearer ${token}` } });
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -135,6 +144,43 @@ describe('FR-CAT-01/02/06/07: catalogue services', () => {
     expect(response.body.code).toBe('VALIDATION_FAILED');
   });
 
+  it('rejects a partial update that would leave the price band inconsistent', async () => {
+    const category = await newTestCategory();
+    const slug = `test-svc-${randomUUID().slice(0, 8)}`;
+    const created = await callApi<{ id: number }>(app, '/admin/catalogue/services', asAdmin(postJson(flatServicePayload(category.id, slug))));
+
+    // base 25_000, min 10_000, max 50_000 — raising min above the unchanged base is an impossible band.
+    const response = await callApi<{ code: string }>(app, `/admin/catalogue/services/${created.body.id}`, asAdmin(patchJson({ minPricePaisa: 40_000 })));
+    expect(response.status).toBe(422);
+    expect(response.body.code).toBe('VALIDATION_FAILED');
+
+    const detail = await callApi<{ basePricePaisa: number; minPricePaisa: number; maxPricePaisa: number }>(app, `/catalogue/services/${slug}`);
+    expect(detail.body.minPricePaisa).toBe(10_000);
+    expect(detail.body.basePricePaisa).toBe(25_000);
+    expect(detail.body.maxPricePaisa).toBe(50_000);
+
+    // A consistent partial update still goes through.
+    const valid = await callApi<{ minPricePaisa: number }>(app, `/admin/catalogue/services/${created.body.id}`, asAdmin(patchJson({ minPricePaisa: 12_000 })));
+    expect(valid.status).toBe(200);
+    expect(valid.body.minPricePaisa).toBe(12_000);
+  });
+
+  it('records an audit row for each catalogue admin write', async () => {
+    const category = await newTestCategory();
+    const slug = `test-svc-${randomUUID().slice(0, 8)}`;
+    const created = await callApi<{ id: number }>(app, '/admin/catalogue/services', asAdmin(postJson(flatServicePayload(category.id, slug))));
+    await callApi(app, `/admin/catalogue/services/${created.body.id}`, asAdmin(patchJson({ nameEn: 'Renamed', minPricePaisa: 12_000 })));
+
+    const prisma = app.get(PrismaService);
+    const categoryAudit = await prisma.$queryRaw<{ n: bigint; actor: string | null }[]>(Prisma.sql`SELECT count(*)::bigint as n, max(actor_user_id::text) as actor FROM audit_log WHERE action = 'catalogue.category.create' AND entity_id = ${String(category.id)}`);
+    const serviceAudit = await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM audit_log WHERE action = 'catalogue.service.create' AND entity_id = ${String(created.body.id)}`);
+    const updateAudit = await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM audit_log WHERE action = 'catalogue.service.update' AND entity_id = ${String(created.body.id)}`);
+    expect(categoryAudit[0]!.n).toBe(1n);
+    expect(categoryAudit[0]!.actor).toBe(admin.userId);
+    expect(serviceAudit[0]!.n).toBe(1n);
+    expect(updateAudit[0]!.n).toBe(1n);
+  });
+
   it('lets an admin update and deactivate a service, hiding it from the public detail endpoint', async () => {
     const category = await newTestCategory();
     const slug = `test-svc-${randomUUID().slice(0, 8)}`;
@@ -215,6 +261,21 @@ describe('FR-CAT-05: commission rules', () => {
     expect(response.status).toBe(403);
     expect(response.body.code).toBe('FORBIDDEN');
   });
+
+  it('snapshots a non-GLOBAL commission rate onto a booking at creation', async () => {
+    const { provider, serviceId, areaId } = await readyBookableProvider(app);
+    // Provider scope so the rule cannot change what other suites' bookings resolve.
+    await callApi(app, '/admin/catalogue/commission-rules', asAdmin(postJson({ scope: 'PROVIDER', providerId: provider.id, rateBp: 2_345 })));
+
+    const customer = await registerAndVerify(app, 'CUSTOMER');
+    const address = await callApi<{ id: string }>(app, '/customer/addresses', postWithBearer({ label: 'Home', line1: 'House 1', areaId, lat: 31.52, lng: 74.35, isDefault: true }, customer.accessToken));
+    const booking = await callApi<{ id: string }>(app, '/bookings', postWithBearer({ providerId: provider.id, serviceId, addressId: address.body.id, paymentMode: 'CASH', ...slotAt(5_000) }, customer.accessToken));
+    expect(booking.status).toBe(201);
+
+    const prisma = app.get(PrismaService);
+    const rows = await prisma.$queryRaw<{ rateBp: number }[]>(Prisma.sql`SELECT commission_rate_bp as "rateBp" FROM bookings WHERE id = ${booking.body.id}::uuid`);
+    expect(rows[0]!.rateBp).toBe(2_345);
+  });
 });
 
 describe('FR-CAT-03/04: provider expertise and pricing', () => {
@@ -242,11 +303,12 @@ describe('FR-CAT-03/04: provider expertise and pricing', () => {
     expect(updated.body.status).toBe('APPROVED');
   });
 
-  it('rejects a price outside the service band', async () => {
+  it('rejects a price outside the service band with 422', async () => {
     const provider = await registerAndVerify(app, 'PROVIDER');
     const service = (await callApi<{ id: number; maxPricePaisa: number }>(app, '/catalogue/services/leak-repair')).body;
     const response = await callApi<{ code: string }>(app, `/provider/services/${service.id}`, putJson({ pricePaisa: service.maxPricePaisa + 1 }, provider.accessToken));
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(422);
+    expect(response.body.code).toBe('VALIDATION_FAILED');
   });
 
   it('lets a provider remove their own binding', async () => {
@@ -272,6 +334,13 @@ describe('FR-CAT-03/04: provider expertise and pricing', () => {
     const rejected = await callApi<{ status: string }>(app, `/admin/provider-services/${provider.id}/${service.id}/reject`, asAdmin({ method: 'POST' }));
     expect(rejected.status).toBe(200);
     expect(rejected.body.status).toBe('REJECTED');
+
+    const prisma = app.get(PrismaService);
+    const audit = await prisma.$queryRaw<{ n: bigint; actor: string | null }[]>(
+      Prisma.sql`SELECT count(*)::bigint as n, max(actor_user_id::text) as actor FROM audit_log WHERE action = 'provider_service.reject' AND entity_id = ${`${provider.id}:${service.id}`}`
+    );
+    expect(audit[0]!.n).toBe(1n);
+    expect(audit[0]!.actor).toBe(admin.userId);
   });
 
   it('rejects provider binding writes from a signed in customer', async () => {

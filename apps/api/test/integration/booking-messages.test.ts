@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { NotificationService } from '../../src/notification/notification.service.js';
 import { callApi, createTestApp, postJson, readyBookableProvider, registerAndVerify, type TestUser } from './harness.js';
+import { departProvider } from './flow.js';
 
 const prisma = new PrismaClient();
 
@@ -123,7 +124,7 @@ describe('SHM-040 / SHM-044: chat and notifications', () => {
     it('the customer gets the confirmation, the start code and the en-route message in the dev inbox', async () => {
       const { id, customer } = await requested();
       await callApi(app, `/bookings/${id}/accept`, asProvider({ method: 'POST' }));
-      await callApi(app, `/bookings/${id}/depart`, asProvider({ method: 'POST' }));
+      await departProvider(app, id, asProvider({ method: 'POST' }));
       await deliver(id);
 
       const messages = await inboxFor(customer.phoneE164);

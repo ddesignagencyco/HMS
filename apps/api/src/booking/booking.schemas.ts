@@ -1,4 +1,5 @@
 // apps/api/src/booking/booking.schemas.ts
+import { BOOKING_STATUS_VALUES } from '@smart-home/domain';
 import { z } from 'zod';
 
 export const bookingCreateSchema = z
@@ -10,12 +11,26 @@ export const bookingCreateSchema = z
     scheduledStart: z.string().datetime(),
     scheduledEnd: z.string().datetime(),
     problemText: z.string().trim().min(1).max(2000).optional(),
+    /** One of the service's common faults, from the list the booking screen offers. */
+    issueOptionId: z.number().int().positive().optional(),
     paymentMode: z.enum(['CASH', 'ONLINE']).default('CASH'),
     isEmergency: z.boolean().default(false),
-    couponCode: z.string().trim().min(1).max(40).optional()
+    couponCode: z.string().trim().min(1).max(40).optional(),
+    /** Booking for someone who is not the customer. Requires the contact below. */
+    onBehalfOf: z
+      .object({
+        name: z.string().trim().min(1).max(120),
+        /** E.164, e.g. +923001234567. */
+        phoneE164: z
+          .string()
+          .trim()
+          .regex(/^\+[1-9][0-9]{7,14}$/, 'phoneE164 must be an E.164 number, e.g. +923001234567')
+      })
+      .strict()
+      .optional()
   })
   .strict()
-  .refine(input => new Date(input.scheduledEnd).getTime() > new Date(input.scheduledStart).getTime(), { message: 'scheduledEnd must be after scheduledStart', path: ['scheduledEnd'] });
+  .refine((input) => new Date(input.scheduledEnd).getTime() > new Date(input.scheduledStart).getTime(), { message: 'scheduledEnd must be after scheduledStart', path: ['scheduledEnd'] });
 
 export type BookingCreateInput = z.infer<typeof bookingCreateSchema>;
 
@@ -50,7 +65,7 @@ export const bookingStartSchema = z
     ...geoPoint
   })
   .strict()
-  .refine(input => (input.lat === undefined) === (input.lng === undefined), { message: 'lat and lng go together', path: ['lng'] });
+  .refine((input) => (input.lat === undefined) === (input.lng === undefined), { message: 'lat and lng go together', path: ['lng'] });
 
 export type BookingStartInput = z.infer<typeof bookingStartSchema>;
 
@@ -60,7 +75,7 @@ export const bookingRescheduleSchema = z
     scheduledEnd: z.string().datetime()
   })
   .strict()
-  .refine(input => new Date(input.scheduledEnd).getTime() > new Date(input.scheduledStart).getTime(), { message: 'scheduledEnd must be after scheduledStart', path: ['scheduledEnd'] });
+  .refine((input) => new Date(input.scheduledEnd).getTime() > new Date(input.scheduledStart).getTime(), { message: 'scheduledEnd must be after scheduledStart', path: ['scheduledEnd'] });
 
 export type BookingRescheduleInput = z.infer<typeof bookingRescheduleSchema>;
 
@@ -83,7 +98,8 @@ export type BookingNoShowInput = z.infer<typeof bookingNoShowSchema>;
 
 export const bookingListQuerySchema = z
   .object({
-    status: z.enum(['REQUESTED', 'SCHEDULED', 'EN_ROUTE', 'IN_PROGRESS', 'QUOTE_REVISION', 'WORK_COMPLETED', 'UNFULFILLED', 'CANCELLED_CUSTOMER', 'CANCELLED_PROVIDER', 'NO_SHOW']).optional()
+    /** Any value of the database's `booking_status` enum — not a subset, so `?status=VERIFIED` works. */
+    status: z.enum(BOOKING_STATUS_VALUES).optional()
   })
   .strict();
 
@@ -93,12 +109,23 @@ export const bookingChecklistSchema = z.object({ done: z.literal(true), evidence
 
 export type BookingChecklistInput = z.infer<typeof bookingChecklistSchema>;
 
+export const evidenceContentTypes = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'application/pdf'
+] as const;
+
 export const bookingEvidenceSchema = z
   .object({
     /** Generated on the device; a retry of the same upload (offline queue, flaky network) carries the same value and is stored once. */
     clientUuid: z.string().uuid(),
     kind: z.enum(['CUSTOMER_PROBLEM', 'BEFORE', 'AFTER', 'CHECKLIST']),
-    contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+    contentType: z.enum(evidenceContentTypes),
     contentBase64: z.string().min(1),
     checklistItemId: z.number().int().positive().optional(),
     capturedAt: z.string().datetime().optional(),
@@ -106,7 +133,7 @@ export const bookingEvidenceSchema = z
     lng: z.number().min(-180).max(180).optional()
   })
   .strict()
-  .refine(input => (input.lat === undefined) === (input.lng === undefined), { message: 'lat and lng go together', path: ['lng'] });
+  .refine((input) => (input.lat === undefined) === (input.lng === undefined), { message: 'lat and lng go together', path: ['lng'] });
 
 export type BookingEvidenceInput = z.infer<typeof bookingEvidenceSchema>;
 
@@ -117,7 +144,7 @@ export const bookingCompleteSchema = z
     ...geoPoint
   })
   .strict()
-  .refine(input => (input.lat === undefined) === (input.lng === undefined), { message: 'lat and lng go together', path: ['lng'] });
+  .refine((input) => (input.lat === undefined) === (input.lng === undefined), { message: 'lat and lng go together', path: ['lng'] });
 
 export type BookingCompleteInput = z.infer<typeof bookingCompleteSchema>;
 

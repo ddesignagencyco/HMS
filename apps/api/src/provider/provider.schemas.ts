@@ -46,7 +46,14 @@ export const serviceAreasReplaceSchema = z
   })
   .strict();
 
+export const providerSubmitSchema = z
+  .object({
+    acceptPenaltySchedule: z.literal(true)
+  })
+  .strict();
+
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 export type AvailabilityReplaceInput = z.infer<typeof availabilityReplaceSchema>;
 export type TimeOffCreateInput = z.infer<typeof timeOffCreateSchema>;
 export type ServiceAreasReplaceInput = z.infer<typeof serviceAreasReplaceSchema>;
+export type ProviderSubmitInput = z.infer<typeof providerSubmitSchema>;

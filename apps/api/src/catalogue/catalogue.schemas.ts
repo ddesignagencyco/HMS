@@ -27,6 +27,9 @@ export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
 export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
 
 const paisa = z.number().int().min(0);
+// A service must have a real value: base and minimum price can never be zero, matching the
+// `services_base_price_paisa_check`/`services_min_price_paisa_check` CHECKs in the database.
+const positivePaisa = z.number().int().positive();
 const pricingModel = z.enum(['FLAT', 'TIME_BASED', 'INSPECTION_FIRST']);
 const timeUnit = z.enum(['HOUR', 'DAY']);
 
@@ -44,8 +47,8 @@ export const serviceCreateSchema = z
     description: z.string().trim().min(1).max(2000),
     pricingModel,
     timeUnit: timeUnit.nullish(),
-    basePricePaisa: paisa,
-    minPricePaisa: paisa,
+    basePricePaisa: positivePaisa,
+    minPricePaisa: positivePaisa,
     maxPricePaisa: paisa,
     visitFeePaisa: paisa.default(0),
     expectedDurationMin: z.number().int().positive(),
@@ -63,8 +66,8 @@ export const serviceUpdateSchema = z
     nameEn: name.optional(),
     nameUr: name.optional(),
     description: z.string().trim().min(1).max(2000).optional(),
-    basePricePaisa: paisa.optional(),
-    minPricePaisa: paisa.optional(),
+    basePricePaisa: positivePaisa.optional(),
+    minPricePaisa: positivePaisa.optional(),
     maxPricePaisa: paisa.optional(),
     visitFeePaisa: paisa.optional(),
     expectedDurationMin: z.number().int().positive().optional(),
@@ -95,6 +98,30 @@ export const checklistReplaceSchema = z
 export type ServiceCreateInput = z.infer<typeof serviceCreateSchema>;
 export type ServiceUpdateInput = z.infer<typeof serviceUpdateSchema>;
 export type ChecklistReplaceInput = z.infer<typeof checklistReplaceSchema>;
+
+/**
+ * The common faults a customer picks from on the booking screen. Replaced wholesale
+ * like the checklist, because the list is a curated catalogue rather than something
+ * customers append to: an option that is no longer true of the service should
+ * disappear, and bookings that already recorded it keep the label they were given.
+ */
+export const issueOptionsReplaceSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            slug,
+            labelEn: name,
+            labelUr: name
+          })
+          .strict()
+      )
+      .max(50)
+  })
+  .strict();
+
+export type IssueOptionsReplaceInput = z.infer<typeof issueOptionsReplaceSchema>;
 
 const commissionScope = z.enum(['GLOBAL', 'CATEGORY', 'PROVIDER']);
 

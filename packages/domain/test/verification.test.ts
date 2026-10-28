@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { allowedOutcomes, bandOf, nextAttemptAt, ratingScoreHundredths, remarkDisplayName, submissionProblems, type Questionnaire } from '../src/verification.js';
+import { allowedOutcomes, bandOf, nextAttemptAt, ratingScoreHundredths, remarkDisplayName, selfVerifyDecision, selfVerifyProblems, submissionProblems, type Questionnaire } from '../src/verification.js';
 
 // Asia/Karachi is UTC+5 all year: 10:00 local is 05:00Z.
 const local = (hour: number, minute = 0, day = 5): Date => new Date(Date.UTC(2026, 9, day, hour - 5, minute));
 const hhmm = (date: Date): string => new Date(date.getTime() + 5 * 3_600_000).toISOString().slice(5, 16);
 
-describe('bandOf: SRS §5.5 time bands, in Pakistan time', () => {
+describe('bandOf: SRS Â§5.5 time bands, in Pakistan time', () => {
   it.each([
     [7, 59, null],
     [8, 0, 'MORNING'],
@@ -45,7 +45,7 @@ describe('nextAttemptAt: the next call goes to a band not yet tried', () => {
 
 const good: Questionnaire = { workCompleted: 'FULL', extraChargeDemanded: false, consentLineRead: true, consentToRelease: true };
 
-describe('outcome guards (SRS §5.4)', () => {
+describe('outcome guards (SRS Â§5.4)', () => {
   it('allows every outcome when the answers are clean', () => {
     expect(allowedOutcomes(good)).toEqual(['VERIFIED_SATISFIED', 'VERIFIED_WITH_ISSUE', 'REWORK_REQUIRED', 'DISPUTED']);
   });
@@ -65,7 +65,7 @@ describe('outcome guards (SRS §5.4)', () => {
     expect(submissionProblems({ ...good, consentLineRead: false }, 'DISPUTED').map(problem => problem.field)).toEqual(['consentLineRead']);
   });
 
-  it('refuses a release-permitting outcome without the customer’s consent to release', () => {
+  it('refuses a release-permitting outcome without the customerâ€™s consent to release', () => {
     expect(submissionProblems({ ...good, consentToRelease: false }, 'VERIFIED_WITH_ISSUE').map(problem => problem.field)).toEqual(['consentToRelease']);
     expect(submissionProblems({ ...good, consentToRelease: false }, 'DISPUTED')).toEqual([]);
     expect(submissionProblems({ ...good, consentToRelease: false }, 'REWORK_REQUIRED')).toEqual([]);
@@ -89,5 +89,56 @@ describe('rating and remark helpers', () => {
     expect(remarkDisplayName('Ayesha', 'Khan')).toBe('Ayesha K.');
     expect(remarkDisplayName('  Bilal ', ' ahmed')).toBe('Bilal A.');
     expect(remarkDisplayName('Sana', '')).toBe('Sana');
+  });
+});
+
+describe('FR-VC-16: the customer confirms the job themselves', () => {
+  const clean = { workCompleted: 'FULL', extraChargeDemanded: false, consentToRelease: true } as const;
+
+  it('"everything was fine" releases and publishes a rating', () => {
+    expect(selfVerifyDecision(clean, 'SATISFIED')).toEqual({ kind: 'release', outcome: 'LINK_CONFIRMED', withIssue: false, publishesRating: true });
+  });
+
+  it('"done, but there was a problem" still releases â€” the customerâ€™s money is theirs â€” and flags the quality', () => {
+    expect(selfVerifyDecision(clean, 'WITH_ISSUE')).toEqual({ kind: 'release', outcome: 'LINK_CONFIRMED', withIssue: true, publishesRating: true });
+  });
+
+  it('"not acceptable" releases nothing and escalates to a person', () => {
+    expect(selfVerifyDecision(clean, 'NOT_ACCEPTABLE')).toEqual({ kind: 'escalate', reason: 'CUSTOMER_CHOICE' });
+  });
+
+  it('no work done escalates on integrity grounds whatever else was chosen', () => {
+    for (const choice of ['SATISFIED', 'WITH_ISSUE', 'NOT_ACCEPTABLE'] as const) {
+      expect(selfVerifyDecision({ ...clean, workCompleted: 'NONE' }, choice)).toEqual({ kind: 'escalate', reason: 'INTEGRITY' });
+    }
+  });
+
+  it('an extra charge demanded escalates on integrity grounds whatever else was chosen', () => {
+    for (const choice of ['SATISFIED', 'WITH_ISSUE', 'NOT_ACCEPTABLE'] as const) {
+      expect(selfVerifyDecision({ ...clean, extraChargeDemanded: true }, choice)).toEqual({ kind: 'escalate', reason: 'INTEGRITY' });
+    }
+  });
+
+  it('a partial job can still be confirmed â€” that is the customerâ€™s call to make, not ours', () => {
+    expect(selfVerifyDecision({ ...clean, workCompleted: 'PARTIAL' }, 'SATISFIED').kind).toBe('release');
+  });
+
+  it('a release is refused without an explicit agreement to release', () => {
+    expect(selfVerifyProblems({ ...clean, consentToRelease: false }, 'SATISFIED').map(problem => problem.field)).toEqual(['consentToRelease']);
+    expect(selfVerifyProblems({ ...clean, consentToRelease: false }, 'WITH_ISSUE').map(problem => problem.field)).toEqual(['consentToRelease']);
+    // Nothing is released, so nothing needs consent â€” the same rule the agent submission follows.
+    expect(selfVerifyProblems({ ...clean, consentToRelease: false }, 'NOT_ACCEPTABLE')).toEqual([]);
+  });
+
+  it('says all fine alongside "no work was done" is a contradiction, not a release', () => {
+    expect(selfVerifyProblems({ ...clean, workCompleted: 'NONE' }, 'SATISFIED').map(problem => problem.field)).toEqual(['workCompleted']);
+    expect(selfVerifyProblems({ ...clean, extraChargeDemanded: true }, 'WITH_ISSUE').map(problem => problem.field)).toEqual(['extraChargeDemanded']);
+    // Answering "not acceptable" alongside either of those is not a contradiction â€” it is the honest form.
+    expect(selfVerifyProblems({ ...clean, workCompleted: 'NONE' }, 'NOT_ACCEPTABLE')).toEqual([]);
+  });
+
+  it('reports nothing wrong with a clean, consenting submission', () => {
+    expect(selfVerifyProblems(clean, 'SATISFIED')).toEqual([]);
+    expect(selfVerifyProblems(clean, 'WITH_ISSUE')).toEqual([]);
   });
 });

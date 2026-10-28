@@ -22,6 +22,18 @@ export type EvidenceRow = {
 
 export type EvidenceResult = { evidence: EvidenceRow; duplicate: boolean };
 
+/** One step of a service's checklist, and what has been done on this booking's current visit. */
+export type ChecklistItemView = {
+  itemId: number;
+  position: number;
+  labelEn: string;
+  labelUr: string;
+  requiresPhoto: boolean;
+  done: boolean;
+  evidenceId: string | null;
+  doneAt: Date | null;
+};
+
 const PROVIDER_KINDS = new Set(['BEFORE', 'AFTER', 'CHECKLIST']);
 /** FR-BK-03: a customer may attach up to five photos of the problem, and only while the job can still change hands or be prepared for. */
 const MAX_PROBLEM_PHOTOS = 5;
@@ -64,7 +76,10 @@ export class ExecutionService {
     }
 
     if (input.kind === 'CHECKLIST') {
-      if (input.checklistItemId === undefined) throw new DomainError('VALIDATION_FAILED', 'A checklist photo names the step it belongs to', [{ path: 'checklistItemId', code: 'required', message: 'checklistItemId is required for CHECKLIST evidence' }]);
+      if (input.checklistItemId === undefined)
+        throw new DomainError('VALIDATION_FAILED', 'A checklist photo names the step it belongs to', [
+          { path: 'checklistItemId', code: 'required', message: 'checklistItemId is required for CHECKLIST evidence' }
+        ]);
       await this.assertChecklistItem(booking.serviceId, input.checklistItemId);
     }
 
@@ -110,6 +125,35 @@ export class ExecutionService {
     return this.evidenceQuery(Prisma.sql`booking_id = ${bookingId}::uuid`);
   }
 
+  /**
+   * FR-EX-08 read back. The steps a service defines, with what has been done on
+   * this booking so far — otherwise `itemId` is undiscoverable, and a provider
+   * who has genuinely finished every step still gets a 409 from `complete` with
+   * no way to see what is left.
+   *
+   * The `done` flags come from the same rows `CompletionService.complete` counts
+   * as outstanding, for the same `visit_no`, so this cannot disagree with the
+   * 409 it exists to avoid. `itemId` is the integer the POST route's ParseIntPipe
+   * expects, and `requiresPhoto` says outright whether the step needs a photo
+   * before its tick will stand.
+   */
+  async listChecklist(bookingId: string, actorUserId: string): Promise<{ items: ChecklistItemView[]; outstanding: number }> {
+    const owned = await this.prisma.$queryRaw<{ serviceId: number; visitNo: number }[]>(
+      Prisma.sql`SELECT service_id as "serviceId", visit_no as "visitNo" FROM bookings WHERE id = ${bookingId}::uuid AND (customer_id = ${actorUserId}::uuid OR provider_id = ${actorUserId}::uuid)`
+    );
+    const booking = owned[0];
+    if (booking === undefined) throw notFound('Booking');
+    const rows = await this.prisma.$queryRaw<ChecklistItemView[]>(
+      Prisma.sql`SELECT c.id as "itemId", c.position, c.label_en as "labelEn", c.label_ur as "labelUr", c.requires_photo as "requiresPhoto",
+          coalesce(r.done, false) as done, r.evidence_id as "evidenceId", r.completed_at as "doneAt"
+        FROM service_checklist_items c
+        LEFT JOIN job_checklist_results r ON r.booking_id = ${bookingId}::uuid AND r.checklist_item_id = c.id AND r.visit_no = ${booking.visitNo}
+        WHERE c.service_id = ${booking.serviceId} AND c.is_active = true
+        ORDER BY c.position`
+    );
+    return { items: rows, outstanding: rows.filter((row) => !row.done).length };
+  }
+
   private async findByClientUuid(bookingId: string, clientUuid: string): Promise<EvidenceRow | null> {
     const rows = await this.evidenceQuery(Prisma.sql`booking_id = ${bookingId}::uuid AND client_uuid = ${clientUuid}::uuid`);
     return rows[0] ?? null;
@@ -138,7 +182,12 @@ export class ExecutionService {
    * already recorded for that very step on this booking — so "photographed" is proven by a stored, timestamped
    * row, not by the provider's say-so.
    */
-  async markChecklistItemDone(bookingId: string, providerId: string, checklistItemId: number, evidenceId: string | undefined): Promise<{ checklistItemId: number; done: boolean; evidenceId: string | null }> {
+  async markChecklistItemDone(
+    bookingId: string,
+    providerId: string,
+    checklistItemId: number,
+    evidenceId: string | undefined
+  ): Promise<{ checklistItemId: number; done: boolean; evidenceId: string | null }> {
     const owned = await this.prisma.$queryRaw<{ serviceId: number; status: string; visitNo: number }[]>(
       Prisma.sql`SELECT service_id as "serviceId", status, visit_no as "visitNo" FROM bookings WHERE id = ${bookingId}::uuid AND provider_id = ${providerId}::uuid`
     );
@@ -152,11 +201,16 @@ export class ExecutionService {
       const found = await this.prisma.$queryRaw<{ id: string }[]>(
         Prisma.sql`SELECT id FROM job_evidence WHERE id = ${evidenceId}::uuid AND booking_id = ${bookingId}::uuid AND kind = 'CHECKLIST' AND checklist_item_id = ${checklistItemId}`
       );
-      if (found[0] === undefined) throw new DomainError('VALIDATION_FAILED', 'That evidence is not a photo of this checklist step', [{ path: 'evidenceId', code: 'invalid', message: 'evidenceId must be a CHECKLIST photo recorded for this step' }]);
+      if (found[0] === undefined)
+        throw new DomainError('VALIDATION_FAILED', 'That evidence is not a photo of this checklist step', [
+          { path: 'evidenceId', code: 'invalid', message: 'evidenceId must be a CHECKLIST photo recorded for this step' }
+        ]);
       linkedEvidence = found[0].id;
     }
     if (item.requiresPhoto && linkedEvidence === null) {
-      throw new DomainError('VALIDATION_FAILED', 'This step needs a photo before it can be marked done', [{ path: 'evidenceId', code: 'required', message: 'evidenceId is required for a step that requires a photo' }]);
+      throw new DomainError('VALIDATION_FAILED', 'This step needs a photo before it can be marked done', [
+        { path: 'evidenceId', code: 'required', message: 'evidenceId is required for a step that requires a photo' }
+      ]);
     }
 
     await this.prisma.$executeRaw(
@@ -171,7 +225,12 @@ export class ExecutionService {
    * FR-EX-09 / BR-09: how far from the customer's door the provider says they are. A shortfall is *flagged*,
    * never blocking — phones misreport GPS indoors — so it is recorded on the booking for verification to see.
    */
-  async recordCheckin(tx: Prisma.TransactionClient, bookingId: string, kind: 'checkin' | 'checkout', point: { lat: number; lng: number; accuracyM?: number | undefined }): Promise<{ distanceM: number; withinGeofence: boolean }> {
+  async recordCheckin(
+    tx: Prisma.TransactionClient,
+    bookingId: string,
+    kind: 'checkin' | 'checkout',
+    point: { lat: number; lng: number; accuracyM?: number | undefined }
+  ): Promise<{ distanceM: number; withinGeofence: boolean }> {
     const radius = await this.settings.getNumber('evidence.geofence_radius_m');
     const rows = await tx.$queryRaw<{ distanceM: number }[]>(
       Prisma.sql`SELECT ST_Distance(a.location, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography)::float8 as "distanceM"
@@ -179,7 +238,9 @@ export class ExecutionService {
     );
     const distanceM = Math.round(rows[0]?.distanceM ?? 0);
     if (kind === 'checkin') {
-      await tx.$executeRaw(Prisma.sql`UPDATE bookings SET checkin_at = now(), checkin_distance_m = ${distanceM}, checkin_accuracy_m = ${point.accuracyM === undefined ? null : Math.round(point.accuracyM)} WHERE id = ${bookingId}::uuid`);
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE bookings SET checkin_at = now(), checkin_distance_m = ${distanceM}, checkin_accuracy_m = ${point.accuracyM === undefined ? null : Math.round(point.accuracyM)} WHERE id = ${bookingId}::uuid`
+      );
     } else {
       await tx.$executeRaw(Prisma.sql`UPDATE bookings SET checkout_at = now(), checkout_distance_m = ${distanceM} WHERE id = ${bookingId}::uuid`);
     }

@@ -102,10 +102,12 @@ describe('SHM-025: GET /search/providers/:id/slots', () => {
     expect((await listSlots(localDate(10), provider.id, 999_999)).status).toBe(404);
   });
 
-  it('offers nothing earlier than an hour from now', async () => {
+  it('offers nothing earlier than the configured minimum notice', async () => {
     const today = localDate(0);
     const response = await listSlots(today);
     expect(response.status).toBe(200);
-    for (const slot of response.body.items) expect(new Date(slot.start).getTime()).toBeGreaterThanOrEqual(Date.now() + 60 * 60_000 - 1_000);
+    // booking.min_notice_min, seeded at 30. The listing and checkout read the same
+    // setting, so a time offered here is one checkout will accept.
+    for (const slot of response.body.items) expect(new Date(slot.start).getTime()).toBeGreaterThanOrEqual(Date.now() + 30 * 60_000 - 1_000);
   });
 });

@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { PrismaService } from '../../src/database/prisma.service.js';
 import { callApi, createTestApp, postJson, readOtpFromInbox, readyBookableProvider, registerAndVerify } from './harness.js';
+import { departProvider, startProvider } from './flow.js';
 
 let app: NestExpressApplication;
 let close: () => Promise<void>;
@@ -50,9 +51,9 @@ describe('FR-EX-05 / SHM-042: raise, approve and reject a quote revision', () =>
     nextSlotOffsetHours += 24;
     const created = await callApi<{ id: string; quotedAmountPaisa: number }>(app, '/bookings', asCustomer(customer.accessToken, postJson({ providerId: shared.providerId, serviceId: shared.serviceId, addressId: address.body.id, ...slot })));
     await callApi(app, `/bookings/${created.body.id}/accept`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
-    await callApi(app, `/bookings/${created.body.id}/depart`, asCustomer(shared.providerAccessToken, { method: 'POST' }));
+    await departProvider(app, created.body.id, asCustomer(shared.providerAccessToken, { method: 'POST' }));
     const code = await readOtpFromInbox(app, customer.phoneE164);
-    await callApi(app, `/bookings/${created.body.id}/start`, asCustomer(shared.providerAccessToken, postJson({ code })));
+    await startProvider(app, created.body.id, asCustomer(shared.providerAccessToken, postJson({ code })));
     return { id: created.body.id, customerAccessToken: customer.accessToken, quotedAmountPaisa: created.body.quotedAmountPaisa };
   };
 

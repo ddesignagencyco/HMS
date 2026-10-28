@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppClock } from '../../src/platform/app-clock.js';
-import { callApi, postJson, readOtpFromInbox, readyBookableProvider, registerAndVerify, staffSession, type TestUser } from './harness.js';
+import { callApi, postJson, readOtpFromInbox, readyBookableProvider, registerAndVerify, staffSession, type ApiResponse, type TestUser } from './harness.js';
 
 export const prisma = new PrismaClient();
 
@@ -17,14 +17,48 @@ export const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 
 /** The next moment (at or after now) that is `hour`:`minute` Pakistan time: Pakistan is UTC+5 all year. */
 export const nextLocalTime = (hour: number, minute = 0): Date => {
   const now = new Date();
-  const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour - 5, minute));
-  return candidate.getTime() >= now.getTime() ? candidate : new Date(candidate.getTime() + 24 * 3_600_000);
+  let candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour - 5, minute));
+  while (candidate.getTime() < now.getTime()) candidate = new Date(candidate.getTime() + 24 * 3_600_000);
+  return candidate;
 };
 
 /** Makes the application's clock read 10:30 Pakistan time — inside calling hours whenever the suite really runs. Real elapsed time still counts. */
 export const freezeInsideCallingHours = (app: NestExpressApplication, at: Date = nextLocalTime(10, 30)): void => app.get(AppClock).travelTo(at);
 export const travelToLocal = (app: NestExpressApplication, hour: number, minute = 0): void => app.get(AppClock).travelTo(nextLocalTime(hour, minute));
 export const unfreeze = (app: NestExpressApplication): void => app.get(AppClock).reset();
+
+/**
+ * Most of this suite schedules bookings far in the future purely so each test gets its own
+ * non-overlapping slot (`bookings_no_provider_overlap`) -- never because the test is actually
+ * about timing. SHM-094's depart/start gates (`TOO_EARLY`) now refuse both outright that far
+ * ahead of `scheduledStart`, since real wall-clock time never catches up to it.
+ *
+ * This runs `fn` with the app clock sitting just inside the relevant gate for `bookingId`'s
+ * real `scheduledStart`, then puts the clock back exactly where it was -- real time, or
+ * whatever freeze/travel an earlier part of the same test already set up -- so a single
+ * gated call can never leak a time jump into the rest of the test or the tests after it.
+ */
+const atScheduleGate = async <T>(app: NestExpressApplication, bookingId: string, minutesBeforeStart: number, fn: () => Promise<T>): Promise<T> => {
+  const rows = await prisma.$queryRaw<{ scheduledStart: Date }[]>(Prisma.sql`SELECT scheduled_start as "scheduledStart" FROM bookings WHERE id = ${bookingId}::uuid`);
+  const scheduledStart = rows[0]?.scheduledStart;
+  if (scheduledStart === undefined) throw new Error(`atScheduleGate: no booking ${bookingId}`);
+  const clock = app.get(AppClock);
+  const before = clock.now();
+  clock.travelTo(new Date(scheduledStart.getTime() - minutesBeforeStart * 60_000));
+  try {
+    return await fn();
+  } finally {
+    clock.travelTo(before);
+  }
+};
+
+/** `POST /bookings/:id/depart`, with the clock placed just inside `booking.travel_buffer_min` (30 min) of the booking's own scheduled start. */
+export const departProvider = <T = unknown>(app: NestExpressApplication, bookingId: string, init: RequestInit): Promise<ApiResponse<T>> =>
+  atScheduleGate(app, bookingId, 29, () => callApi<T>(app, `/bookings/${bookingId}/depart`, init));
+
+/** `POST /bookings/:id/start`, with the clock placed just inside `booking.early_start_grace_min` (15 min) of the booking's own scheduled start. */
+export const startProvider = <T = unknown>(app: NestExpressApplication, bookingId: string, init: RequestInit): Promise<ApiResponse<T>> =>
+  atScheduleGate(app, bookingId, 14, () => callApi<T>(app, `/bookings/${bookingId}/start`, init));
 
 export type Provider = { id: string; accessToken: string; serviceId: number; areaId: number; user: TestUser };
 
@@ -38,7 +72,7 @@ export type Job = { id: string; code: string; customer: TestUser; provider: Prov
 /** The provider enters the customer's latest start code. `minutesOnSite` back-dates the verified start so the job does not look suspiciously quick (rule R4). */
 export const startVisit = async (app: NestExpressApplication, provider: Provider, customer: TestUser, bookingId: string, minutesOnSite?: number): Promise<void> => {
   const code = await readOtpFromInbox(app, customer.phoneE164);
-  const started = await callApi(app, `/bookings/${bookingId}/start`, bearer(provider.accessToken, postJson({ code })));
+  const started = await startProvider(app, bookingId, bearer(provider.accessToken, postJson({ code })));
   if (started.status !== 200) throw new Error(`start failed: ${started.status} ${JSON.stringify(started.body)}`);
   if (minutesOnSite !== undefined) {
     await prisma.$executeRaw(Prisma.sql`UPDATE bookings SET start_otp_verified_at = now() - make_interval(mins => ${minutesOnSite}::int) WHERE id = ${bookingId}::uuid`);
@@ -88,7 +122,8 @@ export const completedJob = async (app: NestExpressApplication, provider: Provid
   if (created.body.payment !== undefined) await callApi(app, `/dev/payments/${created.body.payment.paymentId}/complete?outcome=captured`, { method: 'POST' });
   const asProvider = (init: RequestInit = {}): RequestInit => bearer(provider.accessToken, init);
   await callApi(app, `/bookings/${id}/accept`, asProvider({ method: 'POST' }));
-  await callApi(app, `/bookings/${id}/depart`, asProvider({ method: 'POST' }));
+  const departed = await departProvider(app, id, asProvider({ method: 'POST' }));
+  if (departed.status !== 200) throw new Error(`depart failed: ${departed.status} ${JSON.stringify(departed.body)}`);
   await startVisit(app, provider, customer, id, options.minutesOnSite);
   const completed = await doWorkAndComplete(app, provider, customer, id, options.finalReduction);
   const verification = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM verification_calls WHERE booking_id = ${id}::uuid ORDER BY visit_no DESC LIMIT 1`);

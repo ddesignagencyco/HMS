@@ -38,9 +38,7 @@ export class SessionService {
    */
   async rotate(presented: string, meta: SessionMeta): Promise<RotatedSession> {
     const hash = hashRefreshToken(presented);
-    const rows = await this.prisma.$queryRaw<SessionRow[]>(
-      Prisma.sql`SELECT id, user_id, family_id, revoked_at, replaced_by FROM sessions WHERE refresh_token_hash = ${hash} FOR UPDATE`
-    );
+    const rows = await this.prisma.$queryRaw<SessionRow[]>(Prisma.sql`SELECT id, user_id, family_id, revoked_at, replaced_by FROM sessions WHERE refresh_token_hash = ${hash} FOR UPDATE`);
     const session = rows[0];
     if (session === undefined) throw new DomainError('UNAUTHENTICATED', 'The refresh token is not valid');
     if (session.revoked_at !== null) {
@@ -59,6 +57,23 @@ export class SessionService {
     // first token of a family and not only for ones that came from a rotation.
     await this.prisma.$queryRaw(Prisma.sql`UPDATE sessions SET revoked_at = now(), replaced_by = ${issued.sessionId}::uuid WHERE id = ${session.id}::uuid`);
     return { userId: session.user_id, ...issued };
+  }
+
+  /**
+   * Reads a refresh token *without* rotating it, for the one read-only answer
+   * that needs it: "is this browser signed in?". Rotating here would revoke the
+   * token the caller is about to present for real, so this deliberately does not.
+   *
+   * Returns null for anything unusable — unknown, revoked, expired — so the
+   * caller can answer "no" rather than distinguish, which is the same
+   * non-disclosing posture every other auth failure takes.
+   */
+  async identify(presented: string): Promise<string | null> {
+    const rows = await this.prisma.$queryRaw<{ user_id: string }[]>(
+      Prisma.sql`SELECT s.user_id FROM sessions s
+        WHERE s.refresh_token_hash = ${hashRefreshToken(presented)} AND s.revoked_at IS NULL AND s.expires_at > now()`
+    );
+    return rows[0]?.user_id ?? null;
   }
 
   async revoke(presented: string): Promise<void> {
@@ -86,6 +101,17 @@ export class SessionService {
   /** Used after a password change: FR-CU-04 in SHM-020 requires every other session to die. */
   async revokeAllForUser(userId: string): Promise<number> {
     return this.prisma.$executeRaw(Prisma.sql`UPDATE sessions SET revoked_at = now() WHERE user_id = ${userId}::uuid AND revoked_at IS NULL`);
+  }
+
+  /**
+   * FR-CU-04 in SHM-020: after an authenticated password change every *other*
+   * session is signed out, but the caller keeps the one they are using, so the
+   * change does not sign the person out of the browser they just typed in.
+   */
+  async revokeOthersForUser(userId: string, keepSessionId: string): Promise<number> {
+    return this.prisma.$executeRaw(
+      Prisma.sql`UPDATE sessions SET revoked_at = now() WHERE user_id = ${userId}::uuid AND id <> ${keepSessionId}::uuid AND revoked_at IS NULL`
+    );
   }
 
   private async insert(userId: string, familyId: string, meta: SessionMeta): Promise<IssuedSession> {

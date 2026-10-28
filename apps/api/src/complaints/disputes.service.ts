@@ -15,6 +15,11 @@ import { SettingsService } from '../platform/settings.service.js';
 import { QueueRegistry } from '../queues/queue.registry.js';
 import { VerificationOutcomeService } from '../verification/verification-outcome.service.js';
 
+interface EvidenceCheckResult {
+  isFalsified: boolean;
+  details: Record<string, unknown>;
+}
+
 export type ResolveInput = {
   resolution: 'FULL_RELEASE' | 'PARTIAL_RELEASE' | 'FULL_REFUND' | 'REFUND_WITH_PENALTY';
   /** PARTIAL_RELEASE only: how much of the held money goes to the provider. The rest goes back to the customer. */
@@ -126,7 +131,7 @@ export class DisputesService implements OnModuleInit {
         completedAt: booking.completedAt,
         minutesOnSite: booking.startedAt !== null && booking.completedAt !== null ? Math.round((booking.completedAt.getTime() - booking.startedAt.getTime()) / 60_000) : null,
         geofence: { radiusM: geofence, checkinDistanceM: booking.checkinDistance, checkoutDistanceM: booking.checkoutDistance, checkinWithin: booking.checkinDistance === null ? null : booking.checkinDistance <= geofence, checkoutWithin: booking.checkoutDistance === null ? null : booking.checkoutDistance <= geofence },
-        photos: evidence.map(({ storageKey, ...photo }) => ({ ...photo, url: `/api/v1/dev/storage/evidence/${encodeURIComponent(storageKey)}` })),
+        photos: evidence.map(({ storageKey, ...photo }) => ({ ...photo, storageKey, url: `/api/v1/dev/storage/evidence/${encodeURIComponent(storageKey)}` })),
         checklist,
         invoice: invoice[0] === undefined ? null : { number: invoice[0].number, totalPaisa: paisaToNumber(invoice[0].total), lines: lines.map(line => ({ kind: line.kind, description: line.description, amountPaisa: paisaToNumber(line.amountPaisa) })) }
       },
@@ -242,12 +247,117 @@ export class DisputesService implements OnModuleInit {
         const mapped = { FULL_RELEASE: 'NO_ACTION', PARTIAL_RELEASE: 'PARTIAL_REFUND', FULL_REFUND: 'FULL_REFUND', REFUND_WITH_PENALTY: 'PROVIDER_PENALTY' }[input.resolution];
         await tx.$executeRaw(Prisma.sql`UPDATE complaints SET status = 'RESOLVED'::complaint_status, resolution = ${mapped}::complaint_resolution, resolution_note = ${`Resolved by dispute: ${input.note}`}, resolved_at = ${now.toISOString()}::timestamptz WHERE id = ${dispute.complaintId}::uuid AND status NOT IN ('RESOLVED','REJECTED')`);
       }
+      
+      // Fetch evidence floor for automatic falsified evidence detection
+      const evidenceFloorResult = await this.evidenceFloor(disputeId, true);
+      
       await this.audit.append({ actorUserId: adminId, actorRole: 'ADMIN', action: 'dispute.resolve', entityType: 'dispute', entityId: disputeId, after: { resolution: input.resolution, releasePaisa: releasePaisa.toString(), refundPaisa: refundPaisa.toString(), override: input.overrideReason ?? null } }, tx);
       await appendOutboxEvent(tx, { aggregate: 'dispute', aggregateId: disputeId, type: 'dispute.resolved', payload: { disputeId, bookingId: bookings.id, customerId: bookings.customerId, providerId: bookings.providerId, resolution: input.resolution, releasePaisa: releasePaisa.toString(), refundPaisa: refundPaisa.toString() } });
+      
+      // SHM-080: Automatic FALSIFIED_EVIDENCE breach proposal when evidence inconsistency is detected
+      await this.maybeProposeFalsifiedEvidence(tx, bookings.providerId, bookings.id, disputeId, dispute.complaintId ?? undefined, evidenceFloorResult);
+      
       return { refundIds, releasePaisa, refundPaisa, bookingId: bookings.id };
     });
     await this.bookingState.settleRefunds(result.refundIds);
     return { disputeId, resolution: input.resolution, releasePaisa: paisaToNumber(result.releasePaisa), refundPaisa: paisaToNumber(result.refundPaisa) };
+  }
+
+  /**
+   * SHM-080: Automatically propose FALSIFIED_EVIDENCE breach when dispute resolution reveals
+   * evidence inconsistencies that indicate the provider fabricated or falsified job evidence.
+   * This is the only trigger for PERMANENT_BLOCK consequence (25 points, INTEGRITY category).
+   */
+  private async maybeProposeFalsifiedEvidence(
+    tx: Prisma.TransactionClient,
+    providerId: string,
+    bookingId: string,
+    disputeId: string,
+    complaintId: string | undefined,
+    evidenceFloor: Awaited<ReturnType<DisputesService['evidenceFloor']>>
+  ): Promise<void> {
+    const check = this.checkForFalsifiedEvidence(evidenceFloor);
+    if (!check.isFalsified) return;
+
+    // Check if already proposed for this booking/dispute
+    const existing = await tx.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT id FROM penalties WHERE provider_id = ${providerId}::uuid AND breach_code = 'FALSIFIED_EVIDENCE' AND dispute_id = ${disputeId}::uuid AND status IN ('PROPOSED','APPLIED','APPEALED','UPHELD') LIMIT 1`
+    );
+    if (existing[0] !== undefined) return;
+
+    await this.conduct.autoPropose(tx, {
+      providerId,
+      breachCode: 'FALSIFIED_EVIDENCE',
+      bookingId,
+      disputeId,
+      ...(complaintId !== undefined ? { complaintId } : {}),
+      evidence: { disputeId, ...check.details, automatic: true }
+    });
+  }
+
+  /**
+   * Checks the evidence floor for patterns indicating falsified evidence:
+   * - Checklist items marked done but no required photo evidence
+   * - Before/after photos that are the same file
+   * - Evidence uploaded after the verification of the visit it belongs to
+   *
+   * Deliberately *not* here: a geofence shortfall. FR-EX-09 / BR-09 decided that a
+   * check-in or check-out outside the radius is **flagged, never blocking**, because
+   * phones misreport GPS indoors — which is the normal case in a multi-storey building
+   * in Lahore. FALSIFIED_EVIDENCE is 25 points and the only PERMANENT_BLOCK trigger on
+   * the whole schedule, so promoting a signal the product explicitly called unreliable
+   * into it would propose a permanent block against an honest provider whose phone
+   * mislocated them. The distances are still in the evidence floor for the admin
+   * (`checkinWithin` / `checkoutWithin`), which is where FR-EX-09 says a human sees it.
+   */
+  private checkForFalsifiedEvidence(evidenceFloor: Awaited<ReturnType<DisputesService['evidenceFloor']>>): EvidenceCheckResult {
+    const details: Record<string, unknown> = {};
+    let isFalsified = false;
+
+    // Check 1: Required checklist photos missing
+    const missingRequiredPhotos = evidenceFloor.evidenceFloor.checklist
+      .filter(item => item.requiresPhoto && item.done === true && item.evidenceId === null)
+      .map(item => item.label);
+    if (missingRequiredPhotos.length > 0) {
+      isFalsified = true;
+      details.missingRequiredPhotos = missingRequiredPhotos;
+    }
+
+    // Check 2: one file submitted as both the "before" and the "after" shot
+    const photos = evidenceFloor.evidenceFloor.photos;
+    const beforePhotos = photos.filter(p => p.kind === 'BEFORE');
+    const afterPhotos = photos.filter(p => p.kind === 'AFTER');
+    if (beforePhotos.length > 0 && afterPhotos.length > 0) {
+      const afterKeys = new Set(afterPhotos.map(p => p.storageKey));
+      const suspiciousPairs = beforePhotos.map(p => p.storageKey).filter(key => afterKeys.has(key));
+      if (suspiciousPairs.length > 0) {
+        isFalsified = true;
+        details.suspiciousPhotoPairs = suspiciousPairs;
+      }
+    }
+
+    // Check 3: evidence belonging to a visit that was never verified. Evidence is per-visit, so a rework visit's photos
+    // legitimately arrive after the *first* verification was submitted — comparing against the latest submission of any
+    // visit would flag every honest rework. Scoped to photos from the visit the latest verification belongs to.
+    const verificationOutcomes = evidenceFloor.verifications.filter(v => v.submittedAt !== null);
+    if (verificationOutcomes.length > 0) {
+      const latestVerification = verificationOutcomes.reduce((latest, v) =>
+        !latest || v.submittedAt!.getTime() > latest.submittedAt!.getTime() ? v : latest
+      );
+      const lateEvidence = photos.filter(
+        p => p.visitNo === latestVerification.visitNo && p.receivedAt.getTime() > latestVerification.submittedAt!.getTime()
+      );
+      if (lateEvidence.length > 0) {
+        isFalsified = true;
+        details.evidenceAfterVerification = lateEvidence.map(p => p.storageKey);
+      }
+    }
+
+    // A geofence shortfall is deliberately *not* one of the checks: FR-EX-09 / BR-09 decided it is
+    // flagged for the admin and never blocking, because phones misreport GPS indoors. The distances
+    // are still in the evidence floor the admin rules from (`checkinWithin` / `checkoutWithin`).
+
+    return { isFalsified, details };
   }
 }
 

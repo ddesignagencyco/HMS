@@ -1,5 +1,6 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Inject, Res } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { Public } from '../common/policy.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -8,7 +9,6 @@ import { QueueRegistry, type QueueName } from '../queues/queue.registry.js';
 import { SettingsService } from '../platform/settings.service.js';
 import { OBJECT_STORAGE } from '../integrations/integrations.module.js';
 import type { ObjectStoragePort } from '../integrations/ports.js';
-import { Inject } from '@nestjs/common';
 
 export type HealthState = 'ok' | 'degraded' | 'down';
 
@@ -66,7 +66,7 @@ export class HealthController {
   })
   @ApiResponse({ status: 200, description: 'Every dependency is healthy.' })
   @ApiResponse({ status: 503, description: 'At least one dependency is unreachable or unhealthy; see the "checks" array for which one.' })
-  async ready(): Promise<ReadinessReport> {
+  async ready(@Res({ passthrough: true }) response: Response): Promise<ReadinessReport> {
     const checks = await Promise.all([
       probe('database', async () => {
         if (!(await this.prisma.ping())) throw new Error('database ping failed');
@@ -97,7 +97,13 @@ export class HealthController {
         return `bucket=${bucket}`;
       })
     ]);
-    return { status: worst(checks), checks, checkedAt: new Date().toISOString() };
+    const status = worst(checks);
+    // The status code is the signal, not the body: a load balancer routes to an instance because
+    // its readiness probe answered 2xx, and it does not read the JSON. A 200 here with a `"down"`
+    // body sends live traffic to an instance whose database is unreachable, which is the exact
+    // failure readiness exists to prevent.
+    if (status !== 'ok') response.status(503);
+    return { status, checks, checkedAt: new Date().toISOString() };
   }
 
   @Get('health/queues')

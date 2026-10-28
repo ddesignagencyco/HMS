@@ -111,6 +111,11 @@ export class MockObjectStorage implements ObjectStoragePort {
     this.objects.set(this.index(input.key, input.bucket), { content: input.content, contentType: input.contentType });
   }
 
+  async get(input: { key: string; bucket: string }): Promise<{ content: Buffer; contentType: string } | null> {
+    const object = this.objects.get(this.index(input.key, input.bucket));
+    return object === undefined ? null : { content: Buffer.from(object.content), contentType: object.contentType };
+  }
+
   async presignPut(input: { key: string; bucket: string; contentType: string; maxBytes: number }): Promise<{ url: string; method: 'PUT'; expiresAt: string }> {
     if (input.maxBytes < 1 || input.contentType.length === 0) throw new Error('Upload policy is invalid');
     return { url: `/api/v1/dev/storage/${input.bucket}/${encodeURIComponent(input.key)}?contentType=${encodeURIComponent(input.contentType)}&maxBytes=${input.maxBytes}`, method: 'PUT', expiresAt: new Date(Date.now() + 300_000).toISOString() };

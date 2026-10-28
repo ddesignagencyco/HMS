@@ -165,6 +165,12 @@ export class PayoutsService {
       const payout = rows[0];
       if (payout === undefined) throw notFound('Payout');
       if (payout.status !== 'REQUESTED') throw new DomainError('CONFLICT', `This payout is already ${payout.status.toLowerCase()}`);
+      // Serialise approvals for one provider before reading the balance. Two finance users approving two
+      // payouts at the same time each locked only their *own* payout row, so both read the same
+      // wallet balance, both passed the check, and both posted the debit — leaving the wallet short by
+      // the difference. Nothing in `ledger.post` re-checks a balance, which is what makes the lock
+      // load-bearing rather than merely tidy. Same idiom, and the same lock key, as `request()` above.
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`payout:${payout.providerId}`}))`);
       const balance = await this.debt.walletBalance(tx, payout.providerId);
       if (balance < payout.amountPaisa) throw new DomainError('CONFLICT', 'The provider’s wallet no longer covers this payout');
       const transactionId = await this.ledger.post(tx, {
@@ -217,11 +223,12 @@ export class PayoutsService {
   }
 
   async listBatches() {
-    const rows = await this.prisma.$queryRaw<{ id: string; periodStart: Date; periodEnd: Date; status: string; totalPaisa: bigint; payouts: bigint; createdAt: Date; paidAt: Date | null }[]>(
-      Prisma.sql`SELECT b.id, b.period_start as "periodStart", b.period_end as "periodEnd", b.status::text, b.total_paisa as "totalPaisa", (SELECT count(*) FROM payouts p WHERE p.batch_id = b.id)::bigint as payouts, b.created_at as "createdAt", b.paid_at as "paidAt"
+    // The payout count is a count, not paisa, so int4 keeps it a plain number at the Postgres boundary.
+    const rows = await this.prisma.$queryRaw<{ id: string; periodStart: Date; periodEnd: Date; status: string; totalPaisa: bigint; payoutCount: number; createdAt: Date; paidAt: Date | null }[]>(
+      Prisma.sql`SELECT b.id, b.period_start as "periodStart", b.period_end as "periodEnd", b.status::text, b.total_paisa as "totalPaisa", (SELECT count(*) FROM payouts p WHERE p.batch_id = b.id)::int as "payoutCount", b.created_at as "createdAt", b.paid_at as "paidAt"
         FROM payout_batches b ORDER BY b.created_at DESC LIMIT 100`
     );
-    return rows.map(row => ({ ...row, totalPaisa: paisaToNumber(row.totalPaisa), payouts: Number(row.payouts) }));
+    return rows.map(row => ({ ...row, totalPaisa: paisaToNumber(row.totalPaisa), payoutCount: row.payoutCount }));
   }
 
   /** The bank file. The account numbers in it are decrypted for this one purpose, and the download is audited. */

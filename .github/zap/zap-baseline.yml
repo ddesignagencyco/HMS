@@ -1,0 +1,95 @@
+# OWASP ZAP baseline configuration for SHM-092.
+#
+# Two things this deliberately does NOT do:
+#
+# 1. **It does not authenticate.** A scan of the API as an anonymous client sees the unauthenticated
+#    surface: the auth endpoints, the health check, the Prometheus scrape and the Swagger UI. That is
+#    the surface most worth scanning first — it is the part that is reachable by anyone — but it is
+#    not the whole application, and a green run must not be read as "the API has no findings".
+#    Authenticated scanning is follow-up work, not something to imply here.
+#
+# 2. **It does not scan the database.** Passive analysis finds nothing in Postgres. The SQL injection
+#    questions are answered by the parameterised-query review and the integration tests, not by this.
+
+contexts:
+  - context: smart-home
+    includePaths:
+      - http://localhost:3000/api/v1/auth/.*
+      - http://localhost:3000/health.*
+      - http://localhost:3000/metrics
+      - http://localhost:3000/api/docs.*
+    excludePaths: []
+    # The scan authenticates as nobody on purpose; see note 1 above.
+    authentication:
+      method: "none"
+    sessionManagement:
+      method: "cookie"
+    users:
+      - name: anonymous
+      - name: dev-inbox
+        credentials:
+          username: ""
+          password: ""
+
+# Passive only. Active scanning fires real payloads at a service whose SMS, email and payment
+# adapters are mocks in CI and real vendors in staging -- an active scan of a staging deployment is
+# how a penetration test sends a genuine charge or SMS to a real customer. The findings this job
+# exists to catch (headers, CSP, cookie flags, information disclosure) are all passive.
+spider:
+  maxDepth: 6
+  maxChildren: 40
+  # Politeness: a CI runner scanning as fast as it can is indistinguishable from an attack.
+  delay: 200
+
+ajax:
+  enabled: true
+
+pscans:
+  # Passive scanners that repeat the same finding under several rules, which buries the real ones.
+  # The `fingerprint`-style duplicates are the usual culprits in an API of this shape.
+  maxScanDurationInMins: 8
+
+rules:
+  # Duplicated between zap-baseline.yml and here on purpose: ZAP reads one file per input, and a
+  # rule file that silently fails to load makes the run look clean rather than failing.
+  - id: 40012
+    description: Cross Site Scripting (Reflected)
+    enabled: true
+  - id: 40014
+    description: Cross Site Scripting (Persistent)
+    enabled: true
+  - id: 40003
+    description: Cross Site Scripting (DOM Based)
+    enabled: true
+  - id: 90019
+    description: Server Side Request Forgery
+    enabled: true
+  - id: 90020
+    description: Remote XML External Entity Attack
+    enabled: true
+  - id: 40018
+    description: SQL Injection
+    enabled: true
+  - id: 40017
+    description: SQL Injection (Blind)
+    enabled: true
+  # The API sets a per-request nonce CSP; without this rule ZAP has no idea the header exists and
+  # would report nothing about it either way.
+  - id: 10038
+    description: Content Security Policy (CSP) Header Not Set
+    enabled: true
+  - id: 10035
+    description: Strict-Transport-Security Header Not Set
+    enabled: true
+  - id: 10063
+    description: Permissions-Policy Header Not Set
+    enabled: true
+  - id: 10021
+    description: HttpOnly Flag Cookie Without Secure Flag Set
+    enabled: true
+  - id: 10010
+    description: Cookie No HttpOnly Flag Set
+    enabled: true
+  - id: 10011
+    description: Cookie Without Secure Flag Set
+    enabled: true

@@ -1,8 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { notFound } from '../common/domain-error.js';
+import { DomainError, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
 import type { AddressCreateInput, AddressUpdateInput } from './customer.schemas.js';
+
+/** Every terminal/closed `booking_status` -- once a booking reaches one of these, it no longer locks its address. */
+const TERMINAL_BOOKING_STATUSES = Prisma.sql`'UNFULFILLED','ABANDONED','CANCELLED_CUSTOMER','CANCELLED_PROVIDER','NO_SHOW','REFUNDED','CLOSED'`;
 
 export type AddressRow = { id: string; label: string; line1: string; line2: string | null; areaId: number; lat: number; lng: number; notes: string | null; isDefault: boolean; createdAt: Date };
 
@@ -37,6 +40,8 @@ export class AddressesService {
   async update(customerId: string, id: string, input: AddressUpdateInput): Promise<AddressRow> {
     if (input.areaId !== undefined) await this.assertAreaActive(input.areaId);
     const hasPoint = input.lat !== undefined && input.lng !== undefined;
+    const touchesLocation = input.line1 !== undefined || input.line2 !== undefined || input.areaId !== undefined || hasPoint;
+    if (touchesLocation) await this.assertNotLockedByOnBehalfBooking(id);
     return this.prisma.$transaction(async tx => {
       if (input.isDefault === true) await this.clearDefault(tx, customerId, id);
       const rows = await tx.$queryRaw<AddressRow[]>(
@@ -58,10 +63,26 @@ export class AddressesService {
   }
 
   async archive(customerId: string, id: string): Promise<void> {
+    await this.assertNotLockedByOnBehalfBooking(id);
     const affected = await this.prisma.$executeRaw(
       Prisma.sql`UPDATE addresses SET archived_at = now() WHERE id = ${id}::uuid AND customer_id = ${customerId}::uuid AND archived_at IS NULL`
     );
     if (affected === 0) throw notFound('Address');
+  }
+
+  /**
+   * "Book this for someone else" locks the address: the provider is being sent to that
+   * door, so the customer must not be able to move it, retitle its street, or archive it
+   * out from under them while the booking is still live. The lock lifts itself once the
+   * booking reaches a terminal status -- no separate unlock step to forget.
+   */
+  private async assertNotLockedByOnBehalfBooking(addressId: string): Promise<void> {
+    const locked = await this.prisma.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT id FROM bookings WHERE address_id = ${addressId}::uuid AND is_on_behalf = true AND status NOT IN (${TERMINAL_BOOKING_STATUSES}) LIMIT 1`
+    );
+    if (locked.length > 0) {
+      throw new DomainError('ADDRESS_LOCKED', "This address cannot be changed while it is in use for an active booking made on someone else's behalf.");
+    }
   }
 
   private async assertAreaActive(areaId: number): Promise<void> {

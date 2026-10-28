@@ -1,5 +1,5 @@
 -- =====================================================================
--- Smart Home Maintenance Services — canonical schema (PostgreSQL 16 + PostGIS 3)
+-- Smart Home Maintenance Services â€” canonical schema (PostgreSQL 16 + PostGIS 3)
 -- Source of truth for the data model. Apply as migration 0001 (dbmate),
 -- then generate the Prisma client with `prisma db pull && prisma generate`.
 -- Money: BIGINT paisa. Time: timestamptz (UTC). IDs: uuid (entities), bigint (logs).
@@ -42,6 +42,7 @@ CREATE TYPE item_kind          AS ENUM ('SERVICE','VISIT_FEE','EXTRA','PART','SU
 CREATE TYPE verification_tier  AS ENUM ('A','B');
 CREATE TYPE verification_status AS ENUM ('QUEUED','LOCKED','SUBMITTED');
 CREATE TYPE verification_outcome AS ENUM ('VERIFIED_SATISFIED','VERIFIED_WITH_ISSUE','REWORK_REQUIRED','DISPUTED','LINK_CONFIRMED','AUTO_RELEASED');
+CREATE TYPE verification_confirmed_via AS ENUM ('LINK','IN_APP');   -- how the customer confirmed; null = an agent's call
 CREATE TYPE work_completion    AS ENUM ('FULL','PARTIAL','NONE');
 CREATE TYPE time_band          AS ENUM ('MORNING','AFTERNOON','EVENING');
 CREATE TYPE attempt_result     AS ENUM ('ANSWERED','NO_ANSWER','BUSY','SWITCHED_OFF','WRONG_PERSON','CALL_DROPPED');
@@ -206,10 +207,10 @@ CREATE TABLE services (
   description           text NOT NULL,
   pricing_model         pricing_model NOT NULL,
   time_unit             time_unit,
-  base_price_paisa      bigint NOT NULL CHECK (base_price_paisa >= 0),
-  min_price_paisa       bigint NOT NULL CHECK (min_price_paisa >= 0),
+  base_price_paisa      bigint NOT NULL CHECK (base_price_paisa > 0),
+  min_price_paisa       bigint NOT NULL CHECK (min_price_paisa > 0),
   max_price_paisa       bigint NOT NULL,
-  visit_fee_paisa       bigint NOT NULL DEFAULT 0,
+  visit_fee_paisa       bigint NOT NULL DEFAULT 0 CONSTRAINT services_visit_fee_paisa_check CHECK (visit_fee_paisa >= 0),
   expected_duration_min int NOT NULL CHECK (expected_duration_min > 0),
   is_emergency_eligible boolean NOT NULL DEFAULT false,
   is_plan_eligible      boolean NOT NULL DEFAULT false,
@@ -235,6 +236,26 @@ CREATE TABLE service_checklist_items (
   is_active      boolean NOT NULL DEFAULT true,
   UNIQUE (service_id, position)
 );
+
+-- The common faults a customer picks from when booking ("the AC is not cooling").
+-- A booking may still carry free text alongside the chosen option, or instead of
+-- one: the list is a shortcut for a customer who does not know how to describe the
+-- problem, never a constraint on what they may say about it.
+CREATE TABLE service_issue_options (
+  id         serial PRIMARY KEY,
+  service_id int NOT NULL REFERENCES services(id),
+  slug       text NOT NULL,
+  label_en   text NOT NULL,
+  label_ur   text NOT NULL,
+  position   int NOT NULL,
+  is_active  boolean NOT NULL DEFAULT true,
+  UNIQUE (service_id, slug),
+  UNIQUE (service_id, position),
+  -- An option is only ever a booking-time convenience, so it is never the sole
+  -- evidence of what was reported: free text and photos carry that.
+  CHECK (char_length(trim(label_en)) BETWEEN 1 AND 120)
+);
+CREATE INDEX service_issue_options_service_idx ON service_issue_options(service_id) WHERE is_active;
 
 -- ---------------------------------------------------------------------
 -- CUSTOMERS & PROVIDERS
@@ -282,9 +303,14 @@ CREATE TABLE providers (
   suspended_until              timestamptz,
   blocked_reason               text,
   offer_blocked_reason         text,                     -- 'DEBT' | 'SUSPENDED' | null
-  tier_badge                   text,
+  tier_badge                   text,                     -- the live, public badge; only ever set by an admin's approval
+  pending_tier_badge           text,                     -- FR-AD-11: the computed badge awaiting admin approval, if different from tier_badge
+  badge_pending_since          timestamptz,
+  badge_approved_by            uuid REFERENCES users(id),
+  badge_approved_at            timestamptz,
   created_at                   timestamptz NOT NULL DEFAULT now(),
-  updated_at                   timestamptz NOT NULL DEFAULT now()
+  updated_at                   timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT providers_badge_pending_consistent CHECK ((pending_tier_badge IS NULL) = (badge_pending_since IS NULL))
 );
 CREATE INDEX providers_status_idx ON providers(status);
 CREATE INDEX providers_city_idx ON providers(city_id);
@@ -320,6 +346,10 @@ CREATE TABLE provider_services (
   PRIMARY KEY (provider_id, service_id)
 );
 CREATE INDEX provider_services_service_idx ON provider_services(service_id, status);
+-- SHM-092: without this, a location search seq-scans this table once per candidate provider
+-- (188 loops over 10k rows in the measured plan). `status` is in the index so the per-provider
+-- probe answers the approval check without visiting the heap.
+CREATE INDEX provider_services_provider_status_idx ON provider_services(provider_id, status);
 
 CREATE TABLE provider_service_areas (
   provider_id uuid REFERENCES providers(user_id),
@@ -469,6 +499,19 @@ CREATE TABLE bookings (
   scheduled_start        timestamptz NOT NULL,
   scheduled_end          timestamptz NOT NULL,
   problem_text           text,
+  -- "Book this for someone who isn't you." The booker's account still pays, rates,
+  -- disputes and is verified against; these columns only record who will actually
+  -- receive the provider, so the provider can reach the door. Either both are set
+  -- or neither is â€” a booking cannot claim to be on someone's behalf and then not
+  -- say who.
+  is_on_behalf           boolean NOT NULL DEFAULT false,
+  on_behalf_name         text,
+  on_behalf_phone_e164   text,
+  -- The option the customer picked from the service's common-faults list, if any.
+  -- Optional and unconstrained against service_id on purpose: the list is a
+  -- convenience the customer may decline to use, and problem_text may be written
+  -- instead, so a booking may carry neither, one, or both.
+  issue_option_id        int REFERENCES service_issue_options(id),
   quoted_amount_paisa    bigint NOT NULL CHECK (quoted_amount_paisa >= 0),
   approved_total_paisa   bigint NOT NULL,
   final_amount_paisa     bigint,
@@ -505,6 +548,12 @@ CREATE TABLE bookings (
          OR start_otp_verified_at IS NOT NULL),
   CHECK (status NOT IN ('ACCEPTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION','WORK_COMPLETED')
          OR provider_id IS NOT NULL),
+  -- An on-behalf-of booking must actually name and number the person, and a booking
+  -- that is not on someone's behalf must not carry a contact for one.
+  CONSTRAINT bookings_on_behalf_consistent CHECK ((is_on_behalf AND on_behalf_name IS NOT NULL AND on_behalf_phone_e164 IS NOT NULL)
+         OR (NOT is_on_behalf AND on_behalf_name IS NULL AND on_behalf_phone_e164 IS NULL)),
+  CONSTRAINT bookings_on_behalf_phone_e164 CHECK (on_behalf_phone_e164 IS NULL OR on_behalf_phone_e164 ~ '^\+[1-9][0-9]{7,14}$'),
+  CONSTRAINT bookings_on_behalf_name CHECK (on_behalf_name IS NULL OR char_length(trim(on_behalf_name)) BETWEEN 1 AND 120),
   -- no double booking of a provider (FR-BK-02)
   CONSTRAINT bookings_no_provider_overlap EXCLUDE USING gist (provider_id WITH =, slot WITH &&)
     WHERE (status IN ('PENDING_PAYMENT','REQUESTED','ACCEPTED','SCHEDULED','EN_ROUTE','IN_PROGRESS','QUOTE_REVISION'))
@@ -699,7 +748,7 @@ CREATE TABLE verification_calls (
   next_attempt_at           timestamptz NOT NULL DEFAULT now(),
   locked_by                 uuid REFERENCES users(id),
   locked_at                 timestamptz,
-  -- questionnaire (SRS §5.3)
+  -- questionnaire (SRS Â§5.3)
   agent_id                  uuid REFERENCES users(id),
   outcome                   verification_outcome,
   work_completed            work_completion,
@@ -718,6 +767,7 @@ CREATE TABLE verification_calls (
   call_duration_seconds     int,
   submitted_at              timestamptz,
   created_at                timestamptz NOT NULL DEFAULT now(),
+  confirmed_via             verification_confirmed_via,   -- FR-VC-16: LINK = the texted one-tap, IN_APP = the signed-in form; null = an agent's call
   UNIQUE (booking_id, visit_no),
   CHECK ((status = 'SUBMITTED') = (outcome IS NOT NULL AND submitted_at IS NOT NULL)),
   CHECK (status <> 'LOCKED' OR (locked_by IS NOT NULL AND locked_at IS NOT NULL)),
@@ -726,10 +776,15 @@ CREATE TABLE verification_calls (
          (agent_id IS NOT NULL AND work_completed IS NOT NULL AND quality IS NOT NULL AND punctuality IS NOT NULL
           AND conduct IS NOT NULL AND cleanliness IS NOT NULL AND extra_charge_demanded IS NOT NULL
           AND consent_line_read IS TRUE AND consent_to_release IS NOT NULL)),
-  -- integrity guard (SRS §5.4)
+  -- integrity guard (SRS Â§5.4)
   CHECK (outcome IS NULL OR outcome IN ('DISPUTED','AUTO_RELEASED')
          OR (coalesce(extra_charge_demanded,false) = false AND coalesce(work_completed,'FULL') <> 'NONE')),
-  CHECK (outcome IS NULL OR outcome NOT IN ('VERIFIED_SATISFIED','VERIFIED_WITH_ISSUE') OR consent_to_release IS TRUE)
+  CHECK (outcome IS NULL OR outcome NOT IN ('VERIFIED_SATISFIED','VERIFIED_WITH_ISSUE') OR consent_to_release IS TRUE),
+  -- Only a customer's own confirmation arrives through a transport; an agent's submission and the 72-hour sweep leave it null.
+  -- Named to match the migration that added it (20261013120000): unnamed CHECKs get auto-named
+  -- verification_calls_checkN, which is drift the schema-fidelity check catches.
+  CONSTRAINT verification_confirmed_via_matches_outcome
+    CHECK (confirmed_via IS NULL OR outcome IN ('LINK_CONFIRMED','AUTO_RELEASED'))
 );
 CREATE INDEX verification_queue_idx ON verification_calls(priority, sla_due_at) WHERE status = 'QUEUED';
 CREATE INDEX verification_calls_status_idx ON verification_calls(status, tier);
@@ -1204,17 +1259,33 @@ CREATE TRIGGER audit_log_insert_only BEFORE UPDATE OR DELETE ON audit_log FOR EA
 
 CREATE TABLE report_runs (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  type         text NOT NULL,              -- MONTHLY | REVENUE | PROVIDER_PERFORMANCE | VERIFICATION
+  type         text NOT NULL,              -- MONTHLY | REVENUE | PROVIDER_PERFORMANCE | ...
   period_start date NOT NULL,
   period_end   date NOT NULL,
   format       text NOT NULL CHECK (format IN ('PDF','XLSX')),
   status       report_status NOT NULL DEFAULT 'QUEUED',
   file_key     text,
   error        text,
+  total_paisa  bigint,                     -- SHM-090: headline figure, computed once at build
+                                            -- time so the XLSX and the PDF cannot disagree
+  row_count    int,                        -- SHM-090: how much data the run actually covered
   requested_by uuid NOT NULL REFERENCES users(id),
   created_at   timestamptz NOT NULL DEFAULT now(),
-  completed_at timestamptz
+  started_at   timestamptz,                -- SHM-090: NULL means never started, so "stuck for
+                                            -- how long" has an answer
+  completed_at timestamptz,
+  CONSTRAINT report_runs_period_ordered CHECK (period_end > period_start)
 );
+
+-- The worker takes QUEUED runs oldest-first; without this the queue is a scan.
+CREATE INDEX report_runs_status_created_idx ON report_runs(status, created_at);
+
+-- Asking twice re-opens the run you already have instead of producing a second copy of the same
+-- numbers with a different timestamp. Only open runs are protected: once one is DONE or FAILED the
+-- same request must be allowed through, or a failed report could never be retried.
+CREATE UNIQUE INDEX report_runs_open_unique
+  ON report_runs(requested_by, type, period_start, period_end)
+  WHERE status IN ('QUEUED', 'RUNNING');
 
 -- ---------------------------------------------------------------------
 -- BOOKING STATUS GUARD (only BookingStateService may change status)

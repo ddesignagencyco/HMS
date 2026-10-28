@@ -22,6 +22,18 @@ export class CatalogueController {
     return { items: await this.catalogue.listActiveServicesInCategory(slug) };
   }
 
+  @Get('services/:slug/issue-options')
+  @Public()
+  @ApiOperation({
+    summary: 'The common faults a customer can pick from when booking this service',
+    description:
+      'The dropdown the booking screen offers, in display order and in both languages. Its purpose is to help a customer who cannot describe the problem in technical terms — "the AC runs but does not cool" rather than a paragraph of their own. It is not a constraint: a booking may choose an option, write free text instead, or do both.'
+  })
+  async issueOptions(@Param('slug') slug: string) {
+    const service = await this.catalogue.getServiceDetailBySlug(slug);
+    return { items: service.issueOptions };
+  }
+
   @Get('services/:slug')
   @Public()
   @ApiOperation({ summary: 'Get one service, including its checklist', description: 'Returns full pricing and duration details for one bookable service, plus the ordered checklist the provider must complete on the job.' })

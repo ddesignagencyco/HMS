@@ -141,6 +141,48 @@ describe('SHM-061: payouts', () => {
     expect(earnings.body.releasablePaisa).toBe(Number(wallet) - most);
   });
 
+  it('two finance users approving two payouts at once cannot overdraw the wallet', async () => {
+    // Requesting is guarded by a reservation (the test above). *Approving* was not: each approval
+    // locked only its own payout row, read the wallet, and posted the debit, so two concurrent
+    // approvals both saw the full balance and both passed. Nothing in `ledger.post` re-checks a
+    // balance, so the wallet ended up debited by more than it held.
+    //
+    // The realistic shape is two payouts that were each affordable when requested and only became
+    // unaffordable together — a provider with a large wallet requests a full-wallet payout, the money
+    // is then spent elsewhere, and a second full-wallet payout from an earlier request is still
+    // sitting in the queue when finance approves both in the same moment. The second row is inserted
+    // directly because the request-time reservation now (correctly) refuses to create it.
+    const { provider, wallet } = await earningProvider();
+    const account = await addAccount(provider);
+    const whole = Number(wallet);
+    const first = await requestPayout(provider, account.body.id, whole);
+    expect(first.status).toBe(201);
+    const older = await prisma.$queryRaw<{ id: string }[]>(
+      Prisma.sql`INSERT INTO payouts(provider_id, payout_account_id, amount_paisa, requested_at)
+        VALUES (${provider.id}::uuid, ${account.body.id}::uuid, ${BigInt(whole)}, now() - interval '2 days') RETURNING id`
+    );
+
+    const approved = await Promise.all([
+      callApi(app, `/finance/payouts/${first.body.id}/approve`, asFinance({ method: 'POST' })),
+      callApi(app, `/finance/payouts/${older[0]!.id}/approve`, asFinance({ method: 'POST' }))
+    ]);
+    // Exactly one can be paid out of a wallet that holds one payout's worth: without the per-provider
+    // lock both read the same balance, both passed the check, and the wallet ended up at -85_000.
+    expect(approved.map(result => result.status).sort()).toEqual([200, 409]);
+    expect(await walletOf(provider.id)).toBe(0n);
+
+    // Put the money back the way the system would rather than deleting rows: an approved payout's cash
+    // sits in PAYOUT_CLEARING until the bank answers, so deleting it would strand the money — which
+    // the reconciliation now (correctly) reports — and the next test's batch would still pick the row up.
+    const batch = await callApi<{ id: string }>(app, '/finance/payout-batches', asFinance(postJson({ periodStart: '2026-01-01', periodEnd: '2026-12-31' })));
+    expect(batch.status).toBe(201);
+    expect((await callApi(app, `/finance/payout-batches/${batch.body.id}/mark-paid`, asFinance(postJson({})))).status).toBe(200);
+    // The loser was never approved, so it holds no money and is safe to drop.
+    await prisma.$executeRaw(Prisma.sql`DELETE FROM payouts WHERE provider_id = ${provider.id}::uuid AND status = 'REQUESTED'::payout_status`);
+    expect(await walletOf(provider.id)).toBe(0n);
+    expect((await callApi<{ drift: unknown[] }>(app, '/finance/reconciliation/run', asFinance({ method: 'POST' }))).body.drift).toEqual([]);
+  });
+
   it('runs a payout end to end: request, approve, batch, bank file, paid — and a failed payout goes back to the wallet exactly', async () => {
     const good = await earningProvider();
     const bad = await earningProvider();
@@ -303,6 +345,35 @@ describe('SHM-062: the nightly reconciliation', () => {
     }
     const clean = await callApi<{ drift: unknown[] }>(app, '/finance/reconciliation/run', asFinance({ method: 'POST' }));
     expect(clean.body.drift).toEqual([]);
+  });
+
+  it('catches money stranded in the payout clearing account when the bank never answers', async () => {
+    // A batch is exported and then never marked: the file never reached the bank, or finance closed the
+    // laptop. The provider's money left their wallet into PAYOUT_CLEARING and nothing moves it again,
+    // which is the same shape of hole as the stranded NO_SHOW escrow this job caught once already.
+    // Driven through the ledger directly so the case is exactly "the money is there, the payout is not".
+    const { provider, wallet } = await earningProvider();
+    const account = await addAccount(provider);
+    const payout = await requestPayout(provider, account.body.id, Number(wallet));
+    expect(payout.status).toBe(201);
+    expect((await callApi(app, `/finance/payouts/${payout.body.id}/approve`, asFinance({ method: 'POST' }))).status).toBe(200);
+
+    const clearing = (await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM ledger_accounts WHERE type = 'PAYOUT_CLEARING' AND owner_user_id IS NULL AND booking_id IS NULL AND subscription_id IS NULL LIMIT 1`))[0]!;
+    const held = (await prisma.$queryRaw<{ balance: bigint }[]>(Prisma.sql`SELECT balance FROM account_balances WHERE account_id = ${clearing.id}::uuid`))[0]!.balance;
+    const outstanding = (await prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT coalesce(sum(amount_paisa), 0)::bigint as total FROM payouts WHERE status IN ('APPROVED','IN_BATCH')`))[0]!.total;
+    expect(held, 'an approved payout is legitimately still in clearing, so this is not drift').toBe(outstanding);
+    expect((await callApi<{ drift: unknown[] }>(app, '/finance/reconciliation/run', asFinance({ method: 'POST' }))).body.drift).toEqual([]);
+
+    // Now the bank never answers and the payout record is lost: the money is stranded with nothing watching it.
+    await prisma.$executeRaw(Prisma.sql`DELETE FROM payouts WHERE id = ${payout.body.id}::uuid`);
+    const stranded = await callApi<{ drift: { check: string; subject: string; expected: string; actual: string }[] }>(app, '/finance/reconciliation/run', asFinance({ method: 'POST' }));
+    const found = stranded.body.drift.find(entry => entry.check === 'payout_clearing');
+    expect(found?.subject).toBe('PAYOUT_CLEARING');
+    expect(found?.actual).toBe(`${held}`);
+
+    // Put the books right: the payout row comes back and the two agree again.
+    await prisma.$executeRaw(Prisma.sql`INSERT INTO payouts(provider_id, payout_account_id, amount_paisa, status) VALUES (${provider.id}::uuid, ${account.body.id}::uuid, ${held}, 'APPROVED'::payout_status)`);
+    expect((await callApi<{ drift: unknown[] }>(app, '/finance/reconciliation/run', asFinance({ method: 'POST' }))).body.drift).toEqual([]);
   });
 
   it('catches a payment the ledger never heard about', async () => {

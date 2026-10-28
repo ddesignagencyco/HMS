@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { percentOfPaisa, paisaToNumber } from '@smart-home/domain';
 import { badRequest, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { AppClock } from '../platform/app-clock.js';
 import { SettingsService } from '../platform/settings.service.js';
 
 export type QuoteInput = { providerId?: string | undefined; serviceId: number; isEmergency?: boolean | undefined; couponCode?: string | undefined };
@@ -41,13 +42,12 @@ const percentOf = (basePaisa: bigint, percent: number): bigint => percentOfPaisa
 export class PricingService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(SettingsService) private readonly settings: SettingsService
+    @Inject(SettingsService) private readonly settings: SettingsService,
+    @Inject(AppClock) private readonly clock: AppClock
   ) {}
 
   async price(customerId: string, input: QuoteInput): Promise<PricedBooking> {
-    const services = await this.prisma.$queryRaw<
-      { categoryId: number; pricingModel: string; visitFeePaisa: bigint; isEmergencyEligible: boolean; nameEn: string; basePricePaisa: bigint }[]
-    >(
+    const services = await this.prisma.$queryRaw<{ categoryId: number; pricingModel: string; visitFeePaisa: bigint; isEmergencyEligible: boolean; nameEn: string; basePricePaisa: bigint }[]>(
       Prisma.sql`SELECT category_id as "categoryId", pricing_model as "pricingModel", visit_fee_paisa as "visitFeePaisa", is_emergency_eligible as "isEmergencyEligible", name_en as "nameEn", base_price_paisa as "basePricePaisa"
         FROM services WHERE id = ${input.serviceId} AND is_active = true`
     );
@@ -109,17 +109,48 @@ export class PricingService {
     };
   }
 
-  private async cancellationPolicy(): Promise<string> {
+  /**
+   * FR-BK-06 in words, built from the same two settings `BookingStateService.moneyFor`
+   * reads when it decides whether a fee is due — one source, so the promise made
+   * at quote time and the money taken at cancel time cannot drift apart.
+   */
+  async cancellationPolicy(): Promise<string> {
     const hours = await this.settings.getNumber('booking.free_cancel_hours');
     const fee = await this.settings.getNumber('booking.late_cancel_fee_paisa');
     return `Free cancellation up to ${hours} hours before your slot. After that a cancellation fee of PKR ${(fee / 100).toFixed(2)} applies. You can reschedule once, free of charge, up to ${hours} hours before your slot.`;
   }
 
+  /**
+   * The same rule as data, for a booking that already exists: what cancelling
+   * *this* booking now would cost. `GET /bookings/:id` returns it so the detail
+   * page can state the rule at the moment the customer decides, rather than
+   * only quoting a generic policy at checkout.
+   */
+  async cancellationQuote(booking: {
+    status: string;
+    scheduledStart: Date;
+    approvedTotalPaisa: number | bigint;
+  }): Promise<{ freeCancelHours: number; lateCancelFeePaisa: number; hoursUntilStart: number; isLate: boolean; feeDuePaisa: number }> {
+    const freeHours = await this.settings.getNumber('booking.free_cancel_hours');
+    const configured = await this.settings.getNumber('booking.late_cancel_fee_paisa');
+    // The injected clock, not `Date.now()`. This method decides whether a cancellation costs money, and
+    // `BookingStateService.moneyFor` charges the fee from whatever this returns — so a wall-clock read
+    // here made the promise the customer is shown (the policy sentence, the figure on the booking page)
+    // and the amount actually charged depend on two different "now"s, and a frozen clock in a test could
+    // not reach the rule at all.
+    const hoursUntilStart = Math.round(((booking.scheduledStart.getTime() - this.clock.now().getTime()) / 3_600_000) * 10) / 10;
+    // Mirrors `moneyFor`: a fee is only due once the provider has accepted and
+    // the slot is inside the free window. Before acceptance, or when the booking
+    // is not one the customer can be charged for, it is zero.
+    const isLate = booking.status === 'SCHEDULED' && hoursUntilStart < freeHours;
+    const total = typeof booking.approvedTotalPaisa === 'bigint' ? paisaToNumber(booking.approvedTotalPaisa) : booking.approvedTotalPaisa;
+    const feeDuePaisa = isLate ? Math.min(configured, total) : 0;
+    return { freeCancelHours: freeHours, lateCancelFeePaisa: configured, hoursUntilStart, isLate, feeDuePaisa };
+  }
+
   private async discountFor(customerId: string, code: string | undefined, grossPaisa: bigint): Promise<{ discountPaisa: bigint; couponId: string | null }> {
     if (code === undefined) return { discountPaisa: 0n, couponId: null };
-    const coupons = await this.prisma.$queryRaw<
-      { id: string; kind: string; value: number; maxDiscountPaisa: bigint | null; usageLimit: number | null; perCustomerLimit: number }[]
-    >(
+    const coupons = await this.prisma.$queryRaw<{ id: string; kind: string; value: number; maxDiscountPaisa: bigint | null; usageLimit: number | null; perCustomerLimit: number }[]>(
       Prisma.sql`SELECT id, kind, value, max_discount_paisa as "maxDiscountPaisa", usage_limit as "usageLimit", per_customer_limit as "perCustomerLimit"
         FROM coupons WHERE code = ${code}::citext AND is_active = true AND valid_from <= now() AND valid_to >= now()`
     );

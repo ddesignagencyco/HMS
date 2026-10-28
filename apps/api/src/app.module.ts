@@ -4,6 +4,7 @@ import { IdempotencyInterceptor } from './common/idempotency.interceptor.js';
 import { IdempotencyModule } from './common/idempotency.service.js';
 import { PolicyGuard } from './common/policy.guard.js';
 import { ProblemDetailsFilter } from './common/problem-details.filter.js';
+import { AdminModule } from './admin/admin.module.js';
 import { NotificationModule } from './notification/notification.module.js';
 import { PaymentModule } from './payment/payment.module.js';
 import { BookingModule } from './booking/booking.module.js';
@@ -24,9 +25,10 @@ import { ConductModule } from './conduct/conduct.module.js';
 import { ReputationModule } from './reputation/reputation.module.js';
 import { VerificationModule } from './verification/verification.module.js';
 import { SearchModule } from './search/search.module.js';
+import { PlansModule } from './plans/plans.module.js';
 
 @Module({
-  imports: [EnvironmentModule, PrismaModule, RedisModule, QueueModule, IntegrationsModule, PlatformModule, PaymentModule, NotificationModule, IdempotencyModule, IdentityModule, CatalogueModule, PlacesModule, CustomerModule, ProviderModule, SearchModule, BookingModule, VerificationModule, ReputationModule, ConductModule, ComplaintsModule],
+  imports: [EnvironmentModule, PrismaModule, RedisModule, QueueModule, IntegrationsModule, PlatformModule, PaymentModule, NotificationModule, IdempotencyModule, IdentityModule, CatalogueModule, PlacesModule, CustomerModule, ProviderModule, SearchModule, BookingModule, VerificationModule, ReputationModule, ConductModule, ComplaintsModule, AdminModule, PlansModule],
   controllers: [HealthController],
   providers: [
     { provide: APP_FILTER, useClass: ProblemDetailsFilter },

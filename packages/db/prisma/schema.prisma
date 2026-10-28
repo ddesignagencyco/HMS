@@ -182,12 +182,17 @@ model bookings {
   version                Int                      @default(1)
   created_at             DateTime                 @default(now()) @db.Timestamptz(6)
   updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  is_on_behalf           Boolean                  @default(false)
+  on_behalf_name         String?
+  on_behalf_phone_e164   String?
+  issue_option_id        Int?
   booking_items          booking_items[]
   booking_offers         booking_offers[]
   booking_status_history booking_status_history[]
   addresses              addresses                @relation(fields: [address_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   coupons                coupons?                 @relation(fields: [coupon_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers              customers                @relation(fields: [customer_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  service_issue_options  service_issue_options?   @relation(fields: [issue_option_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   providers              providers?               @relation(fields: [provider_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
   services               services                 @relation(fields: [service_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   subscriptions          subscriptions?           @relation(fields: [subscription_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -841,6 +846,7 @@ model provider_services {
 
   @@id([provider_id, service_id])
   @@index([service_id, status], map: "provider_services_service_idx")
+  @@index([provider_id, status], map: "provider_services_provider_status_idx")
 }
 
 /// This model contains an index with non-default null sort order and requires additional setup for migrations. Visit https://pris.ly/d/default-index-null-ordering for more info.
@@ -876,53 +882,58 @@ model provider_time_off {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model providers {
-  user_id                            String                     @id @db.Uuid
-  status                             provider_status            @default(DRAFT)
-  bio                                String?
-  experience_years                   Int?                       @db.SmallInt
-  qualification                      String?
-  photo_key                          String?
-  city_id                            Int?
-  base_address_text                  String?
-  base_location                      Unsupported("geography")?
-  radius_m                           Int                        @default(8000)
-  cnic_enc                           Bytes?
-  cnic_hash                          String?                    @unique
-  penalty_schedule_accepted_at       DateTime?                  @db.Timestamptz(6)
-  submitted_at                       DateTime?                  @db.Timestamptz(6)
-  approved_at                        DateTime?                  @db.Timestamptz(6)
-  approved_by                        String?                    @db.Uuid
-  rejection_reason                   String?
-  suspended_until                    DateTime?                  @db.Timestamptz(6)
-  blocked_reason                     String?
-  offer_blocked_reason               String?
-  tier_badge                         String?
-  created_at                         DateTime                   @default(now()) @db.Timestamptz(6)
-  updated_at                         DateTime                   @default(now()) @db.Timestamptz(6)
-  appeals                            appeals[]
-  booking_offers                     booking_offers[]
-  bookings                           bookings[]
-  commission_rules                   commission_rules[]
-  demerit_awards                     demerit_awards[]
-  favourites                         favourites[]
-  payouts                            payouts[]
-  penalties                          penalties[]
-  provider_availability              provider_availability[]
-  provider_documents                 provider_documents[]
-  provider_flags                     provider_flags[]
-  provider_payout_accounts           provider_payout_accounts[]
-  provider_service_areas             provider_service_areas[]
-  provider_services                  provider_services[]
-  provider_stats                     provider_stats?
-  provider_time_off                  provider_time_off[]
-  users_providers_approved_byTousers users?                     @relation("providers_approved_byTousers", fields: [approved_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  cities                             cities?                    @relation(fields: [city_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users_providers_user_idTousers     users                      @relation("providers_user_idTousers", fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  ratings                            ratings[]
-  remark_replies                     remark_replies[]
-  remarks                            remarks[]
-  subscriptions                      subscriptions[]
-  threshold_events                   threshold_events[]
+  user_id                                  String                     @id @db.Uuid
+  status                                   provider_status            @default(DRAFT)
+  bio                                      String?
+  experience_years                         Int?                       @db.SmallInt
+  qualification                            String?
+  photo_key                                String?
+  city_id                                  Int?
+  base_address_text                        String?
+  base_location                            Unsupported("geography")?
+  radius_m                                 Int                        @default(8000)
+  cnic_enc                                 Bytes?
+  cnic_hash                                String?                    @unique
+  penalty_schedule_accepted_at             DateTime?                  @db.Timestamptz(6)
+  submitted_at                             DateTime?                  @db.Timestamptz(6)
+  approved_at                              DateTime?                  @db.Timestamptz(6)
+  approved_by                              String?                    @db.Uuid
+  rejection_reason                         String?
+  suspended_until                          DateTime?                  @db.Timestamptz(6)
+  blocked_reason                           String?
+  offer_blocked_reason                     String?
+  tier_badge                               String?
+  created_at                               DateTime                   @default(now()) @db.Timestamptz(6)
+  updated_at                               DateTime                   @default(now()) @db.Timestamptz(6)
+  pending_tier_badge                       String?
+  badge_pending_since                      DateTime?                  @db.Timestamptz(6)
+  badge_approved_by                        String?                    @db.Uuid
+  badge_approved_at                        DateTime?                  @db.Timestamptz(6)
+  appeals                                  appeals[]
+  booking_offers                           booking_offers[]
+  bookings                                 bookings[]
+  commission_rules                         commission_rules[]
+  demerit_awards                           demerit_awards[]
+  favourites                               favourites[]
+  payouts                                  payouts[]
+  penalties                                penalties[]
+  provider_availability                    provider_availability[]
+  provider_documents                       provider_documents[]
+  provider_flags                           provider_flags[]
+  provider_payout_accounts                 provider_payout_accounts[]
+  provider_service_areas                   provider_service_areas[]
+  provider_services                        provider_services[]
+  provider_stats                           provider_stats?
+  provider_time_off                        provider_time_off[]
+  users_providers_approved_byTousers       users?                     @relation("providers_approved_byTousers", fields: [approved_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_providers_badge_approved_byTousers users?                     @relation("providers_badge_approved_byTousers", fields: [badge_approved_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cities                                   cities?                    @relation(fields: [city_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_providers_user_idTousers           users                      @relation("providers_user_idTousers", fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ratings                                  ratings[]
+  remark_replies                           remark_replies[]
+  remarks                                  remarks[]
+  subscriptions                            subscriptions[]
+  threshold_events                         threshold_events[]
 
   @@index([city_id], map: "providers_city_idx")
   @@index([base_location], map: "providers_location_gix", type: Gist)
@@ -1032,7 +1043,12 @@ model report_runs {
   requested_by String        @db.Uuid
   created_at   DateTime      @default(now()) @db.Timestamptz(6)
   completed_at DateTime?     @db.Timestamptz(6)
+  started_at   DateTime?     @db.Timestamptz(6)
+  row_count    Int?
+  total_paisa  BigInt?
   users        users         @relation(fields: [requested_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status, created_at], map: "report_runs_status_created_idx")
 }
 
 model role_permissions {
@@ -1097,6 +1113,7 @@ model services {
   plan_visits             plan_visits[]
   provider_services       provider_services[]
   service_checklist_items service_checklist_items[]
+  service_issue_options   service_issue_options[]
   categories              categories                @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
@@ -1238,6 +1255,7 @@ model users {
   provider_documents                                     provider_documents[]
   provider_flags                                         provider_flags[]
   providers_providers_approved_byTousers                 providers[]                  @relation("providers_approved_byTousers")
+  providers_providers_badge_approved_byTousers           providers[]                  @relation("providers_badge_approved_byTousers")
   providers_providers_user_idTousers                     providers?                   @relation("providers_user_idTousers")
   quote_revisions_quote_revisions_decided_byTousers      quote_revisions[]            @relation("quote_revisions_decided_byTousers")
   quote_revisions_quote_revisions_raised_byTousers       quote_revisions[]            @relation("quote_revisions_raised_byTousers")
@@ -1321,6 +1339,7 @@ model verification_calls {
   call_duration_seconds                     Int?
   submitted_at                              DateTime?                    @db.Timestamptz(6)
   created_at                                DateTime                     @default(now()) @db.Timestamptz(6)
+  confirmed_via                             verification_confirmed_via?
   ratings                                   ratings?
   verification_amendments                   verification_amendments[]
   verification_call_attempts                verification_call_attempts[]
@@ -1345,6 +1364,22 @@ model verification_links {
   responded_at         DateTime?              @db.Timestamptz(6)
   answers              Json?
   verification_calls   verification_calls     @relation(fields: [verification_call_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model service_issue_options {
+  id         Int        @id @default(autoincrement())
+  service_id Int
+  slug       String
+  label_en   String
+  label_ur   String
+  position   Int
+  is_active  Boolean    @default(true)
+  bookings   bookings[]
+  services   services   @relation(fields: [service_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([service_id, position])
+  @@unique([service_id, slug])
 }
 
 enum account_type {
@@ -1757,4 +1792,9 @@ enum work_completion {
   FULL
   PARTIAL
   NONE
+}
+
+enum verification_confirmed_via {
+  LINK
+  IN_APP
 }
