@@ -74,6 +74,10 @@ the wrong copy by accident. Contents:
   `SRS.md` came later and added 15 requirements v2.0 never had), `BACKEND_CONTINUATION_REPORT.md`
   and `PROJECT_OVERVIEW_REPORT.md` (point-in-time handoff/status snapshots, already stale on
   other facts too — they still mention Turborepo, Fastify and Pino, all since removed).
+- `deploy-runbook.md` — the SHM-094 build-and-deploy procedure (Dockerfile, GHCR images,
+  tag-triggered staging/production rollout). The pipeline it describes was deliberately removed:
+  this project runs services as local dev containers (`infra/docker-compose.yml`) only, not as
+  built/deployed images, for now. Kept here in case that decision is revisited later.
 
 See `TASKS_BACKEND.md`'s "Platform migration" section and its FR-id reconciliation appendix
 in this folder for the full forensics of how the original split happened, if you want the

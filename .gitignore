@@ -8,7 +8,6 @@ coverage/
 .env
 .env.*
 !.env.example
-!.env.production.example
 
 packages/db/generated/
 packages/db/prisma/schema.prisma.local

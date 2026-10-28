@@ -250,7 +250,7 @@ Priority: **P0** = required for the phase exit gate · **P1** = required for rel
 | [SHM-091](#shm-091) | BE | Task | P1 | 3 | Operations board API | SHM-055 | backend agent | IN REVIEW | **built 11 Oct**: `GET /admin/ops-board` + a live stream, recomputed on one shared 5 s cadence, 6 tests |
 | [SHM-092](#shm-092) | BE | Task | P0 | 8 | Hardening: performance, security, observability | — | backend agent | TODO | — |
 | [SHM-093](#shm-093) | BE | Task | P0 | 3 | Backup/restore & runbooks | — | backend agent | TODO | — |
-| [SHM-094](#shm-094) | SHARED | Task | P0 | 5 | Production images & deployment pipeline | SHM-092 | backend agent | IN REVIEW | **built 13 Oct**: multi-stage non-root `Dockerfile` (api/worker/migrate), prod compose, GHCR tag→staging workflow. All three images build & boot against a seeded PostGIS/Redis locally; needs a staging host + `{STAGING,PRODUCTION}_*` secrets to observe the live tag→deploy |
+| [SHM-094](#shm-094) | SHARED | Task | P0 | 5 | Production images & deployment pipeline | SHM-092 | backend agent | REMOVED | **removed 28 Oct**: not needed right now — services run as local dev containers only (`infra/docker-compose.yml`). Dockerfile, deploy workflow and prod compose deleted; procedure moved to `archive/deploy-runbook.md` |
 | [SHM-095](#shm-095) | BE | Story | P1 | 5 | Real payment gateway adapter | — | backend agent | BLOCKED | — |
 | [SHM-096](#shm-096) | BE | Story | P1 | 5 | Real telephony + SMS/WhatsApp adapters | — | backend agent | BLOCKED | — |
 | [SHM-097](#shm-097) | FE | Story | P1 | 5 | Plans UI (customer + admin) | SHM-089 | — | TODO | — |
@@ -2160,7 +2160,14 @@ a real S3 adapter ships.
 
 **Scope:** Multi-stage non-root Dockerfiles; prod compose/platform manifests; deploy to staging on tag; manual approval to prod; migrations as release step.
 
-**Acceptance criteria**
+**Status: removed, not just blocked.** The Dockerfile, `.github/workflows/deploy.yml` and
+`infra/docker-compose.prod.yml` built under this ticket were deliberately deleted — not deprioritized,
+not left half-built — because this project does not need a build/deploy pipeline right now; services
+run as local dev containers (`infra/docker-compose.yml`) only. The procedure that described the
+removed pipeline moved to `archive/deploy-runbook.md` rather than being deleted, in case this decision
+is revisited later.
+
+**Acceptance criteria (historical — see status above)**
 - [ ] Staging deploy from a tag with zero manual steps — pipeline, images and runbook complete; all three images build and boot locally against a seeded PostGIS/Redis. Cannot be ticked until a staging host and the `{STAGING,PRODUCTION}_*` repo secrets exist to observe the live tag→deploy.
 - [ ] Definition of Done met — blocked on the criterion above
 
