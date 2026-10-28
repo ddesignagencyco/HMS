@@ -198,6 +198,17 @@ export class BookingService {
       // the slot went to someone else, so try another — but an untranslated deadlock escaped as a 500,
       // which reads as "the platform is broken" rather than "that time is gone".
       if (meta?.code === '40001' || meta?.code === '40P01') throw new DomainError('SLOT_TAKEN', 'That provider is no longer free at this time');
+      // P2024: Prisma's own "timed out fetching a new connection from the pool" -- a different field
+      // entirely from the Postgres-level codes above (error.code, not error.meta.code). Under this same
+      // fifty-at-once-for-one-slot contention, a request that never got a connection in time failed for
+      // the same reason as one that got a connection and then lost the row lock: there are more
+      // simultaneous claimants than the slot (or, here, the pool) can serve at once. Confirmed by
+      // reproducing it directly against Prisma 6.12 with a starved pool before writing this check --
+      // it is reliably a PrismaClientKnownRequestError with exactly this code, not a different error
+      // class the instanceof above would miss.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2024') {
+        throw new DomainError('SLOT_TAKEN', 'That provider is no longer free at this time');
+      }
       throw error;
     }
   }
