@@ -176,7 +176,7 @@ export class PaymentsService {
   private async capturePlan(tx: Prisma.TransactionClient, paymentId: string, status: string, amountPaisa: bigint, subscriptionId: string | null): Promise<void> {
     if (status !== 'INITIATED' || subscriptionId === null) return;
     await tx.$executeRaw(Prisma.sql`UPDATE payments SET status = 'CAPTURED'::payment_status, captured_at = now() WHERE id = ${paymentId}::uuid`);
-    await tx.$executeRaw(Prisma.sql`UPDATE subscriptions SET status = 'ACTIVE'::subscription_status WHERE id = ${subscriptionId}::uuid`);
+    await tx.$executeRaw(Prisma.sql`UPDATE subscriptions SET status = 'ACTIVE'::subscription_status WHERE id = ${subscriptionId}::uuid AND status = 'PENDING_PAYMENT'::subscription_status`);
     const owned = await tx.$queryRaw<{ customerId: string }[]>(Prisma.sql`SELECT customer_id as "customerId" FROM subscriptions WHERE id = ${subscriptionId}::uuid`);
     const subscription = owned[0];
     await this.ledger.post(tx, {
@@ -199,14 +199,18 @@ export class PaymentsService {
   }
 
   private async fail(tx: Prisma.TransactionClient, paymentId: string, status: 'FAILED' | 'EXPIRED'): Promise<void> {
-    const rows = await tx.$queryRaw<{ bookingId: string | null; purpose: string; status: string }[]>(
-      Prisma.sql`SELECT booking_id as "bookingId", purpose, status FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`
+    const rows = await tx.$queryRaw<{ bookingId: string | null; subscriptionId: string | null; purpose: string; status: string }[]>(
+      Prisma.sql`SELECT booking_id as "bookingId", subscription_id as "subscriptionId", purpose, status FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`
     );
     const payment = rows[0];
     if (payment === undefined || payment.status !== 'INITIATED') return;
     await tx.$executeRaw(Prisma.sql`UPDATE payments SET status = ${status}::payment_status WHERE id = ${paymentId}::uuid`);
     if (payment.purpose === 'BOOKING' && payment.bookingId !== null) {
       await applySystemEvent(tx, payment.bookingId, 'paymentAbandoned', { paymentStatus: 'NONE', reason: `payment ${status.toLowerCase()}` });
+    }
+    // BE-005: a plan whose payment failed or lapsed never became active; it is closed so it cannot be paid late or hold entitlements.
+    if (payment.purpose === 'PLAN' && payment.subscriptionId !== null) {
+      await tx.$executeRaw(Prisma.sql`UPDATE subscriptions SET status = 'EXPIRED'::subscription_status WHERE id = ${payment.subscriptionId}::uuid AND status = 'PENDING_PAYMENT'::subscription_status`);
     }
   }
 
@@ -217,7 +221,7 @@ export class PaymentsService {
    */
   async abandonExpiredCheckouts(): Promise<number> {
     const due = await this.prisma.$queryRaw<{ id: string }[]>(
-      Prisma.sql`SELECT id FROM payments WHERE purpose = 'BOOKING' AND status = 'INITIATED' AND expires_at IS NOT NULL AND expires_at <= now()`
+      Prisma.sql`SELECT id FROM payments WHERE purpose IN ('BOOKING', 'PLAN') AND status = 'INITIATED' AND expires_at IS NOT NULL AND expires_at <= now()`
     );
     let abandoned = 0;
     for (const { id } of due) {

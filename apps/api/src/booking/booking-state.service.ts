@@ -82,7 +82,8 @@ export class BookingStateService {
       // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingStateService.apply, transition_ctx set above
       Prisma.sql`UPDATE bookings SET status = ${to}::booking_status,
         cancel_reason = COALESCE(${options.reason ?? null}, cancel_reason),
-        no_show_party = COALESCE(${options.noShowParty ?? null}::no_show_party, no_show_party)
+        no_show_party = COALESCE(${options.noShowParty ?? null}::no_show_party, no_show_party),
+        start_otp_verified_at = CASE WHEN ${to}::booking_status = 'REWORK_REQUIRED'::booking_status THEN NULL ELSE start_otp_verified_at END
         WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`
     );
     const next = updated[0];

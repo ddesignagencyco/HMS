@@ -1,15 +1,35 @@
-import { Controller, Get, Inject, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { Controller, Get, Inject, Param, ParseUUIDPipe, Query, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Public } from '../common/policy.js';
+import { ACCESS_TOKEN_VERIFIER, type AccessTokenVerifier } from '../common/access-token.port.js';
+import { notFound } from '../common/domain-error.js';
+import { Public, type AuthenticatedRequest } from '../common/policy.js';
 import { ApiQueryField } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { providerSearchQuerySchema, nextSlotsQuerySchema, slotsQuerySchema } from './search.schemas.js';
 import { SearchService } from './search.service.js';
 
+/** A malformed provider id is a provider that does not exist: 404, the same answer a well-formed unknown id gets. */
+const providerIdPipe = new ParseUUIDPipe({ exceptionFactory: () => notFound('Provider') });
+
 @ApiTags('search')
 @Controller('search')
 export class SearchController {
-  constructor(@Inject(SearchService) private readonly search: SearchService) {}
+  constructor(
+    @Inject(SearchService) private readonly search: SearchService,
+    @Inject(ACCESS_TOKEN_VERIFIER) private readonly tokens: AccessTokenVerifier
+  ) {}
+
+  /** The route is public, so a bearer token is read here when one is sent: only a signed-in customer may search around a saved address. A bad token is simply an anonymous caller. */
+  private async customerOf(request: AuthenticatedRequest): Promise<string | undefined> {
+    const header = request.headers.authorization;
+    if (header === undefined || !header.startsWith('Bearer ')) return undefined;
+    try {
+      const claims = await this.tokens.verify(header.slice('Bearer '.length).trim());
+      return claims.roles.includes('CUSTOMER') ? claims.userId : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   @Get('providers')
   @Public()
@@ -29,15 +49,15 @@ export class SearchController {
     type: 'number',
     description: "The customer's longitude, e.g. 74.3587 (Lahore). Required with `lat` unless `addressId` is given."
   })
-  @ApiQueryField('addressId', { required: false, description: 'A saved address to search around, resolved server-side to its point. Alternative to lat/lng.' })
+  @ApiQueryField('addressId', { required: false, description: "One of the signed-in customer's own saved addresses, resolved server-side to its point. Alternative to lat/lng. Anyone else (anonymous, another customer, a non-customer) gets 404, as for an address that does not exist." })
   @ApiQueryField('minExperienceYears', { required: false, type: 'number', description: 'Only providers with at least this many years of experience (FR-SR-02).' })
   @ApiQueryField('minCompletedJobs', { required: false, type: 'number', description: 'Only providers who have completed at least this many jobs (FR-SR-03).' })
   @ApiQueryField('minPricePaisa', { required: false, type: 'number', description: 'Lowest acceptable price for this service, in paisa (FR-SR-04).' })
   @ApiQueryField('maxPricePaisa', { required: false, type: 'number', description: 'Highest acceptable price for this service, in paisa (FR-SR-04).' })
   @ApiQueryField('availableToday', { required: false, type: 'boolean', description: 'Only providers with a free slot later today in their own local time (FR-SR-05).' })
   @ApiQueryField('verifiedDocsOnly', { required: false, type: 'boolean', description: 'Only providers with at least one verified document (FR-SR-07).' })
-  async searchProviders(@Query() query: unknown) {
-    return { items: await this.search.searchProviders(parseWith(providerSearchQuerySchema, query)) };
+  async searchProviders(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+    return { items: await this.search.searchProviders(parseWith(providerSearchQuerySchema, query), await this.customerOf(request)) };
   }
 
   @Get('providers/:providerId/slots')
@@ -49,7 +69,7 @@ export class SearchController {
   })
   @ApiQueryField('serviceId', { required: true, type: 'number', description: 'Which service the slot is for; its duration sets the slot length.' })
   @ApiQueryField('date', { required: true, description: 'The local (Asia/Karachi) day, as YYYY-MM-DD.' })
-  async slots(@Param('providerId', ParseUUIDPipe) providerId: string, @Query() query: unknown) {
+  async slots(@Param('providerId', providerIdPipe) providerId: string, @Query() query: unknown) {
     return this.search.listSlots(providerId, parseWith(slotsQuerySchema, query));
   }
 
@@ -62,7 +82,7 @@ export class SearchController {
   })
   @ApiQueryField('serviceId', { required: true, type: 'number', description: 'Which service the slot is for; its duration sets the slot length.' })
   @ApiQueryField('limit', { required: false, type: 'number', description: 'How many soonest start times to return (1–20, default 5).' })
-  async nextSlots(@Param('providerId', ParseUUIDPipe) providerId: string, @Query() query: unknown) {
+  async nextSlots(@Param('providerId', providerIdPipe) providerId: string, @Query() query: unknown) {
     return this.search.listNextSlots(providerId, parseWith(nextSlotsQuerySchema, query));
   }
 
@@ -73,7 +93,7 @@ export class SearchController {
     description:
       'Returns an approved provider’s profile along with every service they are approved to offer (with price) and the areas they serve. A provider who is not approved looks the same as one that does not exist.'
   })
-  async providerDetail(@Param('providerId', ParseUUIDPipe) providerId: string) {
+  async providerDetail(@Param('providerId', providerIdPipe) providerId: string) {
     return this.search.getProviderDetail(providerId);
   }
 }

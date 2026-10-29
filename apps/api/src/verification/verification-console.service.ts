@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { TIME_BANDS, bandOf, isWithinBusinessHours, nextAttemptAt, paisaToNumber, type TimeBand } from '@smart-home/domain';
 import { DomainError, notFound } from '../common/domain-error.js';
+import { signEvidenceUrl } from '../common/evidence-url.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { OBJECT_STORAGE, TELEPHONY } from '../integrations/integrations.module.js';
 import type { ObjectStoragePort, TelephonyPort } from '../integrations/ports.js';
@@ -78,8 +79,8 @@ export class VerificationConsoleService {
     const lines = await this.prisma.$queryRaw<{ kind: string; description: string; amountPaisa: bigint }[]>(
       Prisma.sql`SELECT kind::text, description, amount_paisa as "amountPaisa" FROM booking_items WHERE booking_id = ${held.bookingId}::uuid ORDER BY created_at, id`
     );
-    const evidence = await this.prisma.$queryRaw<{ id: string; kind: string; checklistItemId: number | null; receivedAt: Date; storageKey: string }[]>(
-      Prisma.sql`SELECT id, kind::text, checklist_item_id as "checklistItemId", received_at as "receivedAt", storage_key as "storageKey" FROM job_evidence
+    const evidence = await this.prisma.$queryRaw<{ id: string; kind: string; checklistItemId: number | null; visitNo: number; contentType: string; receivedAt: Date; storageKey: string }[]>(
+      Prisma.sql`SELECT id, kind::text, checklist_item_id as "checklistItemId", visit_no as "visitNo", content_type as "contentType", received_at as "receivedAt", storage_key as "storageKey" FROM job_evidence
         WHERE booking_id = ${held.bookingId}::uuid AND visit_no = ${held.visitNo} AND kind IN ('BEFORE','AFTER','CHECKLIST') ORDER BY received_at, id`
     );
     const checklist = await this.prisma.$queryRaw<{ id: number; label: string; requiresPhoto: boolean; done: boolean | null; evidenceId: string | null }[]>(
@@ -124,7 +125,7 @@ export class VerificationConsoleService {
               totalPaisa: paisaToNumber(invoiceRows[0].total),
               lines: lines.map(line => ({ kind: line.kind, description: line.description, amountPaisa: paisaToNumber(line.amountPaisa) }))
             },
-      evidence: evidence.map(({ storageKey, ...row }) => ({ ...row, url: `/api/v1/dev/storage/evidence/${encodeURIComponent(storageKey)}` })),
+      evidence: await Promise.all(evidence.map(async ({ storageKey, ...row }) => ({ ...row, url: await signEvidenceUrl(this.storage, storageKey) }))),
       checklist,
       providerHistory:
         h === undefined

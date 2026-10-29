@@ -1,5 +1,5 @@
 // apps/api/src/admin/ops-board.controller.ts
-import { Controller, Get, Inject, Res, Sse } from '@nestjs/common';
+import { Controller, Get, Inject, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { PolicyDecorator } from '../common/policy.js';
@@ -33,8 +33,11 @@ export class OpsBoardController {
    * lifecycle to own and a new way for the API to fail, in exchange for pushing the same bytes. SSE is
    * the same HTTP stack, reconnects on its own in every browser, and is one-directional — which is all
    * a board needs. Deviation recorded rather than made quietly.
+   *
+   * This is a plain `@Get` that owns the response, deliberately not `@Sse`: `@Sse` makes Nest write the headers itself on a timer, and a handler that
+   * had already written them (as this one does through `@Res()`) made that timer throw an uncaught ERR_HTTP_HEADERS_SENT that killed the process.
    */
-  @Sse('stream')
+  @Get('stream')
   @PolicyDecorator(FINANCE)
   @ApiOperation({
     summary: 'The operations board, live',

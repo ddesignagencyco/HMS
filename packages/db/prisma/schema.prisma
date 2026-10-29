@@ -1749,6 +1749,7 @@ enum subscription_status {
   ACTIVE
   CANCELLED
   EXPIRED
+  PENDING_PAYMENT
 }
 
 enum time_band {

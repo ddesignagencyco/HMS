@@ -247,6 +247,41 @@ describe('SHM-037: online checkout, capture and abandonment', () => {
     expect(captures[0]?.n).toBe(0n);
   });
 
+  it('BE-003: POST /bookings/:id/checkout hands the customer a way to pay again, reusing the live session', async () => {
+    const { customer, booking, paymentId } = await onlineBooking();
+    type Session = { paymentId: string; redirectUrl: string; returnUrl: string; expiresAt: string };
+
+    const again = await callApi<Session>(app, `/bookings/${booking.id}/checkout`, bearer(customer.accessToken, { method: 'POST' }));
+    expect(again.status).toBe(200);
+    expect(again.body.paymentId).toBe(paymentId);
+    expect(again.body.redirectUrl).toContain(`/dev/payments/${paymentId}`);
+    expect(again.body.returnUrl).toContain(`bookingId=${booking.id}`);
+    expect(new Date(again.body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM payments WHERE booking_id = ${booking.id}::uuid`)).toEqual([{ n: 1n }]);
+
+    // The session lapsed before the sweep ran: a fresh payment replaces it, and paying it completes the same booking.
+    await prisma.$executeRaw(Prisma.sql`UPDATE payments SET expires_at = now() - interval '1 minute' WHERE id = ${paymentId}::uuid`);
+    const renewed = await callApi<Session>(app, `/bookings/${booking.id}/checkout`, bearer(customer.accessToken, { method: 'POST' }));
+    expect(renewed.status).toBe(200);
+    expect(renewed.body.paymentId).not.toBe(paymentId);
+    const rows = await prisma.$queryRaw<{ id: string; status: string }[]>(Prisma.sql`SELECT id, status::text as status FROM payments WHERE booking_id = ${booking.id}::uuid ORDER BY created_at`);
+    expect(rows.map(row => row.status)).toEqual(['EXPIRED', 'INITIATED']);
+
+    expect((await callApi(app, `/dev/payments/${renewed.body.paymentId}/complete?outcome=captured`, { method: 'POST' })).status).toBe(200);
+    expect((await callApi<{ status: string }>(app, `/bookings/${booking.id}`, bearer(customer.accessToken))).body.status).toBe('REQUESTED');
+
+    // Once paid there is nothing left to pay: 409, not a second charge.
+    expect((await callApi(app, `/bookings/${booking.id}/checkout`, bearer(customer.accessToken, { method: 'POST' }))).status).toBe(409);
+  });
+
+  it('BE-003: only the owning customer may start that checkout', async () => {
+    const { booking } = await onlineBooking();
+    const stranger = await registerAndVerify(app, 'CUSTOMER');
+    expect((await callApi(app, `/bookings/${booking.id}/checkout`, bearer(stranger.accessToken, { method: 'POST' }))).status).toBe(404);
+    expect((await callApi(app, `/bookings/${booking.id}/checkout`, bearer(setup.providerAccessToken, { method: 'POST' }))).status).toBe(403);
+    expect((await callApi(app, `/bookings/${booking.id}/checkout`, { method: 'POST' })).status).toBe(401);
+  });
+
   it('completes a whole online checkout through the dev gateway page', async () => {
     const { customer, booking, paymentId } = await onlineBooking();
     const paid = await callApi(app, `/dev/payments/${paymentId}/complete?outcome=captured`, { method: 'POST' });

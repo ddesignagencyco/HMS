@@ -195,9 +195,18 @@ describe('SHM-108: search filters and addressId', () => {
     const address = await callApi<{ id: string }>(app, '/customer/addresses', asProvider(customer.accessToken, postJson({ label: 'Home', line1: 'House 1', areaId: gulbergAreaId, lat: BASE_LAT, lng: BASE_LNG, isDefault: true })));
     expect(address.status).toBe(201);
 
-    const byAddress = await callApi<{ items: { providerId: string }[] }>(app, `/search/providers?serviceSlug=leak-repair&addressId=${address.body.id}`);
+    const byAddress = await callApi<{ items: { providerId: string }[] }>(app, `/search/providers?serviceSlug=leak-repair&addressId=${address.body.id}`, asProvider(customer.accessToken));
     expect(byAddress.status).toBe(200);
     expect(byAddress.body.items.map(item => item.providerId)).toContain(provider.id);
+
+    // BE-004: only the signed-in owner can search around a saved address. Anonymous callers, another customer and a provider all get
+    // the same 404 as an address that does not exist, so an address id cannot be used to triangulate where somebody lives.
+    const byAddressUrl = `/search/providers?serviceSlug=leak-repair&addressId=${address.body.id}`;
+    const stranger = await registerAndVerify(app, 'CUSTOMER');
+    expect((await callApi(app, byAddressUrl)).status).toBe(404);
+    expect((await callApi(app, byAddressUrl, asProvider(stranger.accessToken))).status).toBe(404);
+    expect((await callApi(app, byAddressUrl, asProvider(provider.accessToken))).status).toBe(404);
+    expect((await callApi(app, byAddressUrl, asProvider('not-a-token'))).status).toBe(404);
 
     // An address nobody owns, or that does not exist, is a 404 rather than an empty result.
     expect((await callApi(app, `/search/providers?serviceSlug=leak-repair&addressId=${randomUUID()}`)).status).toBe(404);
@@ -283,5 +292,13 @@ describe('FR-SR-02: provider detail', () => {
     const response = await callApi<{ code: string }>(app, `/search/providers/${provider.id}`);
     expect(response.status).toBe(404);
     expect(response.body.code).toBe('NOT_FOUND');
+  });
+
+  it('answers a malformed provider id with 404, the same as one that does not exist (BE-032)', async () => {
+    for (const path of ['', '/slots?serviceId=1&date=2030-01-01', '/next-slots?serviceId=1']) {
+      const response = await callApi<{ code: string }>(app, `/search/providers/not-a-uuid${path}`);
+      expect(response.status, path).toBe(404);
+      expect(response.body.code).toBe('NOT_FOUND');
+    }
   });
 });

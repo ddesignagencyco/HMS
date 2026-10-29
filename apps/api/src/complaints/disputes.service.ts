@@ -3,6 +3,9 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { paisaToNumber } from '@smart-home/domain';
 import { DomainError, notFound } from '../common/domain-error.js';
+import { signEvidenceUrl } from '../common/evidence-url.js';
+import { OBJECT_STORAGE } from '../integrations/integrations.module.js';
+import type { ObjectStoragePort } from '../integrations/ports.js';
 import { ConductService } from '../conduct/conduct.service.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { BookingStateService } from '../booking/booking-state.service.js';
@@ -49,7 +52,8 @@ export class DisputesService implements OnModuleInit {
     @Inject(ConductService) private readonly conduct: ConductService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(BookingStateService) private readonly bookingState: BookingStateService,
-    @Inject(QueueRegistry) private readonly queues: QueueRegistry
+    @Inject(QueueRegistry) private readonly queues: QueueRegistry,
+    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStoragePort
   ) {}
 
   onModuleInit(): void {
@@ -93,8 +97,8 @@ export class DisputesService implements OnModuleInit {
     if (booking === undefined) throw notFound('Booking');
     const invoice = await this.prisma.$queryRaw<{ number: string; total: bigint }[]>(Prisma.sql`SELECT number, total_paisa as total FROM invoices WHERE booking_id = ${bookingId}::uuid`);
     const lines = await this.prisma.$queryRaw<{ kind: string; description: string; amountPaisa: bigint }[]>(Prisma.sql`SELECT kind::text, description, amount_paisa as "amountPaisa" FROM booking_items WHERE booking_id = ${bookingId}::uuid ORDER BY created_at, id`);
-    const evidence = await this.prisma.$queryRaw<{ id: string; kind: string; visitNo: number; receivedAt: Date; storageKey: string }[]>(
-      Prisma.sql`SELECT id, kind::text, visit_no as "visitNo", received_at as "receivedAt", storage_key as "storageKey" FROM job_evidence WHERE booking_id = ${bookingId}::uuid ORDER BY received_at, id`
+    const evidence = await this.prisma.$queryRaw<{ id: string; kind: string; visitNo: number; contentType: string; receivedAt: Date; storageKey: string }[]>(
+      Prisma.sql`SELECT id, kind::text, visit_no as "visitNo", content_type as "contentType", received_at as "receivedAt", storage_key as "storageKey" FROM job_evidence WHERE booking_id = ${bookingId}::uuid ORDER BY received_at, id`
     );
     const checklist = await this.prisma.$queryRaw<{ label: string; requiresPhoto: boolean; done: boolean | null; visitNo: number | null; evidenceId: string | null }[]>(
       Prisma.sql`SELECT i.label_en as label, i.requires_photo as "requiresPhoto", r.done, r.visit_no as "visitNo", r.evidence_id as "evidenceId" FROM service_checklist_items i JOIN bookings b ON b.service_id = i.service_id AND b.id = ${bookingId}::uuid
@@ -131,7 +135,7 @@ export class DisputesService implements OnModuleInit {
         completedAt: booking.completedAt,
         minutesOnSite: booking.startedAt !== null && booking.completedAt !== null ? Math.round((booking.completedAt.getTime() - booking.startedAt.getTime()) / 60_000) : null,
         geofence: { radiusM: geofence, checkinDistanceM: booking.checkinDistance, checkoutDistanceM: booking.checkoutDistance, checkinWithin: booking.checkinDistance === null ? null : booking.checkinDistance <= geofence, checkoutWithin: booking.checkoutDistance === null ? null : booking.checkoutDistance <= geofence },
-        photos: evidence.map(({ storageKey, ...photo }) => ({ ...photo, storageKey, url: `/api/v1/dev/storage/evidence/${encodeURIComponent(storageKey)}` })),
+        photos: await Promise.all(evidence.map(async ({ storageKey, ...photo }) => ({ ...photo, storageKey, url: await signEvidenceUrl(this.storage, storageKey) }))),
         checklist,
         invoice: invoice[0] === undefined ? null : { number: invoice[0].number, totalPaisa: paisaToNumber(invoice[0].total), lines: lines.map(line => ({ kind: line.kind, description: line.description, amountPaisa: paisaToNumber(line.amountPaisa) })) }
       },

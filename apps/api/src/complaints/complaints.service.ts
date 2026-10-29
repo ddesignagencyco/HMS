@@ -4,6 +4,7 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CUSTOMER_COMPLAINT_CATEGORIES, PROVIDER_COMPLAINT_CATEGORIES, canMoveComplaint, paisaToNumber, severityFor, type ComplaintCategory, type ComplaintStatus } from '@smart-home/domain';
 import { DomainError, badRequest, notFound } from '../common/domain-error.js';
+import { signEvidenceUrl } from '../common/evidence-url.js';
 import { readReceiptToken } from '../common/receipt-link.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { ConductService } from '../conduct/conduct.service.js';
@@ -150,7 +151,7 @@ export class ComplaintsService implements OnModuleInit {
     const events = await this.prisma.$queryRaw<{ id: string; actorUserId: string | null; type: string; fromStatus: string | null; toStatus: string | null; body: string | null; evidenceKey: string | null; createdAt: Date }[]>(
       Prisma.sql`SELECT id, actor_user_id as "actorUserId", type::text, from_status::text as "fromStatus", to_status::text as "toStatus", body, evidence_key as "evidenceKey", created_at as "createdAt" FROM complaint_events WHERE complaint_id = ${complaintId}::uuid ORDER BY created_at, id`
     );
-    return events.map(({ evidenceKey, ...event }) => ({ ...event, evidenceUrl: evidenceKey === null ? null : `/api/v1/dev/storage/evidence/${encodeURIComponent(evidenceKey)}` }));
+    return Promise.all(events.map(async ({ evidenceKey, ...event }) => ({ ...event, evidenceUrl: evidenceKey === null ? null : await signEvidenceUrl(this.storage, evidenceKey) })));
   }
 
   private async head(complaintId: string) {

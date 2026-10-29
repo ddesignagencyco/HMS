@@ -22,8 +22,10 @@ export type SelfVerifyResult = {
   booking: BookingRow;
 };
 
+const ESCALATED_REASON = "You've already told us about a problem with this job. One of our team will call you.";
+
 /** Everything `availability()` needs to answer, gathered in one place so the GET and the POST cannot disagree about it. */
-type Verifiability = { status: string; callInProgress: boolean; alreadyReleased: boolean; enabled: boolean };
+type Verifiability = { status: string; callInProgress: boolean; escalated: boolean; alreadyReleased: boolean; enabled: boolean };
 
 /**
  * FR-VC-16: the customer's own "verify the work and rate your provider" form.
@@ -84,9 +86,11 @@ export class VerificationSelfService {
     // customer's business. The same rule the booking service applies throughout.
     if (row === undefined || row.customerId !== customerId) throw notFound('Booking');
 
+    const call = await this.openCall(this.prisma, bookingId);
     const { canSubmit, blockedReason } = this.availability({
       status: row.status,
-      callInProgress: await this.callInProgress(this.prisma, bookingId),
+      callInProgress: call.inProgress,
+      escalated: call.escalated,
       alreadyReleased: row.alreadyReleased,
       enabled: await this.enabled()
     });
@@ -127,9 +131,11 @@ export class VerificationSelfService {
 
       // Re-checked here, not trusted from the row read a moment ago: a flag is not a lock, and between
       // the customer opening the form and pressing submit an agent may have claimed the call.
+      const openCall = await this.openCall(tx, bookingId);
       const available = this.availability({
         status: bookingRow.status,
-        callInProgress: await this.callInProgress(tx, bookingId),
+        callInProgress: openCall.inProgress,
+        escalated: openCall.escalated,
         alreadyReleased: bookingRow.alreadyReleased,
         enabled: await this.enabled()
       });
@@ -260,15 +266,22 @@ export class VerificationSelfService {
     if (state.alreadyReleased) return { canSubmit: false, blockedReason: 'This job has already been paid for.' };
     if (state.status !== 'AWAITING_VERIFICATION') return { canSubmit: false, blockedReason: 'This job has already been confirmed.' };
     if (state.callInProgress) return { canSubmit: false, blockedReason: 'One of our team is calling you about this job right now.' };
+    // Single-use per job: once the customer has escalated (not acceptable, no work done, extra charge) the case belongs to a person, and a second answer
+    // from the form could release the money and publish a rating on a case at the front of the agent queue.
+    if (state.escalated) return { canSubmit: false, blockedReason: ESCALATED_REASON };
+    // The form is single-use per job: once the customer has said "not acceptable" (or reported no work / an extra charge) the case belongs to a person, and a
+    // second answer from the form could release the money and publish a rating on a case sitting at the front of the agent queue.
+    if (state.escalated) return { canSubmit: false, blockedReason: ESCALATED_REASON };
     return { canSubmit: true, blockedReason: null };
   }
 
-  /** Whether an agent currently holds this booking's verification â€” the one thing a booking row cannot say. */
-  private async callInProgress(tx: Prisma.TransactionClient | PrismaService, bookingId: string): Promise<boolean> {
-    const rows = await tx.$queryRaw<{ n: bigint }[]>(
-      Prisma.sql`SELECT count(*)::bigint as n FROM verification_calls WHERE booking_id = ${bookingId}::uuid AND submitted_at IS NULL AND locked_by IS NOT NULL`
+  /** What the open verification says that a booking row cannot: whether an agent holds it, and whether the customer has already escalated it. */
+  private async openCall(tx: Prisma.TransactionClient | PrismaService, bookingId: string): Promise<{ inProgress: boolean; escalated: boolean }> {
+    const rows = await tx.$queryRaw<{ inProgress: boolean | null; escalated: boolean | null }[]>(
+      Prisma.sql`SELECT bool_or(locked_by IS NOT NULL) as "inProgress", bool_or(routing_reasons && ARRAY['CUSTOMER_NOT_ACCEPTED','CUSTOMER_INTEGRITY_FLAG']::text[]) as escalated
+        FROM verification_calls WHERE booking_id = ${bookingId}::uuid AND submitted_at IS NULL`
     );
-    return (rows[0]?.n ?? 0n) > 0n;
+    return { inProgress: rows[0]?.inProgress ?? false, escalated: rows[0]?.escalated ?? false };
   }
 
   private async enabled(): Promise<boolean> {

@@ -985,6 +985,15 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/bookings/{id}/checkout",
+      "operationId": "BookingController_payNow",
+      "summary": "Pay for a booking that is waiting for payment",
+      "tags": [
+        "booking"
+      ]
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/bookings/{id}/complete",
       "operationId": "BookingController_complete",
       "summary": "Mark the job complete",

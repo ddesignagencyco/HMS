@@ -306,7 +306,7 @@ private async endOfLocalDay(): Promise<Date> {
  * response speed and recency have no input data yet, so their weights are left out and the rest
  * renormalised rather than counting zeros as a signal.
  */
-async searchProviders(query: ProviderSearchQuery): Promise<ProviderSearchResultRow[]> {
+async searchProviders(query: ProviderSearchQuery, customerId?: string): Promise<ProviderSearchResultRow[]> {
     const services = await this.prisma.$queryRaw<{ id: number; durationMin: number }[]>(Prisma.sql`SELECT id, expected_duration_min as "durationMin" FROM services WHERE slug = ${query.serviceSlug} AND is_active = true`);
     const service = services[0];
     if (service === undefined) throw notFound('Service');
@@ -317,7 +317,7 @@ async searchProviders(query: ProviderSearchQuery): Promise<ProviderSearchResultR
     let lng = query.lng;
     if (query.addressId !== undefined) {
       const addresses = await this.prisma.$queryRaw<{ lat: number; lng: number }[]>(
-        Prisma.sql`SELECT ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng FROM addresses WHERE id = ${query.addressId}::uuid`
+        Prisma.sql`SELECT ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng FROM addresses WHERE id = ${query.addressId}::uuid AND customer_id = ${customerId ?? null}::uuid`
       );
       const address = addresses[0];
       if (address === undefined) throw notFound('Address');

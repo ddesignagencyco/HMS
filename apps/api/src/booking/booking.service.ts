@@ -1,4 +1,5 @@
 // apps/api/src/booking/booking.service.ts
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
@@ -102,6 +103,8 @@ export const START_CODE_TTL_SECONDS = START_OTP_LOCK_MINUTES * 60;
 const hashStartOtp = (pepper: string, bookingId: string, code: string): string => hmacSha256(pepper, `BOOKING_START:${bookingId}:${code}`);
 
 import { localTimeOfDay, localWeekday } from './slot-time.js';
+
+export type PendingRevision = { id: string; deltaPaisa: number; reason: string; raisedAt: Date };
 
 @Injectable()
 export class BookingService {
@@ -221,6 +224,32 @@ export class BookingService {
       }
       throw error;
     }
+  }
+
+  /**
+   * BE-003: pay for a booking that is still waiting for payment. The customer's own booking only, and only while it is PENDING_PAYMENT.
+   * The live checkout session is reused (the gateway is asked again under the payment's own idempotency key, so a real gateway answers the same
+   * session); when it has lapsed or never started, the old payment is closed and a new one opens, holding the slot for a fresh timeout.
+   */
+  async checkout(bookingId: string, customerId: string): Promise<{ paymentId: string; redirectUrl: string; returnUrl: string; expiresAt: Date }> {
+    const prepared = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ customerId: string; status: string; paymentMode: string; approvedTotalPaisa: bigint }[]>(
+        Prisma.sql`SELECT customer_id as "customerId", status::text as status, payment_mode::text as "paymentMode", approved_total_paisa as "approvedTotalPaisa" FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`
+      );
+      const booking = rows[0];
+      if (booking === undefined || booking.customerId !== customerId) throw notFound('Booking');
+      if (booking.status !== 'PENDING_PAYMENT') throw conflict('This booking is not waiting for payment');
+      const live = await tx.$queryRaw<{ id: string; expiresAt: Date }[]>(
+        Prisma.sql`SELECT id, expires_at as "expiresAt" FROM payments WHERE booking_id = ${bookingId}::uuid AND purpose = 'BOOKING' AND status = 'INITIATED' AND expires_at > now() ORDER BY created_at DESC LIMIT 1`
+      );
+      if (live[0] !== undefined) return { paymentId: live[0].id, expiresAt: live[0].expiresAt };
+      await tx.$executeRaw(Prisma.sql`UPDATE payments SET status = 'EXPIRED'::payment_status WHERE booking_id = ${bookingId}::uuid AND purpose = 'BOOKING' AND status = 'INITIATED'`);
+      const paymentId = await this.payments.createPayment(tx, { bookingId, payerUserId: customerId, amountPaisa: booking.approvedTotalPaisa, purpose: 'BOOKING', keySuffix: `checkout:${randomUUID()}` });
+      const created = await tx.$queryRaw<{ expiresAt: Date }[]>(Prisma.sql`SELECT expires_at as "expiresAt" FROM payments WHERE id = ${paymentId}::uuid`);
+      return { paymentId, expiresAt: created[0]?.expiresAt ?? new Date() };
+    });
+    const session = await this.payments.startCheckout(prepared.paymentId, { userId: customerId }, await this.checkoutReturnUrl(bookingId, customerId));
+    return { ...session, expiresAt: prepared.expiresAt };
   }
 
   /**
@@ -818,7 +847,7 @@ export class BookingService {
   async getOwned(
     bookingId: string,
     actorUserId: string
-  ): Promise<BookingReadRow & { items: BookingItemRow[]; cancellationPolicy: string; cancellation: Awaited<ReturnType<PricingService['cancellationQuote']>> }> {
+  ): Promise<BookingReadRow & { items: BookingItemRow[]; cancellationPolicy: string; cancellation: Awaited<ReturnType<PricingService['cancellationQuote']>>; pendingRevision: PendingRevision | null }> {
     const rows = await this.prisma.$queryRaw<BookingReadRaw[]>(
       Prisma.sql`SELECT ${BOOKING_READ_COLUMNS} ${BOOKING_READ_JOIN}
         WHERE b.id = ${bookingId}::uuid AND (b.customer_id = ${actorUserId}::uuid OR b.provider_id = ${actorUserId}::uuid)`
@@ -829,8 +858,18 @@ export class BookingService {
       ...toBookingReadRow(row),
       items: await this.itemsOf(bookingId),
       cancellationPolicy: await this.pricing.cancellationPolicy(),
-      cancellation: await this.pricing.cancellationQuote(row)
+      cancellation: await this.pricing.cancellationQuote(row),
+      pendingRevision: await this.pendingRevisionOf(bookingId)
     };
+  }
+
+  /** BE-015: the extra charge the customer is being asked to approve, with the amount and the reason, or null when nothing is waiting. */
+  private async pendingRevisionOf(bookingId: string): Promise<PendingRevision | null> {
+    const rows = await this.prisma.$queryRaw<{ id: string; deltaPaisa: bigint; reason: string; raisedAt: Date }[]>(
+      Prisma.sql`SELECT id, delta_paisa as "deltaPaisa", reason, raised_at as "raisedAt" FROM quote_revisions WHERE booking_id = ${bookingId}::uuid AND status = 'PENDING' ORDER BY raised_at DESC LIMIT 1`
+    );
+    const revision = rows[0];
+    return revision === undefined ? null : { id: revision.id, deltaPaisa: paisaToNumber(revision.deltaPaisa), reason: revision.reason, raisedAt: revision.raisedAt };
   }
 
   /** What the booking was priced for. Written by `create()`, read here and by the invoice; nothing else reads `booking_items`. */

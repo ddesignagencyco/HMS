@@ -268,7 +268,7 @@ export class PlansService {
   /**
    * Customer: Subscribe to a maintenance plan.
    * Generates subscription, distributes plan visits with exact paisa integrity,
-   * creates the payment, and posts PLAN_PURCHASE to the double-entry ledger.
+   * creates the payment. The subscription waits as PENDING_PAYMENT; the capture webhook posts PLAN_PURCHASE and activates it.
    */
   async subscribe(customerUserId: string, planId: string, input: PlanSubscribeInput) {
     const plans = await this.prisma.$queryRaw<
@@ -310,7 +310,7 @@ export class PlansService {
 
       const insertedSub = await tx.$queryRaw<{ id: string }[]>(
         Prisma.sql`INSERT INTO subscriptions(customer_id, plan_id, address_id, preferred_provider_id, starts_at, ends_at, status)
-          VALUES (${customerUserId}::uuid, ${planId}::uuid, ${input.addressId}::uuid, ${input.preferredProviderId ?? null}::uuid, ${now.toISOString()}::timestamptz, ${endsAt.toISOString()}::timestamptz, 'ACTIVE'::subscription_status)
+          VALUES (${customerUserId}::uuid, ${planId}::uuid, ${input.addressId}::uuid, ${input.preferredProviderId ?? null}::uuid, ${now.toISOString()}::timestamptz, ${endsAt.toISOString()}::timestamptz, 'PENDING_PAYMENT'::subscription_status)
           RETURNING id`
       );
       const subscriptionId = insertedSub[0]?.id;
@@ -336,16 +336,9 @@ export class PlansService {
         keySuffix: randomUUID()
       });
 
-      // Post plan purchase directly into ledger: D GATEWAY_CLEARING · C PLAN_DEFERRED[subscription_id]
-      await this.ledger.post(tx, {
-        type: 'PLAN_PURCHASE',
-        idempotencyKey: `plan-purchase:${subscriptionId}`,
-        memo: `Subscription purchase for plan ${plan.nameEn}`,
-        lines: [
-          { account: 'GATEWAY_CLEARING', direction: 'DEBIT', amountPaisa: plan.pricePaisa },
-          { account: 'PLAN_DEFERRED', direction: 'CREDIT', amountPaisa: plan.pricePaisa, subscriptionId }
-        ]
-      });
+      // BE-005: nothing is posted to the ledger and the plan is not active yet. The gateway's capture webhook posts
+      // PLAN_PURCHASE (D GATEWAY_CLEARING · C PLAN_DEFERRED[subscription_id]) and activates the subscription in one step;
+      // an abandoned checkout expires the subscription with its payment.
 
       await appendOutboxEvent(tx, {
         aggregate: 'subscription',
@@ -363,6 +356,7 @@ export class PlansService {
       return {
         subscriptionId,
         paymentId,
+        status: 'PENDING_PAYMENT' as const,
         startsAt: now,
         endsAt,
         visitsCount: scheduledVisits.length

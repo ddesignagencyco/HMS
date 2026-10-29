@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { PrismaService } from '../../src/database/prisma.service.js';
+import { PaymentsService } from '../../src/payment/payments.service.js';
 import { LedgerService } from '../../src/payment/ledger.service.js';
 import { PlanSchedulerService } from '../../src/plans/plans-scheduler.service.js';
 import {
@@ -39,6 +40,13 @@ const asAdmin = (init: RequestInit = {}): RequestInit => ({
   ...init,
   headers: { ...init.headers, authorization: `Bearer ${admin.accessToken}` }
 });
+
+/** BE-005: a subscription starts PENDING_PAYMENT; the gateway's capture is what activates it and posts PLAN_PURCHASE. */
+const pay = async (subscriptionId: string): Promise<void> => {
+  const payments = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM payments WHERE subscription_id = ${subscriptionId}::uuid AND purpose = 'PLAN'`);
+  const captured = await callApi(app, `/dev/payments/${payments[0]!.id}/complete?outcome=captured`, { method: 'POST' });
+  expect(captured.status).toBeLessThan(300);
+};
 
 const asCustomer = (token: string, init: RequestInit = {}): RequestInit => ({
   ...init,
@@ -145,6 +153,8 @@ describe('SHM-089 / FR-MP-01..04: Maintenance Plans', () => {
     expect(subRes.body.visitsCount).toBe(3);
     const subscriptionId = subRes.body.subscriptionId;
 
+    await pay(subscriptionId);
+
     // Verify database visits and exact paisa sum
     const visits = await prisma.$queryRaw<{ valuePaisa: bigint; status: string }[]>(
       Prisma.sql`SELECT value_paisa as "valuePaisa", status FROM plan_visits WHERE subscription_id = ${subscriptionId}::uuid ORDER BY due_date ASC`
@@ -157,7 +167,7 @@ describe('SHM-089 / FR-MP-01..04: Maintenance Plans', () => {
 
     // Verify double-entry ledger PLAN_PURCHASE posting
     const ledgerTx = await prisma.$queryRaw<{ type: string; id: string }[]>(
-      Prisma.sql`SELECT id, type FROM ledger_transactions WHERE idempotency_key = ${`plan-purchase:${subscriptionId}`}`
+      Prisma.sql`SELECT id, type FROM ledger_transactions WHERE idempotency_key IN (SELECT 'capture:' || id::text FROM payments WHERE subscription_id = ${subscriptionId}::uuid)`
     );
     expect(ledgerTx).toHaveLength(1);
     expect(ledgerTx[0]?.type).toBe('PLAN_PURCHASE');
@@ -222,6 +232,8 @@ describe('SHM-089 / FR-MP-01..04: Maintenance Plans', () => {
       asCustomer(customer.accessToken, postJson({ addressId: addrRes.body.id }))
     );
     const subscriptionId = subRes.body.subscriptionId;
+
+    await pay(subscriptionId);
 
     // Simulate 1 visit already CONSUMED (e.g. 23,334 paisa used)
     const visits = await prisma.$queryRaw<{ id: string; valuePaisa: bigint }[]>(
@@ -307,6 +319,8 @@ describe('SHM-089 / FR-MP-01..04: Maintenance Plans', () => {
     expect(subRes.status).toBe(201);
     const subscriptionId = subRes.body.subscriptionId;
 
+    await pay(subscriptionId);
+
     // Set visit due_date to tomorrow (well within the 7-day horizon)
     await prisma.$executeRaw(
       Prisma.sql`UPDATE plan_visits SET due_date = CURRENT_DATE + interval '1 day' WHERE subscription_id = ${subscriptionId}::uuid`
@@ -380,6 +394,7 @@ describe('SHM-089 / FR-MP-01..04: Maintenance Plans', () => {
         asCustomer(customer.accessToken, postJson({ addressId: addr.body.id }))
       );
       expect(sub.status).toBe(201);
+      await pay(sub.body.subscriptionId);
       return { subscriptionId: sub.body.subscriptionId, token: customer.accessToken };
     };
 
@@ -492,6 +507,8 @@ describe('SHM-089 / FR-MP-01..04: Maintenance Plans', () => {
       expect(sub.status).toBe(201);
       const subscriptionId = sub.body.subscriptionId;
 
+      await pay(subscriptionId);
+
       const visits = await prisma.$queryRaw<{ valuePaisa: bigint }[]>(
         Prisma.sql`SELECT value_paisa as "valuePaisa" FROM plan_visits WHERE subscription_id = ${subscriptionId}::uuid`
       );
@@ -529,10 +546,12 @@ describe('SHM-089 / FR-MP-01..04: Maintenance Plans', () => {
       const sub = await callApi<{ subscriptionId: string }>(app, `/plans/${created.body.id}/subscribe`, asCustomer(customer.accessToken, postJson({ addressId: addr.body.id })));
       const subscriptionId = sub.body.subscriptionId;
 
+      await pay(subscriptionId);
+
       const tx = await prisma.$queryRaw<{ debit: bigint; credit: bigint; entries: bigint }[]>(
         Prisma.sql`SELECT coalesce(sum(e.amount_paisa) FILTER (WHERE e.direction = 'DEBIT'), 0)::bigint as debit,
             coalesce(sum(e.amount_paisa) FILTER (WHERE e.direction = 'CREDIT'), 0)::bigint as credit, count(e.id)::bigint as entries
-          FROM ledger_transactions t JOIN ledger_entries e ON e.transaction_id = t.id WHERE t.idempotency_key = ${`plan-purchase:${subscriptionId}`}`
+          FROM ledger_transactions t JOIN ledger_entries e ON e.transaction_id = t.id WHERE t.idempotency_key IN (SELECT 'capture:' || id::text FROM payments WHERE subscription_id = ${subscriptionId}::uuid)`
       );
       expect(tx).toHaveLength(1);
       expect(tx[0]!.debit).toBe(75_000n);
@@ -589,6 +608,8 @@ describe('SHM-089 / FR-MP-01..04: Maintenance Plans', () => {
       const sub = await callApi<{ subscriptionId: string }>(app, `/plans/${created.body.id}/subscribe`, asCustomer(owner.accessToken, postJson({ addressId: ownerAddr.body.id })));
       const subscriptionId = sub.body.subscriptionId;
 
+      await pay(subscriptionId);
+
       const stranger = await registerAndVerify(app, 'CUSTOMER');
       expect((await callApi(app, `/subscriptions/${subscriptionId}`, asCustomer(stranger.accessToken))).status).toBe(404);
       expect((await callApi(app, `/subscriptions/${subscriptionId}/cancel`, asCustomer(stranger.accessToken, postJson({ reason: 'Not mine to cancel.' })))).status).toBe(404);
@@ -628,5 +649,70 @@ describe('SHM-089 / FR-MP-01..04: Maintenance Plans', () => {
       );
       expect(Number(deferred[0]!.n)).toBe(0);
     });
+  });
+});
+
+describe('BE-005: a plan is not active until it is paid', () => {
+  const planAndCustomer = async () => {
+    const planRes = await callApi<{ id: string }>(
+      app,
+      '/admin/plans',
+      asAdmin(postJson({ nameEn: `Pay First ${randomUUID().slice(0, 6)}`, nameUr: 'پہلے ادائیگی', description: 'Pending payment plan.', pricePaisa: 60_000, durationMonths: 6, services: [{ serviceId: 1, visitsIncluded: 2, intervalDays: 30 }] }))
+    );
+    expect(planRes.status).toBe(201);
+    const customer = await registerAndVerify(app, 'CUSTOMER');
+    const addr = await callApi<{ id: string }>(app, '/customer/addresses', asCustomer(customer.accessToken, postJson({ label: 'Home', line1: 'Gulberg', areaId: 1, lat: 31.5204, lng: 74.3587, isDefault: true })));
+    const sub = await callApi<{ subscriptionId: string; paymentId: string; status: string }>(app, `/plans/${planRes.body.id}/subscribe`, asCustomer(customer.accessToken, postJson({ addressId: addr.body.id })));
+    expect(sub.status).toBe(201);
+    return { customer, subscriptionId: sub.body.subscriptionId, paymentId: sub.body.paymentId, status: sub.body.status };
+  };
+
+  const statusOf = async (subscriptionId: string): Promise<string> =>
+    (await prisma.$queryRaw<{ status: string }[]>(Prisma.sql`SELECT status::text as status FROM subscriptions WHERE id = ${subscriptionId}::uuid`))[0]!.status;
+
+  const ledgerCount = async (paymentId: string): Promise<number> =>
+    Number((await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM ledger_transactions WHERE idempotency_key = ${`capture:${paymentId}`}`))[0]!.n);
+
+  it('subscribing creates PENDING_PAYMENT with nothing posted and nothing for the scheduler to book', async () => {
+    const { customer, subscriptionId, paymentId, status } = await planAndCustomer();
+    expect(status).toBe('PENDING_PAYMENT');
+    expect(await statusOf(subscriptionId)).toBe('PENDING_PAYMENT');
+    expect(await ledgerCount(paymentId)).toBe(0);
+
+    const mine = await callApi<{ items: { id: string; status: string }[] }>(app, '/me/subscriptions', asCustomer(customer.accessToken));
+    expect(mine.body.items.find(item => item.id === subscriptionId)?.status).toBe('PENDING_PAYMENT');
+
+    await prisma.$executeRaw(Prisma.sql`UPDATE plan_visits SET due_date = CURRENT_DATE + interval '1 day' WHERE subscription_id = ${subscriptionId}::uuid`);
+    await scheduler.scheduleDueVisits(7);
+    const booked = await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM plan_visits WHERE subscription_id = ${subscriptionId}::uuid AND booking_id IS NOT NULL`);
+    expect(booked[0]!.n).toBe(0n);
+  });
+
+  it('the capture webhook activates it and posts the purchase exactly once', async () => {
+    const { subscriptionId, paymentId } = await planAndCustomer();
+    await pay(subscriptionId);
+    expect(await statusOf(subscriptionId)).toBe('ACTIVE');
+    expect(await ledgerCount(paymentId)).toBe(1);
+    // A replayed capture changes nothing.
+    await callApi(app, `/dev/payments/${paymentId}/complete?outcome=captured`, { method: 'POST' });
+    expect(await statusOf(subscriptionId)).toBe('ACTIVE');
+    expect(await ledgerCount(paymentId)).toBe(1);
+  });
+
+  it('an abandoned checkout expires the subscription like an abandoned booking, and a late capture cannot revive it', async () => {
+    const { subscriptionId, paymentId } = await planAndCustomer();
+    await prisma.$executeRaw(Prisma.sql`UPDATE payments SET expires_at = now() - interval '1 minute' WHERE id = ${paymentId}::uuid`);
+    expect(await app.get(PaymentsService).abandonExpiredCheckouts()).toBeGreaterThanOrEqual(1);
+    expect(await statusOf(subscriptionId)).toBe('EXPIRED');
+
+    await callApi(app, `/dev/payments/${paymentId}/complete?outcome=captured`, { method: 'POST' });
+    expect(await statusOf(subscriptionId)).toBe('EXPIRED');
+    expect(await ledgerCount(paymentId)).toBe(0);
+  });
+
+  it('a failed payment closes the subscription too', async () => {
+    const { subscriptionId, paymentId } = await planAndCustomer();
+    await callApi(app, `/dev/payments/${paymentId}/complete?outcome=failed`, { method: 'POST' });
+    expect(await statusOf(subscriptionId)).toBe('EXPIRED');
   });
 });

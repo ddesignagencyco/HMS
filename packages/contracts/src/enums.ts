@@ -132,7 +132,7 @@ export const PenaltyStatus = enumFrom('penalty_status', ['PROPOSED', 'APPLIED', 
 export const AppealStatus = enumFrom('appeal_status', ['OPEN', 'UPHELD', 'REVERSED', 'PARTIAL'] as const);
 export const FlagKind = enumFrom('flag_kind', ['VERIFIED_WITH_ISSUE', 'LOW_RATING', 'CANCELLATIONS', 'EVIDENCE_ANOMALY'] as const);
 
-export const SubscriptionStatus = enumFrom('subscription_status', ['ACTIVE', 'CANCELLED', 'EXPIRED'] as const);
+export const SubscriptionStatus = enumFrom('subscription_status', ['ACTIVE', 'CANCELLED', 'EXPIRED', 'PENDING_PAYMENT'] as const);
 export const PlanVisitStatus = enumFrom('plan_visit_status', ['PENDING', 'BOOKED', 'CONSUMED', 'FORFEITED', 'REFUNDED'] as const);
 
 export const NotificationChannel = enumFrom('notification_channel', ['SMS', 'EMAIL', 'IN_APP', 'WHATSAPP'] as const);

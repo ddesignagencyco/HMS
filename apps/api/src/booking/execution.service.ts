@@ -2,6 +2,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { DomainError, notFound } from '../common/domain-error.js';
+import { signEvidenceUrl } from '../common/evidence-url.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { OBJECT_STORAGE } from '../integrations/integrations.module.js';
 import type { ObjectStoragePort } from '../integrations/ports.js';
@@ -14,10 +15,12 @@ export type EvidenceRow = {
   clientUuid: string;
   checklistItemId: number | null;
   contentType: string;
+  /** Which visit the photo belongs to — a rework visit starts a new count. */
+  visitNo: number;
   sizeBytes: number;
   receivedAt: Date;
   clientCapturedAt: Date | null;
-  url: string;
+  url: string | null;
 };
 
 export type EvidenceResult = { evidence: EvidenceRow; duplicate: boolean };
@@ -161,11 +164,11 @@ export class ExecutionService {
 
   private async evidenceQuery(where: Prisma.Sql): Promise<EvidenceRow[]> {
     const rows = await this.prisma.$queryRaw<(Omit<EvidenceRow, 'url'> & { storageKey: string })[]>(
-      Prisma.sql`SELECT id, kind, client_uuid as "clientUuid", checklist_item_id as "checklistItemId", content_type as "contentType", size_bytes as "sizeBytes", received_at as "receivedAt",
+      Prisma.sql`SELECT id, kind, client_uuid as "clientUuid", checklist_item_id as "checklistItemId", content_type as "contentType", visit_no as "visitNo", size_bytes as "sizeBytes", received_at as "receivedAt",
           client_captured_at as "clientCapturedAt", storage_key as "storageKey"
         FROM job_evidence WHERE ${where} ORDER BY received_at, id`
     );
-    return rows.map(({ storageKey, ...row }) => ({ ...row, url: `/api/v1/dev/storage/evidence/${encodeURIComponent(storageKey)}` }));
+    return Promise.all(rows.map(async ({ storageKey, ...row }) => ({ ...row, url: await signEvidenceUrl(this.storage, storageKey) })));
   }
 
   private async assertChecklistItem(serviceId: number, checklistItemId: number): Promise<{ requiresPhoto: boolean }> {

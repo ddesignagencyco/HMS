@@ -71,6 +71,25 @@ describe('FR-EX-05 / SHM-042: raise, approve and reject a quote revision', () =>
     expect(rows[0]).toEqual({ status: 'PENDING', deltaPaisa: 50000n, reason: 'Extra pipe section' });
   });
 
+  it('BE-015: shows the customer the pending revision (amount and reason) on GET /bookings/:id, and nothing once it is decided', async () => {
+    const booking = await inProgressBooking();
+    type Read = { pendingRevision: { id: string; deltaPaisa: number; reason: string; raisedAt: string } | null };
+    const read = (token: string) => callApi<Read>(app, `/bookings/${booking.id}`, asCustomer(token));
+
+    expect((await read(booking.customerAccessToken)).body.pendingRevision).toBeNull();
+
+    await callApi(app, `/bookings/${booking.id}/revisions`, asCustomer(shared.providerAccessToken, postJson({ deltaPaisa: 65000, reason: 'Corroded valve needs replacing' })));
+    const pending = (await read(booking.customerAccessToken)).body.pendingRevision;
+    expect(pending).toMatchObject({ deltaPaisa: 65000, reason: 'Corroded valve needs replacing' });
+    expect(typeof pending?.id).toBe('string');
+    expect(Number.isNaN(Date.parse(pending!.raisedAt))).toBe(false);
+    // The provider who raised it reads the same booking, so sees the same figure.
+    expect((await read(shared.providerAccessToken)).body.pendingRevision?.deltaPaisa).toBe(65000);
+
+    await callApi(app, `/bookings/${booking.id}/revisions/reject`, asCustomer(booking.customerAccessToken, { method: 'POST' }));
+    expect((await read(booking.customerAccessToken)).body.pendingRevision).toBeNull();
+  });
+
   it('lets the customer approve the revision, adding the delta to approved_total_paisa and returning to IN_PROGRESS', async () => {
     const booking = await inProgressBooking();
     await callApi(app, `/bookings/${booking.id}/revisions`, asCustomer(shared.providerAccessToken, postJson({ deltaPaisa: 75000, reason: 'Extra parts' })));

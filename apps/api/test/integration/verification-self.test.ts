@@ -254,6 +254,36 @@ describe('FR-VC-16: what the form refuses, and why', () => {
     expect(await countRatings(job.id)).toBe(1n);
   });
 
+  it('BE-002: the form is single-use once escalated: GET says canSubmit false with the reason, and a second POST is 409 and releases nothing', async () => {
+    const job = await completedJob(app, provider, { mode: 'ONLINE' });
+    const before = await walletOf(provider.user.id);
+    expect((await form(job, { ...happy, outcome: 'NOT_ACCEPTABLE', remark: 'Nothing was fixed.' })).body.outcome).toBe('ESCALATED');
+
+    const reopened = await openForm(job);
+    expect(reopened.status).toBe(200);
+    expect(reopened.body.canSubmit).toBe(false);
+    expect(reopened.body.blockedReason).toBe("You've already told us about a problem with this job. One of our team will call you.");
+
+    // Not even "everything was fine" gets through now, and the 409 carries the same sentence as its detail.
+    const second = await problem(job, happy);
+    expect(second.status).toBe(409);
+    expect(second.body.detail).toBe(reopened.body.blockedReason);
+
+    // Nothing was released or rated, and the case is still queued for a person, untouched by the second attempt.
+    expect(await bookingStatus(job.id)).toBe('AWAITING_VERIFICATION');
+    expect(await walletOf(provider.user.id)).toBe(before);
+    expect(await countRatings(job.id)).toBe(0n);
+    expect(await verificationRow(job.verificationId)).toMatchObject({ status: 'QUEUED', outcome: null, tier: 'A', priority: 0 });
+  });
+
+  it('BE-002: an escalation for no work done or an extra charge closes the form the same way', async () => {
+    const job = await completedJob(app, provider, { mode: 'ONLINE' });
+    expect((await form(job, { ...happy, workCompleted: 'NONE', outcome: 'NOT_ACCEPTABLE' })).body.outcome).toBe('ESCALATED');
+    expect((await verificationRow(job.verificationId)).reasons).toContain('CUSTOMER_INTEGRITY_FLAG');
+    expect((await openForm(job)).body.canSubmit).toBe(false);
+    expect((await problem(job, happy)).status).toBe(409);
+  });
+
   it('is closed on a job somebody else booked ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 404, because another booking is not this customerÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s business', async () => {
     const job = await completedJob(app, provider, { mode: 'ONLINE' });
     const other = await completedJob(app, provider, { mode: 'ONLINE' });

@@ -2541,10 +2541,12 @@
                   },
                   "basePricePaisa": {
                     "type": "integer",
+                    "exclusiveMinimum": true,
                     "minimum": 0
                   },
                   "minPricePaisa": {
                     "type": "integer",
+                    "exclusiveMinimum": true,
                     "minimum": 0
                   },
                   "maxPricePaisa": {
@@ -2662,10 +2664,12 @@
                   },
                   "basePricePaisa": {
                     "type": "integer",
+                    "exclusiveMinimum": true,
                     "minimum": 0
                   },
                   "minPricePaisa": {
                     "type": "integer",
+                    "exclusiveMinimum": true,
                     "minimum": 0
                   },
                   "maxPricePaisa": {
@@ -4316,7 +4320,11 @@
                     "enum": [
                       "image/jpeg",
                       "image/png",
-                      "application/pdf"
+                      "image/webp",
+                      "application/pdf",
+                      "video/mp4",
+                      "video/webm",
+                      "video/quicktime"
                     ]
                   },
                   "storageKey": {
@@ -4490,7 +4498,11 @@
                     "enum": [
                       "image/jpeg",
                       "image/png",
-                      "application/pdf"
+                      "image/webp",
+                      "application/pdf",
+                      "video/mp4",
+                      "video/webm",
+                      "video/quicktime"
                     ]
                   }
                 },
@@ -4591,7 +4603,7 @@
             "name": "addressId",
             "required": false,
             "in": "query",
-            "description": "A saved address to search around, resolved server-side to its point. Alternative to lat/lng.",
+            "description": "One of the signed-in customer's own saved addresses, resolved server-side to its point. Alternative to lat/lng. Anyone else (anonymous, another customer, a non-customer) gets 404, as for an address that does not exist.",
             "schema": {
               "type": "string"
             }
@@ -5211,6 +5223,27 @@
         ]
       }
     },
+    "/api/v1/bookings/{id}/checkout": {
+      "post": {
+        "description": "The booking owner only, and only while the booking is PENDING_PAYMENT (409 otherwise; 404 for anyone else). Returns the live checkout session when one is still valid, otherwise opens a fresh one: `{ paymentId, redirectUrl, returnUrl, expiresAt }`. Use it when the customer closed the tab or the gateway failed before they paid, instead of creating a second booking.",
+        "operationId": "BookingController_payNow",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Pay for a booking that is waiting for payment",
+        "tags": [
+          "booking"
+        ]
+      }
+    },
     "/api/v1/bookings/{id}": {
       "get": {
         "description": "Full booking detail: the booking itself, the readable names behind its ids (serviceName, serviceNameUr, serviceSlug, providerQualification, addressLabel, addressLine1, addressLine2, areaName), the line items it was priced for under `items`, and the cancellation rule for this booking right now under `cancellation` (`freeCancelHours`, `lateCancelFeePaisa`, `hoursUntilStart`, `isLate`, `feeDuePaisa`) alongside `cancellationPolicy` in words. Visible only to the booking's own customer or its assigned provider — anyone else gets a 404, same as everywhere else in this API that hides existence from non-owners.",
@@ -5583,7 +5616,12 @@
                     "enum": [
                       "image/jpeg",
                       "image/png",
-                      "image/webp"
+                      "image/webp",
+                      "image/gif",
+                      "video/mp4",
+                      "video/webm",
+                      "video/quicktime",
+                      "application/pdf"
                     ]
                   },
                   "contentBase64": {
@@ -6513,7 +6551,7 @@
     },
     "/api/v1/bookings/{bookingId}/verification/confirmation": {
       "get": {
-        "description": "Everything the form needs to render, plus `canSubmit` and, when it is false, a `blockedReason` written for the customer to read. Always 200 for your own booking — the form being unavailable is an answer, not an error, and a client handed only a status code has nothing to show. 404 for a booking that is not yours.",
+        "description": "Everything the form needs to render, plus `canSubmit` and, when it is false, a `blockedReason` written for the customer to read. Always 200 for your own booking â€” the form being unavailable is an answer, not an error, and a client handed only a status code has nothing to show. 404 for a booking that is not yours.",
         "operationId": "VerificationSelfController_describe",
         "parameters": [],
         "responses": {
@@ -6532,7 +6570,7 @@
         ]
       },
       "post": {
-        "description": "Closes the verification yourself: rate the provider on quality, punctuality, conduct and cleanliness, and say whether the job was done. `SATISFIED` releases the payment and publishes the rating; `WITH_ISSUE` releases it too but opens a quality complaint and flags the provider. Either way the release is yours to make — this is your money, already paid and held. For a cash job the form authorises the handover and the provider then confirms they were paid (`canConfirmCashReceived` on the booking). `NOT_ACCEPTABLE`, or saying no work was done, or saying money was demanded beyond the agreed price, releases nothing and puts the case in front of a person at the top of the queue instead; the booking stays AWAITING_VERIFICATION. 409 when the form is not currently available — an agent is mid-call, or the job is already settled — with the reason in `detail`; 422 when the answers contradict the outcome.",
+        "description": "Closes the verification yourself: rate the provider on quality, punctuality, conduct and cleanliness, and say whether the job was done. `SATISFIED` releases the payment and publishes the rating; `WITH_ISSUE` releases it too but opens a quality complaint and flags the provider. Either way the release is yours to make â€” this is your money, already paid and held. For a cash job the form authorises the handover and the provider then confirms they were paid (`canConfirmCashReceived` on the booking). `NOT_ACCEPTABLE`, or saying no work was done, or saying money was demanded beyond the agreed price, releases nothing and puts the case in front of a person at the top of the queue instead; the booking stays AWAITING_VERIFICATION. 409 when the form is not currently available â€” an agent is mid-call, or the job is already settled â€” with the reason in `detail`; 422 when the answers contradict the outcome.",
         "operationId": "VerificationSelfController_confirm",
         "parameters": [],
         "requestBody": {
@@ -6836,6 +6874,98 @@
           }
         ],
         "summary": "Unpublish an abusive remark",
+        "tags": [
+          "reputation"
+        ]
+      }
+    },
+    "/api/v1/admin/providers/badges/pending": {
+      "get": {
+        "description": "Admin only. Every provider whose verified-job count now qualifies for a different tier badge (ELITE/PRO/TRUSTED) than the one currently shown publicly, oldest pending first. The badge only becomes public once approved here.",
+        "operationId": "ReputationController_pendingBadges",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List providers awaiting badge approval",
+        "tags": [
+          "reputation"
+        ]
+      }
+    },
+    "/api/v1/admin/providers/{providerId}/badge/approve": {
+      "post": {
+        "description": "Admin only. The computed tier becomes the live, public badge.",
+        "operationId": "ReputationController_approveBadge",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Approve a provider’s pending badge",
+        "tags": [
+          "reputation"
+        ]
+      }
+    },
+    "/api/v1/admin/providers/{providerId}/badge/reject": {
+      "post": {
+        "description": "Admin only. The live, public badge is left untouched; the provider keeps earning toward the pending tier.",
+        "operationId": "ReputationController_rejectBadge",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              "examples": {
+                "default": {
+                  "summary": "Needs more recent verified jobs",
+                  "value": {
+                    "reason": "Verified-job count includes disputed bookings pending review"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reject a provider’s pending badge",
         "tags": [
           "reputation"
         ]
@@ -7358,7 +7488,12 @@
                           "enum": [
                             "image/jpeg",
                             "image/png",
-                            "image/webp"
+                            "image/webp",
+                            "image/gif",
+                            "video/mp4",
+                            "video/webm",
+                            "video/quicktime",
+                            "application/pdf"
                           ]
                         },
                         "contentBase64": {
@@ -7477,7 +7612,12 @@
                           "enum": [
                             "image/jpeg",
                             "image/png",
-                            "image/webp"
+                            "image/webp",
+                            "image/gif",
+                            "video/mp4",
+                            "video/webm",
+                            "video/quicktime",
+                            "application/pdf"
                           ]
                         },
                         "contentBase64": {
@@ -7618,7 +7758,12 @@
                     "enum": [
                       "image/jpeg",
                       "image/png",
-                      "image/webp"
+                      "image/webp",
+                      "image/gif",
+                      "video/mp4",
+                      "video/webm",
+                      "video/quicktime",
+                      "application/pdf"
                     ]
                   },
                   "contentBase64": {

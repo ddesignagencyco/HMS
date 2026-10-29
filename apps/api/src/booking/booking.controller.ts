@@ -96,6 +96,18 @@ export class BookingController {
     return this.bookings.create(principal.userId, parseWith(bookingCreateSchema, body));
   }
 
+  @Post(':id/checkout')
+  @HttpCode(200)
+  @PolicyDecorator({ roles: ['CUSTOMER'] })
+  @ApiOperation({
+    summary: 'Pay for a booking that is waiting for payment',
+    description:
+      'The booking owner only, and only while the booking is PENDING_PAYMENT (409 otherwise; 404 for anyone else). Returns the live checkout session when one is still valid, otherwise opens a fresh one: `{ paymentId, redirectUrl, returnUrl, expiresAt }`. Use it when the customer closed the tab or the gateway failed before they paid, instead of creating a second booking.'
+  })
+  async payNow(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.bookings.checkout(id, principal.userId);
+  }
+
   @Get(':id')
   @PolicyDecorator({ roles: ['CUSTOMER', 'PROVIDER'] })
   @ApiOperation({

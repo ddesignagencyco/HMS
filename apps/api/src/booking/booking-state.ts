@@ -43,7 +43,13 @@ export const applySystemEvent = async (tx: Prisma.TransactionClient, bookingId: 
     // eslint-disable-next-line no-restricted-syntax -- sanctioned writer: BookingStateService/applySystemEvent, transition_ctx set above
     Prisma.sql`UPDATE bookings SET status = ${to}::booking_status,
       payment_status = COALESCE(${options.paymentStatus ?? null}::booking_payment_status, payment_status),
-      provider_id = COALESCE(${options.providerId ?? null}::uuid, provider_id)
+      provider_id = COALESCE(${options.providerId ?? null}::uuid, provider_id),
+      -- A rework visit needs a fresh start code, which the customer can only be shown while the previous visit's verified start is cleared.
+      -- Leaving REWORK_REQUIRED for a status that needs a verified start (the window lapsing into a dispute) puts back the time of the last real start.
+      start_otp_verified_at = CASE
+        WHEN ${to}::booking_status = 'REWORK_REQUIRED'::booking_status THEN NULL
+        WHEN ${row.status}::booking_status = 'REWORK_REQUIRED'::booking_status THEN COALESCE(start_otp_verified_at, (SELECT max(created_at) FROM booking_status_history WHERE booking_id = ${bookingId}::uuid AND event = 'start'))
+        ELSE start_otp_verified_at END
       WHERE id = ${bookingId}::uuid RETURNING ${BOOKING_COLUMNS}`
   );
   const next = updated[0];
