@@ -1,5 +1,5 @@
 // apps/api/src/provider/provider-documents.controller.ts
-import { Body, Controller, Get, HttpCode, Inject, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
 import { ApiZodBody } from '../common/swagger.js';
@@ -23,6 +23,17 @@ export class ProviderDocumentsController {
   async list(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
     const [items, cnic] = await Promise.all([this.documents.listMine(principal.userId), this.documents.cnicReviewState(principal.userId)]);
     return { items, cnic };
+  }
+
+  @Get(':documentId/url')
+  @PolicyDecorator({ roles: ['PROVIDER'] })
+  @ApiOperation({
+    summary: 'Get a short-lived link to one of my documents',
+    description:
+      'Returns a signed link valid for five minutes to a document you uploaded, so you can check it is legible. Not for the CNIC (403: identity documents are only ever seen by an admin); a document that is not yours is a 404, and so is a file that is no longer in storage.'
+  })
+  async documentUrl(@Param('documentId', ParseUUIDPipe) documentId: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.documents.signedUrlForOwner(documentId, principal.userId);
   }
 
   @Post()

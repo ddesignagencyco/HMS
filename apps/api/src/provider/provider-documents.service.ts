@@ -148,6 +148,24 @@ export class ProviderDocumentsService {
   }
 
   /**
+   * BE-019: a provider checks that their own certificate scan is legible. Own documents only - someone else's is a 404, not a 403, so
+   * document ids cannot be probed - and never the CNIC: an identity document stays admin-only (SHM-022), so a CNIC_FRONT/BACK row is a 403.
+   * Same five-minute link and the same audit row as the admin route, with the provider as the actor.
+   */
+  async signedUrlForOwner(documentId: string, providerId: string): Promise<{ url: string; expiresAt: string }> {
+    const rows = await this.prisma.$queryRaw<{ id: string; docType: string; storageKey: string }[]>(
+      Prisma.sql`SELECT id, doc_type::text as "docType", storage_key as "storageKey" FROM provider_documents WHERE id = ${documentId}::uuid AND provider_id = ${providerId}::uuid`
+    );
+    const document = rows[0];
+    if (document === undefined) throw notFound('Document');
+    if (document.docType === 'CNIC_FRONT' || document.docType === 'CNIC_BACK') throw new DomainError('FORBIDDEN', 'An identity document cannot be viewed again once it is uploaded; upload a new one if it was unclear');
+    if ((await this.storage.head({ key: document.storageKey, bucket: BUCKET })) === null) throw notFound('Document');
+    const link = await this.storage.presignGet({ key: document.storageKey, bucket: BUCKET, ttlSeconds: SIGNED_URL_SECONDS });
+    await this.audit.append({ actorUserId: providerId, actorRole: 'PROVIDER', action: 'provider_document.view_own', entityType: 'provider_document', entityId: document.id, after: { docType: document.docType } });
+    return { url: link.url, expiresAt: link.expiresAt };
+  }
+
+  /**
    * Verifies or rejects one document. Recorded with the reviewing admin and a note;
    * a rejection requires one, because it is the only thing the provider is told.
    */

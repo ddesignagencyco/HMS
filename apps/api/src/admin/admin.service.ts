@@ -1,12 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { BOOKING_READ_COLUMNS, BOOKING_READ_JOIN, toBookingReadRow, type BookingReadRow, type BookingReadRaw } from '../booking/booking.row.js';
+import { maskPhoneE164 } from '../booking/on-behalf.js';
 import { conflict, notFound } from '../common/domain-error.js';
+import { DEFAULT_PAGE_LIMIT, countOf, cursorPage, decodeIdCursor, limitClause, paged, pageWindow, type Paged } from '../common/paging.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AuthService } from '../identity/auth.service.js';
 import { AuditService } from '../platform/audit.service.js';
-import type { AuditQuery, ListCustomersQuery, ListUsersQuery, StaffConflictCreateInput } from './admin.schemas.js';
+import type { AuditQuery, ListAdminBookingsQuery, ListCustomersQuery, ListProvidersQuery, ListUsersQuery, StaffConflictCreateInput } from './admin.schemas.js';
 
-export type AdminUserRow = { id: string; email: string | null; phoneE164: string | null; firstName: string; lastName: string; status: string; roles: string[]; createdAt: Date };
+export type AdminUserRow = { id: string; email: string | null; phoneE164: string | null; firstName: string; lastName: string; status: string; roles: string[]; providerStatus: string | null; createdAt: Date };
+export type AdminProviderRow = { providerId: string; name: string; phoneMasked: string | null; city: string | null; cityId: number | null; providerStatus: string; submittedAt: Date | null; pendingDocumentsCount: number };
+export type AdminBookingRow = BookingReadRow & { customerName: string | null; providerName: string | null; cityId: number | null };
 export type CustomerRow = { userId: string; email: string | null; phoneE164: string | null; firstName: string; lastName: string; status: string; createdAt: Date };
 export type RoleRow = { code: string; name: string; permissions: string[] };
 export type StaffConflictRow = { id: string; staffUserId: string; otherUserId: string; reason: string; createdBy: string; createdAt: Date };
@@ -32,7 +37,7 @@ export class AdminService {
 
   // ------------------------------------------------------------------- users
 
-  async listUsers(query: ListUsersQuery): Promise<AdminUserRow[]> {
+  async listUsers(query: ListUsersQuery): Promise<Paged<AdminUserRow>> {
     const conditions: Prisma.Sql[] = [];
     if (query.role !== undefined) conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.role_code = ${query.role})`);
     if (query.status !== undefined) conditions.push(Prisma.sql`u.status = ${query.status}::user_status`);
@@ -41,25 +46,78 @@ export class AdminService {
       conditions.push(Prisma.sql`(u.first_name ILIKE ${like} OR u.last_name ILIKE ${like} OR u.email ILIKE ${like} OR u.phone_e164 LIKE ${like})`);
     }
     const where = conditions.length === 0 ? Prisma.empty : Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
-    return this.prisma.$queryRaw<AdminUserRow[]>(
+    const window = pageWindow(query, 50);
+    const items = await this.prisma.$queryRaw<AdminUserRow[]>(
       Prisma.sql`SELECT u.id, u.email, u.phone_e164 as "phoneE164", u.first_name as "firstName", u.last_name as "lastName",
-          u.status::text as "status", ${ROLE_ARRAY} as roles, u.created_at as "createdAt"
-        FROM users u ${where} ORDER BY u.created_at DESC LIMIT ${query.limit}`
+          u.status::text as "status", ${ROLE_ARRAY} as roles, (SELECT p.status::text FROM providers p WHERE p.user_id = u.id) as "providerStatus", u.created_at as "createdAt"
+        FROM users u ${where} ORDER BY u.created_at DESC, u.id ${limitClause(window)}`
     );
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM users u ${where}`), window);
   }
 
-  async listCustomers(query: ListCustomersQuery): Promise<CustomerRow[]> {
+  async listCustomers(query: ListCustomersQuery): Promise<Paged<CustomerRow>> {
     const conditions: Prisma.Sql[] = [];
     if (query.q !== undefined) {
       const like = `%${query.q}%`;
       conditions.push(Prisma.sql`(u.first_name ILIKE ${like} OR u.last_name ILIKE ${like} OR u.email ILIKE ${like} OR u.phone_e164 LIKE ${like})`);
     }
     const where = conditions.length === 0 ? Prisma.empty : Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
-    return this.prisma.$queryRaw<CustomerRow[]>(
+    const window = pageWindow(query, 50);
+    const items = await this.prisma.$queryRaw<CustomerRow[]>(
       Prisma.sql`SELECT u.id as "userId", u.email, u.phone_e164 as "phoneE164", u.first_name as "firstName", u.last_name as "lastName",
           u.status::text as "status", c.created_at as "createdAt"
-        FROM customers c JOIN users u ON u.id = c.user_id ${where} ORDER BY c.created_at DESC LIMIT ${query.limit}`
+        FROM customers c JOIN users u ON u.id = c.user_id ${where} ORDER BY c.created_at DESC, u.id ${limitClause(window)}`
     );
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM customers c JOIN users u ON u.id = c.user_id ${where}`), window);
+  }
+
+  /**
+   * BE-008 (§3.3): who is waiting for approval. Oldest submission first so the queue is worked in order;
+   * `pendingDocumentsCount` is documents no admin has reviewed yet. The phone is masked: this is a list, and
+   * the full number lives on the user row an admin opens deliberately.
+   */
+  async listProviders(query: ListProvidersQuery): Promise<Paged<AdminProviderRow>> {
+    const conditions: Prisma.Sql[] = [];
+    if (query.status !== undefined) conditions.push(Prisma.sql`p.status = ${query.status}::provider_status`);
+    if (query.q !== undefined) {
+      const like = `%${query.q}%`;
+      conditions.push(Prisma.sql`(u.first_name ILIKE ${like} OR u.last_name ILIKE ${like} OR u.phone_e164 LIKE ${like})`);
+    }
+    const where = conditions.length === 0 ? Prisma.empty : Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
+    const window = pageWindow(query, DEFAULT_PAGE_LIMIT);
+    const rows = await this.prisma.$queryRaw<(Omit<AdminProviderRow, 'phoneMasked'> & { phoneE164: string | null })[]>(
+      Prisma.sql`SELECT p.user_id as "providerId", trim(u.first_name || ' ' || u.last_name) as name, u.phone_e164 as "phoneE164", c.name as city, p.city_id as "cityId",
+          p.status::text as "providerStatus", p.submitted_at as "submittedAt",
+          (SELECT count(*) FROM provider_documents d WHERE d.provider_id = p.user_id AND d.status = 'PENDING')::int as "pendingDocumentsCount"
+        FROM providers p JOIN users u ON u.id = p.user_id LEFT JOIN cities c ON c.id = p.city_id ${where}
+        ORDER BY p.submitted_at ASC NULLS LAST, p.created_at DESC, p.user_id ${limitClause(window)}`
+    );
+    const items = rows.map(({ phoneE164, ...row }) => ({ ...row, phoneMasked: phoneE164 === null ? null : maskPhoneE164(phoneE164) }));
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM providers p JOIN users u ON u.id = p.user_id ${where}`), window);
+  }
+
+  /** BE-009 (§3.4): every booking on the platform, newest first, with the same readable names as `GET /bookings` plus who the two parties are. */
+  async listBookings(query: ListAdminBookingsQuery): Promise<Paged<AdminBookingRow>> {
+    const conditions: Prisma.Sql[] = [];
+    if (query.status !== undefined) conditions.push(Prisma.sql`b.status = ${query.status}::booking_status`);
+    if (query.from !== undefined) conditions.push(Prisma.sql`b.created_at >= ${query.from}`);
+    if (query.to !== undefined) conditions.push(Prisma.sql`b.created_at <= ${query.to}`);
+    if (query.cityId !== undefined) conditions.push(Prisma.sql`ar.city_id = ${query.cityId}`);
+    if (query.providerId !== undefined) conditions.push(Prisma.sql`b.provider_id = ${query.providerId}::uuid`);
+    if (query.customerId !== undefined) conditions.push(Prisma.sql`b.customer_id = ${query.customerId}::uuid`);
+    if (query.isEmergency !== undefined) conditions.push(Prisma.sql`b.is_emergency = ${query.isEmergency}`);
+    if (query.q !== undefined) conditions.push(Prisma.sql`b.code ILIKE ${`%${query.q.replace(/[\\%_]/g, char => `\\${char}`)}%`}`);
+    const where = conditions.length === 0 ? Prisma.empty : Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
+    const window = pageWindow(query, DEFAULT_PAGE_LIMIT);
+    const rows = await this.prisma.$queryRaw<(BookingReadRaw & { customerName: string | null; providerName: string | null; cityId: number | null })[]>(
+      Prisma.sql`SELECT ${BOOKING_READ_COLUMNS},
+          (SELECT trim(cu.first_name || ' ' || cu.last_name) FROM users cu WHERE cu.id = b.customer_id) as "customerName",
+          (SELECT trim(pu.first_name || ' ' || pu.last_name) FROM users pu WHERE pu.id = b.provider_id) as "providerName",
+          ar.city_id as "cityId"
+        ${BOOKING_READ_JOIN} ${where} ORDER BY b.created_at DESC, b.id ${limitClause(window)}`
+    );
+    const items = rows.map(({ customerName, providerName, cityId, ...raw }) => ({ ...toBookingReadRow(raw as BookingReadRaw), customerName, providerName, cityId }));
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n ${BOOKING_READ_JOIN} ${where}`), window);
   }
 
   /** FR-AD-03/04: admin-triggered reset. The admin never sees or sets a password. */
@@ -168,7 +226,7 @@ export class AdminService {
 
   // ------------------------------------------------------------------- audit
 
-  async queryAudit(query: AuditQuery): Promise<AuditRow[]> {
+  async queryAudit(query: AuditQuery): Promise<{ items: AuditRow[]; nextCursor: string | null }> {
     const conditions: Prisma.Sql[] = [];
     if (query.action !== undefined) conditions.push(Prisma.sql`action = ${query.action}`);
     if (query.actorUserId !== undefined) conditions.push(Prisma.sql`actor_user_id = ${query.actorUserId}::uuid`);
@@ -176,11 +234,15 @@ export class AdminService {
     if (query.entityId !== undefined) conditions.push(Prisma.sql`entity_id = ${query.entityId}`);
     if (query.from !== undefined) conditions.push(Prisma.sql`created_at >= ${query.from}`);
     if (query.to !== undefined) conditions.push(Prisma.sql`created_at <= ${query.to}`);
+    // BE-023: the cursor is the id of the last row seen. Ids only grow, so "id below it" stays stable while new rows arrive.
+    if (query.before !== undefined) conditions.push(Prisma.sql`id < ${decodeIdCursor(query.before)}::bigint`);
     const where = conditions.length === 0 ? Prisma.empty : Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
-    return this.prisma.$queryRaw<AuditRow[]>(
+    const limit = query.limit ?? 50;
+    const rows = await this.prisma.$queryRaw<AuditRow[]>(
       Prisma.sql`SELECT id::text as "id", actor_user_id as "actorUserId", actor_role::text as "actorRole", action, entity_type as "entityType", entity_id as "entityId",
           before, after, created_at as "createdAt"
-        FROM audit_log ${where} ORDER BY id DESC LIMIT ${query.limit}`
+        FROM audit_log ${where} ORDER BY id DESC LIMIT ${limit + 1}`
     );
+    return cursorPage(rows, limit, row => row.id);
   }
 }

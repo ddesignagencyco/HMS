@@ -1,6 +1,7 @@
 // apps/api/src/booking/booking.schemas.ts
 import { BOOKING_STATUS_VALUES } from '@smart-home/domain';
 import { z } from 'zod';
+import { pageFields } from '../common/paging.js';
 
 export const bookingCreateSchema = z
   .object({
@@ -99,7 +100,8 @@ export type BookingNoShowInput = z.infer<typeof bookingNoShowSchema>;
 export const bookingListQuerySchema = z
   .object({
     /** Any value of the database's `booking_status` enum — not a subset, so `?status=VERIFIED` works. */
-    status: z.enum(BOOKING_STATUS_VALUES).optional()
+    status: z.enum(BOOKING_STATUS_VALUES).optional(),
+    ...pageFields()
   })
   .strict();
 

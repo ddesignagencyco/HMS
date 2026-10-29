@@ -19,7 +19,7 @@ export class ProviderMoneyController {
   @PolicyDecorator({ roles: ['PROVIDER'] })
   @ApiOperation({
     summary: 'See my wallet and commission debt',
-    description: "What the platform owes you (`balancePaisa`), or, when it is negative, the commission you owe from cash jobs (`debtPaisa`). Above `debtCeilingPaisa` you stop receiving new offers (`offersBlocked`) until you pay it down."
+    description: "What the platform owes you (`balancePaisa`), or, when it is negative, the commission you owe from cash jobs (`debtPaisa`). `minPayoutPaisa` is the smallest payout request accepted. Above `debtCeilingPaisa` you stop receiving new offers (`offersBlocked`) until you pay it down."
   })
   async wallet(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return this.money.wallet(principal.userId);

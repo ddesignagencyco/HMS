@@ -13,6 +13,7 @@ import {
   type CommissionScope
 } from '@smart-home/domain';
 import { DomainError, badRequest, conflict, notFound } from '../common/domain-error.js';
+import { countOf, limitClause, paged, pageWindow, type PageQuery } from '../common/paging.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { SMS_SENDER } from '../integrations/integrations.module.js';
@@ -881,14 +882,16 @@ export class BookingService {
     return rows.map((row) => ({ ...row, unitPricePaisa: paisaToNumber(row.unitPricePaisa), amountPaisa: paisaToNumber(row.amountPaisa) }));
   }
 
-  async listMine(actorUserId: string, status?: string): Promise<BookingReadRow[]> {
+  /** BE-007: never capped before, so with no paging parameters this is still the whole history (now with its `pagination.total`). */
+  async listMine(actorUserId: string, status?: string, query: PageQuery = {}) {
+    const where = Prisma.sql`WHERE (b.customer_id = ${actorUserId}::uuid OR b.provider_id = ${actorUserId}::uuid)
+          AND (${status ?? null}::booking_status IS NULL OR b.status = ${status ?? null}::booking_status)`;
+    const window = pageWindow(query, null);
     const rows = await this.prisma.$queryRaw<BookingReadRaw[]>(
       Prisma.sql`SELECT ${BOOKING_READ_COLUMNS} ${BOOKING_READ_JOIN}
-        WHERE (b.customer_id = ${actorUserId}::uuid OR b.provider_id = ${actorUserId}::uuid)
-          AND (${status ?? null}::booking_status IS NULL OR b.status = ${status ?? null}::booking_status)
-        ORDER BY b.created_at DESC`
+        ${where} ORDER BY b.created_at DESC, b.id ${limitClause(window)}`
     );
-    return rows.map(toBookingReadRow);
+    return paged(rows.map(toBookingReadRow), await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM bookings b ${where}`), window);
   }
 
   /** Provider-scoped rate wins, then category-scoped, then the platform GLOBAL default (always seeded). The precedence itself lives in `@smart-home/domain`; this only fetches the rules that are in force. */

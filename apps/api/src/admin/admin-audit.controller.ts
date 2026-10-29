@@ -1,6 +1,7 @@
 import { Controller, Get, Inject, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PolicyDecorator } from '../common/policy.js';
+import { ApiCursorQuery } from '../common/paging.js';
 import { ApiQueryField } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { AdminService } from './admin.service.js';
@@ -21,7 +22,8 @@ export class AdminAuditController {
   @ApiQueryField('entityId', { description: 'Only rows about this entity id.' })
   @ApiQueryField('from', { description: 'ISO timestamp lower bound (inclusive).' })
   @ApiQueryField('to', { description: 'ISO timestamp upper bound (inclusive).' })
+  @ApiCursorQuery(200, 50)
   async query(@Query() query: unknown) {
-    return { items: await this.admin.queryAudit(parseWith(auditQuerySchema, query)) };
+    return this.admin.queryAudit(parseWith(auditQuerySchema, query));
   }
 }

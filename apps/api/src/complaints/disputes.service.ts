@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { paisaToNumber } from '@smart-home/domain';
 import { DomainError, notFound } from '../common/domain-error.js';
 import { signEvidenceUrl } from '../common/evidence-url.js';
+import { countOf, limitClause, paged, pageWindow, type PageQuery } from '../common/paging.js';
 import { OBJECT_STORAGE } from '../integrations/integrations.module.js';
 import type { ObjectStoragePort } from '../integrations/ports.js';
 import { ConductService } from '../conduct/conduct.service.js';
@@ -60,12 +61,14 @@ export class DisputesService implements OnModuleInit {
     this.queues.registerScheduled('dispute.reply-window', async () => void (await this.closeReplyWindows()));
   }
 
-  async list(status: string | undefined) {
+  async list(status: string | undefined, query: PageQuery = {}) {
+    const where = Prisma.sql`WHERE (${status ?? null}::text IS NULL OR d.status::text = ${status ?? null})`;
+    const window = pageWindow(query, 200);
     const rows = await this.prisma.$queryRaw<{ id: string; bookingCode: string; origin: string; status: string; replyDueAt: Date | null; providerReplied: boolean; createdAt: Date; resolution: string | null; provider: string }[]>(
       Prisma.sql`SELECT d.id, b.code as "bookingCode", d.origin::text, d.status::text, d.reply_due_at as "replyDueAt", (d.provider_replied_at IS NOT NULL) as "providerReplied", d.created_at as "createdAt", d.resolution::text, trim(u.first_name || ' ' || u.last_name) as provider
-        FROM disputes d JOIN bookings b ON b.id = d.booking_id LEFT JOIN users u ON u.id = b.provider_id WHERE (${status ?? null}::text IS NULL OR d.status::text = ${status ?? null}) ORDER BY (d.status = 'RESOLVED'), d.created_at LIMIT 200`
+        FROM disputes d JOIN bookings b ON b.id = d.booking_id LEFT JOIN users u ON u.id = b.provider_id ${where} ORDER BY (d.status = 'RESOLVED'), d.created_at, d.id ${limitClause(window)}`
     );
-    return { items: rows };
+    return paged(rows, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM disputes d JOIN bookings b ON b.id = d.booking_id ${where}`), window);
   }
 
   private async escrowHeld(client: Prisma.TransactionClient | PrismaService, bookingId: string): Promise<bigint> {
@@ -152,12 +155,14 @@ export class DisputesService implements OnModuleInit {
     return this.evidenceFloor(disputeId, false);
   }
 
-  async listForProvider(providerId: string) {
+  async listForProvider(providerId: string, query: PageQuery = {}) {
+    const where = Prisma.sql`WHERE b.provider_id = ${providerId}::uuid`;
+    const window = pageWindow(query, 100);
     const rows = await this.prisma.$queryRaw<{ id: string; bookingCode: string; origin: string; status: string; replyDueAt: Date | null; providerReplied: boolean; createdAt: Date; resolution: string | null }[]>(
       Prisma.sql`SELECT d.id, b.code as "bookingCode", d.origin::text, d.status::text, d.reply_due_at as "replyDueAt", (d.provider_replied_at IS NOT NULL) as "providerReplied", d.created_at as "createdAt", d.resolution::text
-        FROM disputes d JOIN bookings b ON b.id = d.booking_id WHERE b.provider_id = ${providerId}::uuid ORDER BY d.created_at DESC LIMIT 100`
+        FROM disputes d JOIN bookings b ON b.id = d.booking_id ${where} ORDER BY d.created_at DESC, d.id ${limitClause(window)}`
     );
-    return { items: rows };
+    return paged(rows, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM disputes d JOIN bookings b ON b.id = d.booking_id ${where}`), window);
   }
 
   /** The provider's right of reply. Once; allowed until the ruling. A reply closes the wait: the dispute is ready for an admin. */

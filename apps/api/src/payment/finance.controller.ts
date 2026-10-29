@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiPageQuery, pageFields, pageQuerySchema } from '../common/paging.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { FinanceService } from './finance.service.js';
@@ -32,7 +33,7 @@ const markSchema = z
   })
   .strict();
 
-const statusQuery = z.object({ status: z.string().trim().max(30).optional() }).strict();
+const statusQuery = z.object({ status: z.string().trim().max(30).optional(), ...pageFields() }).strict();
 
 const ledgerQuery = z
   .object({
@@ -57,16 +58,19 @@ export class FinanceController {
   @Get('escrow')
   @PolicyDecorator(FINANCE)
   @ApiOperation({ summary: 'See the money held in escrow', description: 'Customer money currently held per booking, with the booking’s state and the total held. Read straight from the ledger.' })
-  async escrow() {
-    return this.finance.escrow();
+  @ApiPageQuery()
+  async escrow(@Query() query: unknown) {
+    return this.finance.escrow(parseWith(pageQuerySchema, query));
   }
 
   @Get('refunds')
   @PolicyDecorator(FINANCE)
   @ApiOperation({ summary: 'List refunds', description: 'Every refund with its reason, the payment it goes back to, and whether the gateway has completed it. Filter by status (PENDING, SUCCEEDED, FAILED).' })
   @ApiQueryField('status', { description: 'PENDING, SUCCEEDED or FAILED' })
+  @ApiPageQuery()
   async refunds(@Query() query: unknown) {
-    return this.finance.refunds(parseWith(statusQuery, query).status);
+    const { status, ...page } = parseWith(statusQuery, query);
+    return this.finance.refunds(status, page);
   }
 
   @Post('refunds')
@@ -85,8 +89,10 @@ export class FinanceController {
   @PolicyDecorator(FINANCE)
   @ApiOperation({ summary: 'List payout requests', description: 'Providers’ payout requests and where each stands (REQUESTED, APPROVED, IN_BATCH, PAID, FAILED). Filter by status.' })
   @ApiQueryField('status', { description: 'REQUESTED, APPROVED, IN_BATCH, PAID or FAILED' })
+  @ApiPageQuery()
   async payoutList(@Query() query: unknown) {
-    return { items: await this.payouts.list(parseWith(statusQuery, query).status) };
+    const { status, ...page } = parseWith(statusQuery, query);
+    return this.payouts.list(status, page);
   }
 
   @Post('payouts/:id/approve')
@@ -100,8 +106,9 @@ export class FinanceController {
   @Get('payout-batches')
   @PolicyDecorator(FINANCE)
   @ApiOperation({ summary: 'List payout batches', description: 'Batches sent to the bank, newest first, with totals and status.' })
-  async batches() {
-    return { items: await this.payouts.listBatches() };
+  @ApiPageQuery()
+  async batches(@Query() query: unknown) {
+    return this.payouts.listBatches(parseWith(pageQuerySchema, query));
   }
 
   @Post('payout-batches')
@@ -154,8 +161,9 @@ export class FinanceController {
   @Get('debts')
   @PolicyDecorator(FINANCE)
   @ApiOperation({ summary: 'List commission debts', description: 'Providers whose wallet is negative, largest debt first, and whether their offers are blocked.' })
-  async debts() {
-    return this.finance.debts();
+  @ApiPageQuery()
+  async debts(@Query() query: unknown) {
+    return this.finance.debts(parseWith(pageQuerySchema, query));
   }
 
   @Get('ledger')
@@ -164,7 +172,7 @@ export class FinanceController {
   @ApiQueryField('accountType', { description: 'e.g. ESCROW, PROVIDER_WALLET, PLATFORM_COMMISSION' })
   @ApiQueryField('ownerId', { description: 'The provider (or customer) an account belongs to' })
   @ApiQueryField('bookingId', { description: 'Only entries of this booking’s transactions' })
-  @ApiQueryField('before', { type: 'number', description: 'Return entries with an id below this' })
+  @ApiQueryField('before', { type: 'number', description: 'Return entries with an id below this; pass the previous response’s nextCursor' })
   @ApiQueryField('limit', { type: 'number', description: '1–200, default 50' })
   async ledger(@Query() query: unknown) {
     return this.finance.ledger(parseWith(ledgerQuery, query));

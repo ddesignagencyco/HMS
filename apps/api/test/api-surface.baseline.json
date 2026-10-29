@@ -102,6 +102,15 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/api/v1/admin/bookings",
+      "operationId": "AdminBookingsController_list",
+      "summary": "List every booking on the platform",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
       "method": "POST",
       "path": "/api/v1/admin/catalogue/categories",
       "operationId": "CatalogueAdminController_createCategory",
@@ -432,6 +441,15 @@
       "summary": "Reject a provider's offer to provide a service",
       "tags": [
         "catalogue"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/providers",
+      "operationId": "AdminProvidersController_list",
+      "summary": "List providers by approval status",
+      "tags": [
+        "admin"
       ]
     },
     {
@@ -1744,6 +1762,15 @@
       "path": "/api/v1/provider/documents",
       "operationId": "ProviderDocumentsController_submit",
       "summary": "Submit an identity document",
+      "tags": [
+        "provider"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/provider/documents/{documentId}/url",
+      "operationId": "ProviderDocumentsController_documentUrl",
+      "summary": "Get a short-lived link to one of my documents",
       "tags": [
         "provider"
       ]

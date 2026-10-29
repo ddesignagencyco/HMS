@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { paisaToNumber } from '@smart-home/domain';
 import { DomainError, badRequest, notFound } from '../common/domain-error.js';
+import { countOf, limitClause, paged, pageWindow, type PageQuery } from '../common/paging.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AuditService } from '../platform/audit.service.js';
 import { PaymentsService } from './payments.service.js';
@@ -23,22 +24,32 @@ export class FinanceService {
   ) {}
 
   /** Customer money currently held per booking, and what state that booking is in. */
-  async escrow() {
+  async escrow(query: PageQuery = {}) {
+    const from = Prisma.sql`FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id JOIN bookings bk ON bk.id = a.booking_id WHERE a.type = 'ESCROW' AND b.balance > 0`;
+    const window = pageWindow(query, 500);
     const rows = await this.prisma.$queryRaw<{ bookingId: string; code: string; status: string; paymentMode: string; providerId: string | null; heldPaisa: bigint; finalPaisa: bigint | null }[]>(
       Prisma.sql`SELECT a.booking_id as "bookingId", bk.code, bk.status::text, bk.payment_mode::text as "paymentMode", bk.provider_id as "providerId", b.balance as "heldPaisa", bk.final_amount_paisa as "finalPaisa"
-        FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id JOIN bookings bk ON bk.id = a.booking_id WHERE a.type = 'ESCROW' AND b.balance > 0 ORDER BY b.updated_at DESC LIMIT 500`
+        ${from} ORDER BY b.updated_at DESC, a.id ${limitClause(window)}`
     );
-    const total = rows.reduce((sum, row) => sum + row.heldPaisa, 0n);
-    return { totalHeldPaisa: paisaToNumber(total), items: rows.map(row => ({ ...row, heldPaisa: paisaToNumber(row.heldPaisa), finalPaisa: money(row.finalPaisa) })) };
+    // The headline total covers every held booking, not just this page.
+    const totals = await this.prisma.$queryRaw<{ n: bigint; total: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n, coalesce(sum(b.balance), 0)::bigint as total ${from}`);
+    return {
+      totalHeldPaisa: paisaToNumber(totals[0]?.total ?? 0n),
+      ...paged(rows.map(row => ({ ...row, heldPaisa: paisaToNumber(row.heldPaisa), finalPaisa: money(row.finalPaisa) })), Number(totals[0]?.n ?? 0n), window)
+    };
   }
 
-  async refunds(status: string | undefined) {
+  async refunds(status: string | undefined, query: PageQuery = {}) {
+    const where = Prisma.sql`WHERE (${status ?? null}::text IS NULL OR r.status::text = ${status ?? null})`;
+    const window = pageWindow(query, 200);
     const rows = await this.prisma.$queryRaw<{ id: string; bookingCode: string | null; amountPaisa: bigint; reasonCode: string; reasonText: string | null; status: string; gateway: string; gatewayRef: string | null; createdAt: Date; completedAt: Date | null }[]>(
       Prisma.sql`SELECT r.id, b.code as "bookingCode", r.amount_paisa as "amountPaisa", r.reason_code as "reasonCode", r.reason_text as "reasonText", r.status::text, p.gateway, p.gateway_ref as "gatewayRef", r.created_at as "createdAt", r.completed_at as "completedAt"
-        FROM refunds r JOIN payments p ON p.id = r.payment_id LEFT JOIN bookings b ON b.id = r.booking_id WHERE (${status ?? null}::text IS NULL OR r.status::text = ${status ?? null}) ORDER BY r.created_at DESC LIMIT 200`
+        FROM refunds r JOIN payments p ON p.id = r.payment_id LEFT JOIN bookings b ON b.id = r.booking_id ${where} ORDER BY r.created_at DESC, r.id ${limitClause(window)}`
     );
-    return { items: rows.map(row => ({ ...row, amountPaisa: paisaToNumber(row.amountPaisa) })) };
+    const total = await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM refunds r JOIN payments p ON p.id = r.payment_id ${where}`);
+    return paged(rows.map(row => ({ ...row, amountPaisa: paisaToNumber(row.amountPaisa) })), total, window);
   }
+
 
   /**
    * A refund finance decides on. It comes out of the booking's escrow and goes back to the card that paid, with the reason stored
@@ -92,14 +103,22 @@ export class FinanceService {
   }
 
   /** Providers whose wallet is negative: what they owe the platform in commission, and whether that has stopped their offers. */
-  async debts() {
+  async debts(query: PageQuery = {}) {
+    const grouped = Prisma.sql`FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id JOIN users u ON u.id = a.owner_user_id JOIN providers p ON p.user_id = a.owner_user_id
+        WHERE a.type = 'PROVIDER_WALLET' GROUP BY a.owner_user_id, u.first_name, u.last_name, p.offer_blocked_reason HAVING sum(b.balance) < 0`;
+    // Never capped before, so with no paging parameters this is still the whole list.
+    const window = pageWindow(query, null);
     const rows = await this.prisma.$queryRaw<{ providerId: string; providerName: string; balance: bigint; reason: string | null }[]>(
       Prisma.sql`SELECT a.owner_user_id as "providerId", trim(u.first_name || ' ' || u.last_name) as "providerName", sum(b.balance)::bigint as balance, p.offer_blocked_reason as reason
-        FROM ledger_accounts a JOIN account_balances b ON b.account_id = a.id JOIN users u ON u.id = a.owner_user_id JOIN providers p ON p.user_id = a.owner_user_id
-        WHERE a.type = 'PROVIDER_WALLET' GROUP BY a.owner_user_id, u.first_name, u.last_name, p.offer_blocked_reason HAVING sum(b.balance) < 0 ORDER BY sum(b.balance)`
+        ${grouped} ORDER BY sum(b.balance), a.owner_user_id ${limitClause(window)}`
     );
-    return { totalDebtPaisa: paisaToNumber(-rows.reduce((sum, row) => sum + row.balance, 0n)), items: rows.map(row => ({ providerId: row.providerId, providerName: row.providerName, debtPaisa: paisaToNumber(-row.balance), offersBlocked: row.reason !== null, offerBlockedReason: row.reason })) };
+    const totals = await this.prisma.$queryRaw<{ n: bigint; total: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n, coalesce(sum(balance), 0)::bigint as total FROM (SELECT sum(b.balance) as balance ${grouped}) debts`);
+    return {
+      totalDebtPaisa: paisaToNumber(-(totals[0]?.total ?? 0n)),
+      ...paged(rows.map(row => ({ providerId: row.providerId, providerName: row.providerName, debtPaisa: paisaToNumber(-row.balance), offersBlocked: row.reason !== null, offerBlockedReason: row.reason })), Number(totals[0]?.n ?? 0n), window)
+    };
   }
+
 
   /** The ledger explorer: entries for one account, booking or account type, newest first, paged by entry id. */
   async ledger(filter: { accountType?: string | undefined; ownerId?: string | undefined; bookingId?: string | undefined; before?: number | undefined; limit: number }) {
@@ -110,9 +129,11 @@ export class FinanceService {
           AND (${filter.ownerId ?? null}::uuid IS NULL OR a.owner_user_id = ${filter.ownerId ?? null}::uuid)
           AND (${filter.bookingId ?? null}::uuid IS NULL OR t.booking_id = ${filter.bookingId ?? null}::uuid)
           AND (${filter.before ?? null}::bigint IS NULL OR e.id < ${filter.before ?? null}::bigint)
-        ORDER BY e.id DESC LIMIT ${filter.limit}`
+        ORDER BY e.id DESC LIMIT ${filter.limit + 1}`
     );
-    const items = rows.map(row => ({ ...row, entryId: Number(row.entryId), amountPaisa: paisaToNumber(row.amountPaisa) }));
-    return { items, nextBefore: items.length === filter.limit ? items[items.length - 1]?.entryId ?? null : null };
+    // BE-007: `nextCursor` is exact (one extra row is fetched to know whether more exist). `nextBefore` is kept for existing clients and, as before, is set whenever the page is full.
+    const page = rows.slice(0, filter.limit).map(row => ({ ...row, entryId: Number(row.entryId), amountPaisa: paisaToNumber(row.amountPaisa) }));
+    const last = page[page.length - 1]?.entryId ?? null;
+    return { items: page, nextCursor: rows.length > filter.limit && last !== null ? String(last) : null, nextBefore: page.length === filter.limit ? last : null };
   }
 }

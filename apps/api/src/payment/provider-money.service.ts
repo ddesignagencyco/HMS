@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { paisaToNumber } from '@smart-home/domain';
 import { badRequest } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { SettingsService } from '../platform/settings.service.js';
 import { DebtService } from './debt.service.js';
 import { PaymentsService } from './payments.service.js';
 
@@ -13,7 +14,8 @@ export class ProviderMoneyService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(DebtService) private readonly debt: DebtService,
-    @Inject(PaymentsService) private readonly payments: PaymentsService
+    @Inject(PaymentsService) private readonly payments: PaymentsService,
+    @Inject(SettingsService) private readonly settings: SettingsService
   ) {}
 
   async wallet(providerId: string) {
@@ -23,7 +25,9 @@ export class ProviderMoneyService {
       debtPaisa: paisaToNumber(wallet.debtPaisa),
       debtCeilingPaisa: paisaToNumber(wallet.ceilingPaisa),
       offersBlocked: wallet.offerBlockedReason !== null,
-      offerBlockedReason: wallet.offerBlockedReason
+      offerBlockedReason: wallet.offerBlockedReason,
+      // BE-020: the admin setting, so the payout screen can say "minimum Rs X" before a request is refused.
+      minPayoutPaisa: await this.settings.getNumber('payout.min_amount_paisa')
     };
   }
 

@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { consequenceOf, crossedThresholds, fineFor, paisaToNumber, suspensionDays, type Consequence, type Fine } from '@smart-home/domain';
 import { DomainError, badRequest, notFound } from '../common/domain-error.js';
+import { countOf, limitClause, paged, pageWindow, type PageQuery } from '../common/paging.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { DebtService } from '../payment/debt.service.js';
 import { LedgerService } from '../payment/ledger.service.js';
@@ -373,10 +374,14 @@ export class ConductService {
     return { ...rest, finePaisa: paisaToNumber(fine) };
   }
 
-  async listForProvider(providerId: string) {
-    const rows = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM penalties WHERE provider_id = ${providerId}::uuid ORDER BY created_at DESC LIMIT 100`);
-    return Promise.all(rows.map(row => this.present(this.prisma, row.id)));
+  async listForProvider(providerId: string, query: PageQuery = {}) {
+    const where = Prisma.sql`WHERE provider_id = ${providerId}::uuid`;
+    const window = pageWindow(query, 100);
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM penalties ${where} ORDER BY created_at DESC, id ${limitClause(window)}`);
+    const items = await Promise.all(rows.map(row => this.present(this.prisma, row.id)));
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM penalties ${where}`), window);
   }
+
 
   async getForProvider(providerId: string, penaltyId: string) {
     const penalty = await this.present(this.prisma, penaltyId);
@@ -384,24 +389,30 @@ export class ConductService {
     return penalty;
   }
 
-  async list(status: string | undefined, providerId: string | undefined) {
-    const rows = await this.prisma.$queryRaw<{ id: string }[]>(
-      Prisma.sql`SELECT id FROM penalties WHERE (${status ?? null}::text IS NULL OR status::text = ${status ?? null}) AND (${providerId ?? null}::uuid IS NULL OR provider_id = ${providerId ?? null}::uuid) ORDER BY created_at DESC LIMIT 200`
-    );
-    return Promise.all(rows.map(row => this.present(this.prisma, row.id)));
+  async list(status: string | undefined, providerId: string | undefined, query: PageQuery = {}) {
+    const where = Prisma.sql`WHERE (${status ?? null}::text IS NULL OR status::text = ${status ?? null}) AND (${providerId ?? null}::uuid IS NULL OR provider_id = ${providerId ?? null}::uuid)`;
+    const window = pageWindow(query, 200);
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM penalties ${where} ORDER BY created_at DESC, id ${limitClause(window)}`);
+    const items = await Promise.all(rows.map(row => this.present(this.prisma, row.id)));
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM penalties ${where}`), window);
   }
+
 
   async get(penaltyId: string) {
     return this.present(this.prisma, penaltyId);
   }
 
-  async listAppeals(status: string | undefined) {
+  async listAppeals(status: string | undefined, query: PageQuery = {}) {
+    const where = Prisma.sql`WHERE (${status ?? null}::text IS NULL OR a.status::text = ${status ?? null})`;
+    const window = pageWindow(query, 200);
     const rows = await this.prisma.$queryRaw<{ id: string; penaltyId: string; providerId: string; grounds: string; status: string; decisionNote: string | null; createdAt: Date; decidedAt: Date | null; breachCode: string; fine: bigint }[]>(
       Prisma.sql`SELECT a.id, a.penalty_id as "penaltyId", a.provider_id as "providerId", a.grounds, a.status::text, a.decision_note as "decisionNote", a.created_at as "createdAt", a.decided_at as "decidedAt", p.breach_code as "breachCode", p.fine_paisa as fine
-        FROM appeals a JOIN penalties p ON p.id = a.penalty_id WHERE (${status ?? null}::text IS NULL OR a.status::text = ${status ?? null}) ORDER BY a.created_at DESC LIMIT 200`
+        FROM appeals a JOIN penalties p ON p.id = a.penalty_id ${where} ORDER BY a.created_at DESC, a.id ${limitClause(window)}`
     );
-    return rows.map(({ fine, ...row }) => ({ ...row, finePaisa: paisaToNumber(fine) }));
+    const items = rows.map(({ fine, ...row }) => ({ ...row, finePaisa: paisaToNumber(fine) }));
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM appeals a ${where}`), window);
   }
+
 
   /** FR-SP-14 / FR-PN-08: the provider's own conduct record — active points, each award with its expiry and how close it is to its next decay, the standing consequence, and the schedule. */
   async record(providerId: string) {

@@ -5,6 +5,7 @@ import type { Request } from 'express';
 import { z } from 'zod';
 import { DomainError } from '../common/domain-error.js';
 import { CurrentPrincipal, PolicyDecorator, Public, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiCursorQuery, ApiPageQuery, cursorFields, pageFields } from '../common/paging.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { EnvironmentService } from '../config/environment.service.js';
@@ -16,17 +17,17 @@ import { TemplateService } from './template.service.js';
 const ANY_USER = { roles: ['CUSTOMER', 'PROVIDER', 'AGENT', 'FINANCE', 'ADMIN'] } as const;
 const ADMIN = { roles: ['ADMIN'], totpRequired: true } as const;
 
-const ownQuery = z.object({ unread: z.enum(['true', 'false']).optional(), limit: z.coerce.number().int().min(1).max(100).default(30) }).strict();
+const ownQuery = z.object({ unread: z.enum(['true', 'false']).optional(), ...cursorFields(100) }).strict();
 const logQuery = z
   .object({
     userId: z.string().uuid().optional(),
     eventKey: z.string().trim().max(100).optional(),
     channel: z.enum(['SMS', 'EMAIL', 'IN_APP', 'WHATSAPP']).optional(),
     status: z.enum(['QUEUED', 'SENT', 'DELIVERED', 'FAILED', 'READ']).optional(),
-    limit: z.coerce.number().int().min(1).max(200).default(50)
+    ...cursorFields(200)
   })
   .strict();
-const templateListQuery = z.object({ eventKey: z.string().trim().max(100).optional(), channel: z.enum(['SMS', 'EMAIL', 'IN_APP', 'WHATSAPP']).optional(), locale: z.enum(['en', 'ur']).optional() }).strict();
+const templateListQuery = z.object({ eventKey: z.string().trim().max(100).optional(), channel: z.enum(['SMS', 'EMAIL', 'IN_APP', 'WHATSAPP']).optional(), locale: z.enum(['en', 'ur']).optional(), ...pageFields() }).strict();
 const templateBody = z.object({ subject: z.string().trim().max(200).nullable().optional(), body: z.string().trim().min(1).max(1000), isActive: z.boolean().optional() }).strict();
 const templateCreate = templateBody.extend({ eventKey: z.string().trim().min(3).max(100), channel: z.enum(['SMS', 'EMAIL', 'IN_APP', 'WHATSAPP']), locale: z.enum(['en', 'ur']) }).strict();
 const previewSchema = z.object({ body: z.string().max(1000), subject: z.string().max(200).nullable().optional(), variables: z.record(z.string()).optional() }).strict();
@@ -47,10 +48,10 @@ export class NotificationController {
   @PolicyDecorator(ANY_USER)
   @ApiOperation({ summary: 'My notification centre', description: 'Your in-app notifications, newest first, with the count of unread ones. `unread=true` for unread only. Written in your language.' })
   @ApiQueryField('unread', { description: 'true for unread only' })
-  @ApiQueryField('limit', { type: 'number', description: '1–100, default 30' })
+  @ApiCursorQuery(100, 30)
   async own(@Query() query: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    const { unread, limit } = parseWith(ownQuery, query);
-    return this.centre.listOwn(principal.userId, { unreadOnly: unread === 'true', limit });
+    const { unread, limit, before } = parseWith(ownQuery, query);
+    return this.centre.listOwn(principal.userId, { unreadOnly: unread === 'true', limit: limit ?? 30, before });
   }
 
   @Post('notifications/read-all')
@@ -76,8 +77,10 @@ export class NotificationController {
   @ApiQueryField('eventKey', { description: 'e.g. booking.accepted' })
   @ApiQueryField('channel', { description: 'SMS, EMAIL, IN_APP or WHATSAPP' })
   @ApiQueryField('status', { description: 'QUEUED, SENT, DELIVERED, FAILED or READ' })
+  @ApiCursorQuery(200, 50)
   async log(@Query() query: unknown) {
-    return this.centre.log(parseWith(logQuery, query));
+    const { limit, ...rest } = parseWith(logQuery, query);
+    return this.centre.log({ ...rest, limit: limit ?? 50 });
   }
 
   @Get('admin/templates')
@@ -86,6 +89,7 @@ export class NotificationController {
   @ApiQueryField('eventKey', { description: 'e.g. booking.accepted' })
   @ApiQueryField('channel', { description: 'SMS, EMAIL, IN_APP or WHATSAPP' })
   @ApiQueryField('locale', { description: 'en or ur' })
+  @ApiPageQuery()
   async listTemplates(@Query() query: unknown) {
     return this.templates.list(parseWith(templateListQuery, query));
   }

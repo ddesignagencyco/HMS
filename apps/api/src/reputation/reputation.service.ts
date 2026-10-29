@@ -2,6 +2,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { DomainError, notFound } from '../common/domain-error.js';
+import { countOf, limitClause, paged, pageWindow, type PageQuery } from '../common/paging.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { ConductService } from '../conduct/conduct.service.js';
 import { AuditService, appendOutboxEvent } from '../platform/audit.service.js';
@@ -243,7 +244,8 @@ export class ReputationService {
   }
 
   /** FR-SP-04 / FR-SP-05: a provider sees every rating they have received, and every remark including ones an admin has since unpublished. */
-  async ownRatings(providerId: string) {
+  async ownRatings(providerId: string, query: PageQuery = {}) {
+    const window = pageWindow(query, 200);
     const rows = await this.prisma.$queryRaw<
       {
         ratingId: string;
@@ -261,11 +263,12 @@ export class ReputationService {
       }[]
     >(
       Prisma.sql`SELECT r.id as "ratingId", r.score::text as score, r.quality, r.punctuality, r.conduct, r.cleanliness, r.created_at as "createdAt", m.id as "remarkId", m.body, m.display_name as "displayName", m.is_published as published, rr.body as "replyBody"
-        FROM ratings r LEFT JOIN remarks m ON m.rating_id = r.id LEFT JOIN remark_replies rr ON rr.remark_id = m.id WHERE r.provider_id = ${providerId}::uuid ORDER BY r.created_at DESC LIMIT 200`
+        FROM ratings r LEFT JOIN remarks m ON m.rating_id = r.id LEFT JOIN remark_replies rr ON rr.remark_id = m.id WHERE r.provider_id = ${providerId}::uuid ORDER BY r.created_at DESC, r.id ${limitClause(window)}`
     );
+    const total = await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM ratings WHERE provider_id = ${providerId}::uuid`);
     return {
       reputation: await this.reputation(this.prisma, providerId),
-      items: rows.map((row) => ({
+      ...paged(rows.map((row) => ({
         ratingId: row.ratingId,
         score: Number(row.score),
         quality: row.quality,
@@ -274,7 +277,7 @@ export class ReputationService {
         cleanliness: row.cleanliness,
         createdAt: row.createdAt,
         remark: row.remarkId === null ? null : { id: row.remarkId, body: row.body, displayName: row.displayName, published: row.published, reply: row.replyBody }
-      }))
+      })), total, window)
     };
   }
 

@@ -2,6 +2,7 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, Public, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiPageQuery, pageQuerySchema } from '../common/paging.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { complaintAssignSchema, complaintCreateSchema, complaintEvidenceSchema, complaintListQuery, complaintReplySchema, complaintTransitionSchema, receiptComplaintSchema } from './complaints.schemas.js';
@@ -47,8 +48,9 @@ export class ComplaintsController {
   @Get('complaints')
   @PolicyDecorator(PARTY)
   @ApiOperation({ summary: 'List my complaints', description: 'Complaints you raised and complaints raised about you, newest first, with their state and SLA.' })
-  async mine(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    return { items: await this.complaints.listMine(principal.userId) };
+  @ApiPageQuery()
+  async mine(@Query() query: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.complaints.listMine(principal.userId, parseWith(pageQuerySchema, query));
   }
 
   @Get('complaints/:id')
@@ -86,8 +88,9 @@ export class ComplaintsController {
   @ApiQueryField('severity', { description: 'SAFETY, HIGH or NORMAL' })
   @ApiQueryField('assignedTo', { description: 'Only complaints assigned to this staff user' })
   @ApiQueryField('open', { description: 'true for open complaints only, false for closed ones' })
+  @ApiPageQuery()
   async queue(@Query() query: unknown) {
-    return { items: await this.complaints.queue(parseWith(complaintListQuery, query)) };
+    return this.complaints.queue(parseWith(complaintListQuery, query));
   }
 
   @Get('admin/complaints/:id')

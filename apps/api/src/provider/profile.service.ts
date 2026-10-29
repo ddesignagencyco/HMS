@@ -39,9 +39,9 @@ export class ProfileService {
     const hasPoint = input.lat !== undefined && input.lng !== undefined;
     const rows = await this.prisma.$queryRaw<ProviderProfileRow[]>(
       Prisma.sql`UPDATE providers SET
-          bio = COALESCE(${input.bio ?? null}, bio),
+          bio = CASE WHEN ${input.bio === undefined} THEN bio ELSE ${input.bio ?? null}::text END,
           experience_years = COALESCE(${input.experienceYears ?? null}, experience_years),
-          qualification = COALESCE(${input.qualification ?? null}, qualification),
+          qualification = CASE WHEN ${input.qualification === undefined} THEN qualification ELSE ${input.qualification ?? null}::text END,
           city_id = COALESCE(${input.cityId ?? null}, city_id),
           base_address_text = COALESCE(${input.baseAddressText ?? null}, base_address_text),
           base_location = ${hasPoint ? Prisma.sql`ST_SetSRID(ST_MakePoint(${input.lng}, ${input.lat}), 4326)::geography` : Prisma.sql`base_location`},

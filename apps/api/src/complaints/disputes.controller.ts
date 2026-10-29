@@ -3,6 +3,7 @@ import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Qu
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiPageQuery, pageFields, pageQuerySchema } from '../common/paging.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { DisputesService } from './disputes.service.js';
@@ -20,7 +21,7 @@ const resolveSchema = z
   })
   .strict();
 const replySchema = z.object({ reply: z.string().trim().min(1).max(3000) }).strict();
-const listQuery = z.object({ status: z.enum(['OPEN', 'AWAITING_PROVIDER_REPLY', 'READY', 'RESOLVED']).optional() }).strict();
+const listQuery = z.object({ status: z.enum(['OPEN', 'AWAITING_PROVIDER_REPLY', 'READY', 'RESOLVED']).optional(), ...pageFields() }).strict();
 
 @ApiTags('disputes')
 @ApiBearerAuth('access-token')
@@ -32,8 +33,10 @@ export class DisputesController {
   @PolicyDecorator(ADMIN)
   @ApiOperation({ summary: 'The dispute queue', description: 'Admin only. Open disputes first, oldest first, with the reply deadline and whether the provider has replied. Filter by status.' })
   @ApiQueryField('status', { description: 'OPEN, AWAITING_PROVIDER_REPLY, READY or RESOLVED' })
+  @ApiPageQuery()
   async list(@Query() query: unknown) {
-    return this.disputes.list(parseWith(listQuery, query).status);
+    const { status, ...page } = parseWith(listQuery, query);
+    return this.disputes.list(status, page);
   }
 
   @Get('admin/disputes/:id')
@@ -63,8 +66,9 @@ export class DisputesController {
   @Get('provider/disputes')
   @PolicyDecorator({ roles: ['PROVIDER'] })
   @ApiOperation({ summary: 'See my disputes', description: 'Disputes on your jobs, with the reply deadline and the ruling once made.' })
-  async mine(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    return this.disputes.listForProvider(principal.userId);
+  @ApiPageQuery()
+  async mine(@Query() query: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.disputes.listForProvider(principal.userId, parseWith(pageQuerySchema, query));
   }
 
   @Get('provider/disputes/:id')

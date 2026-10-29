@@ -3,6 +3,7 @@ import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Qu
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiPageQuery, pageFields, pageQuerySchema } from '../common/paging.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { ConductService } from './conduct.service.js';
@@ -27,7 +28,7 @@ const withdrawSchema = z.object({ reason: z.string().trim().min(3).max(500) }).s
 const decideSchema = z
   .object({ decision: z.enum(['UPHELD', 'REVERSED', 'PARTIAL']), note: z.string().trim().min(3).max(1000), refundFinePaisa: z.number().int().positive().optional() })
   .strict();
-const listQuery = z.object({ status: z.string().trim().max(30).optional(), providerId: z.string().uuid().optional() }).strict();
+const listQuery = z.object({ status: z.string().trim().max(30).optional(), providerId: z.string().uuid().optional(), ...pageFields() }).strict();
 
 @ApiTags('conduct')
 @ApiBearerAuth('access-token')
@@ -54,9 +55,10 @@ export class ConductController {
   @ApiOperation({ summary: 'List penalties', description: 'Admin only. Newest first; filter by status (PROPOSED, APPLIED, APPEALED, UPHELD, REVERSED, WITHDRAWN) or provider.' })
   @ApiQueryField('status', { description: 'PROPOSED, APPLIED, APPEALED, UPHELD, REVERSED or WITHDRAWN' })
   @ApiQueryField('providerId', { description: 'Only this provider' })
+  @ApiPageQuery()
   async list(@Query() query: unknown) {
-    const { status, providerId } = parseWith(listQuery, query);
-    return { items: await this.conduct.list(status, providerId) };
+    const { status, providerId, ...page } = parseWith(listQuery, query);
+    return this.conduct.list(status, providerId, page);
   }
 
   @Get('admin/penalties/:id')
@@ -91,8 +93,10 @@ export class ConductController {
   @PolicyDecorator(ADMIN)
   @ApiOperation({ summary: 'List appeals', description: 'Admin only. Appeals against applied penalties; filter by status (OPEN, UPHELD, REVERSED, PARTIAL).' })
   @ApiQueryField('status', { description: 'OPEN, UPHELD, REVERSED or PARTIAL' })
+  @ApiPageQuery()
   async appeals(@Query() query: unknown) {
-    return { items: await this.conduct.listAppeals(parseWith(listQuery, query).status) };
+    const { status, ...page } = parseWith(listQuery, query);
+    return this.conduct.listAppeals(status, page);
   }
 
   @Post('admin/appeals/:id/decide')
@@ -111,8 +115,9 @@ export class ConductController {
   @Get('provider/penalties')
   @PolicyDecorator(PROVIDER)
   @ApiOperation({ summary: 'See my penalties', description: 'Penalties proposed against you and their state, with the breach, the evidence, the fine and the deadline for your reply.' })
-  async mine(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    return { items: await this.conduct.listForProvider(principal.userId) };
+  @ApiPageQuery()
+  async mine(@Query() query: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.conduct.listForProvider(principal.userId, parseWith(pageQuerySchema, query));
   }
 
   @Get('provider/penalties/:id')

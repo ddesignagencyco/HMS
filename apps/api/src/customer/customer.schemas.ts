@@ -23,11 +23,13 @@ export const addressUpdateSchema = z
   .object({
     label: label.optional(),
     line1: line.optional(),
-    line2: line.optional(),
+    /** BE-025: omit to keep, a string to set, `null` to clear. */
+    line2: line.nullable().optional(),
     areaId: z.number().int().positive().optional(),
     lat: lat.optional(),
     lng: lng.optional(),
-    notes: z.string().trim().max(500).optional(),
+    /** BE-025: omit to keep, a string to set, `null` to clear. */
+    notes: z.string().trim().max(500).nullable().optional(),
     isDefault: z.boolean().optional()
   })
   .strict()

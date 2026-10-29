@@ -1,5 +1,6 @@
 // apps/api/src/complaints/complaints.schemas.ts
 import { z } from 'zod';
+import { pageFields } from '../common/paging.js';
 
 export const CATEGORIES = ['MISBEHAVIOUR', 'QUALITY', 'OVERCHARGE', 'NO_SHOW', 'SAFETY', 'NON_PAYMENT', 'UNSAFE_PREMISES', 'ABUSE', 'CASH_DISCREPANCY', 'OTHER'] as const;
 export const RESOLUTIONS = ['NO_ACTION', 'WARNING', 'PARTIAL_REFUND', 'FULL_REFUND', 'PROVIDER_PENALTY', 'TEMPORARY_SUSPENSION', 'PERMANENT_BLOCK'] as const;
@@ -61,7 +62,8 @@ export const complaintListQuery = z
     status: z.enum(['OPEN', 'UNDER_REVIEW', 'AWAITING_RESPONSE', 'RESOLVED', 'REJECTED']).optional(),
     severity: z.enum(['SAFETY', 'HIGH', 'NORMAL']).optional(),
     assignedTo: z.string().uuid().optional(),
-    open: z.enum(['true', 'false']).optional()
+    open: z.enum(['true', 'false']).optional(),
+    ...pageFields()
   })
   .strict();
 

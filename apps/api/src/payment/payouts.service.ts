@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { formatPaisa, paisaToNumber } from '@smart-home/domain';
 import { DomainError, badRequest, notFound } from '../common/domain-error.js';
+import { countOf, limitClause, paged, pageWindow, type PageQuery } from '../common/paging.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { decryptTotpSecret, encryptTotpSecret } from '../identity/totp-vault.js';
@@ -102,6 +103,11 @@ export class PayoutsService {
     });
   }
 
+  /** BE-020: the smallest payout request the platform accepts, for providers to read. */
+  async minimumPayoutPaisa(): Promise<number> {
+    return this.settings.getNumber('payout.min_amount_paisa');
+  }
+
   async listForProvider(providerId: string) {
     const rows = await this.prisma.$queryRaw<PayoutRow[]>(
       Prisma.sql`SELECT p.id, p.provider_id as "providerId", p.amount_paisa as "amountPaisa", p.status::text, p.requested_at as "requestedAt", p.paid_at as "paidAt", p.failure_reason as "failureReason", p.batch_id as "batchId",
@@ -146,15 +152,18 @@ export class PayoutsService {
 
   // ------------------------------------------------------------- finance side
 
-  async list(status: string | undefined) {
+  async list(status: string | undefined, query: PageQuery = {}) {
+    const where = Prisma.sql`WHERE (${status ?? null}::text IS NULL OR p.status::text = ${status ?? null})`;
+    const window = pageWindow(query, 200);
     const rows = await this.prisma.$queryRaw<(PayoutRow & { providerName: string })[]>(
       Prisma.sql`SELECT p.id, p.provider_id as "providerId", trim(u.first_name || ' ' || u.last_name) as "providerName", p.amount_paisa as "amountPaisa", p.status::text, p.requested_at as "requestedAt", p.paid_at as "paidAt",
           p.failure_reason as "failureReason", p.batch_id as "batchId", a.account_title as "accountTitle", a.institution, a.account_last4 as "accountLast4"
         FROM payouts p JOIN provider_payout_accounts a ON a.id = p.payout_account_id JOIN users u ON u.id = p.provider_id
-        WHERE (${status ?? null}::text IS NULL OR p.status::text = ${status ?? null}) ORDER BY p.requested_at DESC LIMIT 200`
+        ${where} ORDER BY p.requested_at DESC, p.id ${limitClause(window)}`
     );
-    return rows.map(present);
+    return paged(rows.map(present), await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM payouts p ${where}`), window);
   }
+
 
   /** D PROVIDER_WALLET / C PAYOUT_CLEARING: the money leaves the provider's wallet for the bank's queue. Once only. */
   async approve(payoutId: string, financeUserId: string) {
@@ -222,14 +231,17 @@ export class PayoutsService {
     return `${lines.join('\n')}\n`;
   }
 
-  async listBatches() {
+  async listBatches(query: PageQuery = {}) {
+    const window = pageWindow(query, 100);
     // The payout count is a count, not paisa, so int4 keeps it a plain number at the Postgres boundary.
     const rows = await this.prisma.$queryRaw<{ id: string; periodStart: Date; periodEnd: Date; status: string; totalPaisa: bigint; payoutCount: number; createdAt: Date; paidAt: Date | null }[]>(
       Prisma.sql`SELECT b.id, b.period_start as "periodStart", b.period_end as "periodEnd", b.status::text, b.total_paisa as "totalPaisa", (SELECT count(*) FROM payouts p WHERE p.batch_id = b.id)::int as "payoutCount", b.created_at as "createdAt", b.paid_at as "paidAt"
-        FROM payout_batches b ORDER BY b.created_at DESC LIMIT 100`
+        FROM payout_batches b ORDER BY b.created_at DESC, b.id ${limitClause(window)}`
     );
-    return rows.map(row => ({ ...row, totalPaisa: paisaToNumber(row.totalPaisa), payoutCount: row.payoutCount }));
+    const items = rows.map(row => ({ ...row, totalPaisa: paisaToNumber(row.totalPaisa), payoutCount: row.payoutCount }));
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM payout_batches`), window);
   }
+
 
   /** The bank file. The account numbers in it are decrypted for this one purpose, and the download is audited. */
   async exportCsv(batchId: string, financeUserId: string): Promise<string> {

@@ -37,12 +37,20 @@ export class ProviderServicesService {
     if (pricePaisa < paisaToNumber(service.minPricePaisa) || pricePaisa > paisaToNumber(service.maxPricePaisa)) {
       throw validationFailed([{ path: 'pricePaisa', code: 'out_of_band', message: `pricePaisa must be between ${service.minPricePaisa} and ${service.maxPricePaisa} for this service` }]);
     }
-    const raw = await this.prisma.$queryRaw<ProviderServiceRowRaw[]>(
-      Prisma.sql`INSERT INTO provider_services(provider_id, service_id, price_paisa, status)
-        VALUES (${providerId}::uuid, ${serviceId}, ${BigInt(pricePaisa)}, 'PENDING'::approval_status)
-        ON CONFLICT (provider_id, service_id) DO UPDATE SET price_paisa = EXCLUDED.price_paisa
-        RETURNING provider_id as "providerId", service_id as "serviceId", price_paisa as "pricePaisa", status, created_at as "createdAt"`
-    );
+    // BE-031 (decision): a service the provider removed and then re-adds at the SAME price keeps the approval it had when it was
+    // removed. Nothing the admin reviewed has changed (same service, same price), so making them approve it again would be busywork
+    // for the admin and an unexplained outage for the provider (a PENDING service is not offered in search). Any other case starts
+    // PENDING as before: a new price, a service that was never approved or was rejected, or one never offered by this provider.
+    // The removal is a hard delete, so what the binding looked like is read back from the audit row written when it was removed.
+    const raw = await this.prisma.$transaction(async tx => {
+      const status = (await this.restorableStatus(tx, providerId, serviceId, pricePaisa)) ?? 'PENDING';
+      return tx.$queryRaw<ProviderServiceRowRaw[]>(
+        Prisma.sql`INSERT INTO provider_services(provider_id, service_id, price_paisa, status)
+          VALUES (${providerId}::uuid, ${serviceId}, ${BigInt(pricePaisa)}, ${status}::approval_status)
+          ON CONFLICT (provider_id, service_id) DO UPDATE SET price_paisa = EXCLUDED.price_paisa
+          RETURNING provider_id as "providerId", service_id as "serviceId", price_paisa as "pricePaisa", status, created_at as "createdAt"`
+      );
+    });
     const row = raw[0];
     if (row === undefined) throw new Error('Provider service upsert did not return a row');
     const withService = await this.prisma.$queryRaw<{ serviceSlug: string; serviceNameEn: string }[]>(Prisma.sql`SELECT slug as "serviceSlug", name_en as "serviceNameEn" FROM services WHERE id = ${serviceId}`);
@@ -50,8 +58,27 @@ export class ProviderServicesService {
   }
 
   async removeMine(providerId: string, serviceId: number): Promise<void> {
-    const affected = await this.prisma.$executeRaw(Prisma.sql`DELETE FROM provider_services WHERE provider_id = ${providerId}::uuid AND service_id = ${serviceId}`);
-    if (affected === 0) throw notFound('Provider service binding');
+    await this.prisma.$transaction(async tx => {
+      const removed = await tx.$queryRaw<{ status: string; pricePaisa: bigint }[]>(
+        Prisma.sql`DELETE FROM provider_services WHERE provider_id = ${providerId}::uuid AND service_id = ${serviceId} RETURNING status::text as status, price_paisa as "pricePaisa"`
+      );
+      const binding = removed[0];
+      if (binding === undefined) throw notFound('Provider service binding');
+      // What the binding was, so a re-add at the same price can keep its approval (BE-031).
+      await this.audit.append(
+        { actorUserId: providerId, actorRole: 'PROVIDER', action: 'provider_service.remove', entityType: 'provider_service', entityId: `${providerId}:${serviceId}`, before: { status: binding.status, pricePaisa: paisaToNumber(binding.pricePaisa) } },
+        tx
+      );
+    });
+  }
+
+  /** The status to restore on a re-add: 'APPROVED' only if the most recent removal of this binding was of an approved one at this very price. */
+  private async restorableStatus(tx: Prisma.TransactionClient, providerId: string, serviceId: number, pricePaisa: number): Promise<'APPROVED' | null> {
+    const rows = await tx.$queryRaw<{ before: { status?: unknown; pricePaisa?: unknown } | null }[]>(
+      Prisma.sql`SELECT before FROM audit_log WHERE action = 'provider_service.remove' AND entity_type = 'provider_service' AND entity_id = ${`${providerId}:${serviceId}`} ORDER BY id DESC LIMIT 1`
+    );
+    const before = rows[0]?.before;
+    return before?.status === 'APPROVED' && before.pricePaisa === pricePaisa ? 'APPROVED' : null;
   }
 
   async listForAdmin(filter: ProviderServiceListQuery): Promise<ProviderServiceRow[]> {

@@ -3,6 +3,7 @@ import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Qu
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { CurrentPrincipal, Public, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiPageQuery, pageQuerySchema } from '../common/paging.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { ReputationService } from './reputation.service.js';
@@ -46,8 +47,9 @@ export class ReputationController {
     summary: 'See the ratings I received',
     description: 'Every rating you have received with its four criteria, and the remark that came with it (including any an admin unpublished), your reply, and your overall reputation.'
   })
-  async own(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    return this.reputation.ownRatings(principal.userId);
+  @ApiPageQuery()
+  async own(@Query() query: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.reputation.ownRatings(principal.userId, parseWith(pageQuerySchema, query));
   }
 
   @Post('provider/remarks/:id/reply')

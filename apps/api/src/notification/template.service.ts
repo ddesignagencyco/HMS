@@ -2,6 +2,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { DomainError, notFound } from '../common/domain-error.js';
+import { countOf, limitClause, paged, pageWindow, type PageQuery } from '../common/paging.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AuditService } from '../platform/audit.service.js';
 import { renderTemplate, TEMPLATE_VARIABLES } from './notification.service.js';
@@ -35,13 +36,14 @@ export class TemplateService {
     }
   }
 
-  async list(filter: { eventKey?: string | undefined; channel?: string | undefined; locale?: string | undefined }) {
+  async list(filter: { eventKey?: string | undefined; channel?: string | undefined; locale?: string | undefined } & PageQuery) {
+    const where = Prisma.sql`WHERE (${filter.eventKey ?? null}::text IS NULL OR event_key = ${filter.eventKey ?? null}) AND (${filter.channel ?? null}::text IS NULL OR channel::text = ${filter.channel ?? null}) AND (${filter.locale ?? null}::text IS NULL OR locale = ${filter.locale ?? null})`;
+    const window = pageWindow(filter, 500);
     const items = await this.prisma.$queryRaw<{ id: string; eventKey: string; channel: string; locale: string; subject: string | null; body: string; isActive: boolean; updatedAt: Date }[]>(
       Prisma.sql`SELECT id, event_key as "eventKey", channel::text, locale, subject, body, is_active as "isActive", updated_at as "updatedAt" FROM notification_templates
-        WHERE (${filter.eventKey ?? null}::text IS NULL OR event_key = ${filter.eventKey ?? null}) AND (${filter.channel ?? null}::text IS NULL OR channel::text = ${filter.channel ?? null}) AND (${filter.locale ?? null}::text IS NULL OR locale = ${filter.locale ?? null})
-        ORDER BY event_key, channel, locale LIMIT 500`
+        ${where} ORDER BY event_key, channel, locale ${limitClause(window)}`
     );
-    return { items, variables: TEMPLATE_VARIABLES };
+    return { ...paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM notification_templates ${where}`), window), variables: TEMPLATE_VARIABLES };
   }
 
   async get(id: string) {

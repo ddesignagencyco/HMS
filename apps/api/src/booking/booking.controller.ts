@@ -3,6 +3,7 @@ import { Body, Controller, Get, Header, HttpCode, Inject, Param, ParseIntPipe, P
 import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiPageQuery } from '../common/paging.js';
 import { ApiQueryField, ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import {
@@ -387,8 +388,9 @@ export class BookingController {
       'Returns every booking you are the customer or the provider on, most recent first. Optionally filter by status — any value of the booking status enum (PENDING_PAYMENT, REQUESTED, SCHEDULED, EN_ROUTE, IN_PROGRESS, QUOTE_REVISION, WORK_COMPLETED, AWAITING_VERIFICATION, REWORK_REQUIRED, VERIFIED, AUTO_RELEASED, DISPUTED, PAYMENT_RELEASED, PARTIALLY_REFUNDED, REFUNDED, CLOSED, UNFULFILLED, ABANDONED, ACCEPTED, CANCELLED_CUSTOMER, CANCELLED_PROVIDER, NO_SHOW). Each row carries readable names as well as ids: serviceName, serviceNameUr, serviceSlug, providerQualification, addressLabel, addressLine1, addressLine2, areaName.'
   })
   @ApiQueryField('status', { enum: BOOKING_STATUS_VALUES })
+  @ApiPageQuery()
   async listMine(@Query() query: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    const { status } = parseWith(bookingListQuerySchema, query);
-    return { items: await this.bookings.listMine(principal.userId, status) };
+    const { status, ...page } = parseWith(bookingListQuerySchema, query);
+    return this.bookings.listMine(principal.userId, status, page);
   }
 }

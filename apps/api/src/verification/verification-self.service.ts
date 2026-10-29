@@ -96,6 +96,7 @@ export class VerificationSelfService {
     });
 
     return {
+      submission: await this.submissionOf(bookingId),
       bookingCode: row.code,
       serviceName: row.serviceName,
       providerFirstName: row.providerFirstName,
@@ -114,6 +115,20 @@ export class VerificationSelfService {
         }
       ]
     };
+  }
+
+  /**
+   * BE-018: what the customer already answered, so the thank-you panel survives a reload. The most recent *submitted*
+   * verification that carries the four ratings (the customer's own form, a texted link or an agent's call all do);
+   * null until then. A customer answer that escalated the case is not a submission yet - it is still open with an agent -
+   * so it reads back as null too. The booking's ownership was already checked by `describe`.
+   */
+  private async submissionOf(bookingId: string) {
+    const rows = await this.prisma.$queryRaw<{ outcome: string; workCompleted: string | null; quality: number; punctuality: number; conduct: number; cleanliness: number; extraChargeDemanded: boolean | null; remark: string | null; submittedAt: Date }[]>(
+      Prisma.sql`SELECT outcome::text as outcome, work_completed::text as "workCompleted", quality, punctuality, conduct, cleanliness, extra_charge_demanded as "extraChargeDemanded", remark_text as remark, submitted_at as "submittedAt"
+        FROM verification_calls WHERE booking_id = ${bookingId}::uuid AND submitted_at IS NOT NULL AND quality IS NOT NULL ORDER BY visit_no DESC LIMIT 1`
+    );
+    return rows[0] ?? null;
   }
 
   async submit(bookingId: string, customerId: string, input: SelfVerifyInput): Promise<SelfVerifyResult> {

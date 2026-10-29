@@ -23,7 +23,7 @@ export class ProviderServicesController {
   @PolicyDecorator({ roles: ['PROVIDER'] })
   @ApiOperation({
     summary: 'Offer a service at your price',
-    description: "Adds this service to the list you offer, at the price you set (must fall within the service's configured band). Offering a new service starts out pending admin approval; changing the price on one you already offer does not reset an existing approval."
+    description: "Adds this service to the list you offer, at the price you set (must fall within the service's configured band). Offering a new service starts out pending admin approval; changing the price on one you already offer does not reset an existing approval. A service you stopped offering and then add back at the same price keeps the approval it had; at a different price it needs approval again."
   })
   @ApiZodBody(providerServiceUpsertSchema, { default: { summary: 'Set a price', value: { pricePaisa: 250_000 } } })
   async upsertMine(@Param('serviceId', ParseIntPipe) serviceId: number, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
@@ -34,7 +34,7 @@ export class ProviderServicesController {
   @Delete(':serviceId')
   @HttpCode(204)
   @PolicyDecorator({ roles: ['PROVIDER'] })
-  @ApiOperation({ summary: 'Stop offering a service', description: 'Removes this service from the list you offer.' })
+  @ApiOperation({ summary: 'Stop offering a service', description: 'Removes this service from the list you offer. If you add it back later at the same price it keeps its approval.' })
   async removeMine(@Param('serviceId', ParseIntPipe) serviceId: number, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     await this.providerServices.removeMine(principal.userId, serviceId);
   }

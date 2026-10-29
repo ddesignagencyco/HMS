@@ -1,6 +1,7 @@
 import { Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiPageQuery } from '../common/paging.js';
 import { ApiQueryField } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { AdminService } from './admin.service.js';
@@ -18,8 +19,9 @@ export class AdminUsersController {
   @ApiQueryField('role', { description: 'Only users holding this role, e.g. PROVIDER.' })
   @ApiQueryField('status', { description: 'Only users in this status: ACTIVE, LOCKED or DEACTIVATED.' })
   @ApiQueryField('q', { description: 'Name, email or phone substring.' })
+  @ApiPageQuery(200)
   async list(@Query() query: unknown) {
-    return { items: await this.admin.listUsers(parseWith(listUsersQuerySchema, query)) };
+    return this.admin.listUsers(parseWith(listUsersQuerySchema, query));
   }
 
   @Post(':userId/block')

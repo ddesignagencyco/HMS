@@ -6,9 +6,10 @@ const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:MM in 24-
 
 export const profileUpdateSchema = z
   .object({
-    bio: z.string().trim().min(1).max(2000).optional(),
+    // BE-030: omit to keep, a string to set, `null` to clear.
+    bio: z.string().trim().min(1).max(2000).nullable().optional(),
     experienceYears: z.number().int().min(0).max(60).optional(),
-    qualification: z.string().trim().min(1).max(300).optional(),
+    qualification: z.string().trim().min(1).max(300).nullable().optional(),
     cityId: z.number().int().positive().optional(),
     baseAddressText: z.string().trim().min(1).max(300).optional(),
     lat: lat.optional(),

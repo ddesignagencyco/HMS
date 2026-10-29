@@ -53,9 +53,9 @@ export class ProviderPayoutsController {
 
   @Get('payouts')
   @PolicyDecorator({ roles: ['PROVIDER'] })
-  @ApiOperation({ summary: 'List my payouts', description: 'Your payout requests and where each stands, with the reason if the bank rejected one.' })
+  @ApiOperation({ summary: 'List my payouts', description: 'Your payout requests and where each stands, with the reason if the bank rejected one, and `minPayoutPaisa`, the smallest request accepted.' })
   async list(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    return { items: await this.payouts.listForProvider(principal.userId) };
+    return { items: await this.payouts.listForProvider(principal.userId), minPayoutPaisa: await this.payouts.minimumPayoutPaisa() };
   }
 
   @Post('payouts')

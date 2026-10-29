@@ -27,7 +27,7 @@ export class VerificationSelfController {
   @ApiOperation({
     summary: 'Open the "confirm the work" form (customer)',
     description:
-      'Everything the form needs to render, plus `canSubmit` and, when it is false, a `blockedReason` written for the customer to read. Always 200 for your own booking â€” the form being unavailable is an answer, not an error, and a client handed only a status code has nothing to show. 404 for a booking that is not yours.'
+      'Everything the form needs to render, plus `canSubmit` and, when it is false, a `blockedReason` written for the customer to read. Always 200 for your own booking â€” the form being unavailable is an answer, not an error, and a client handed only a status code has nothing to show. `submission` is what was already submitted (outcome, workCompleted, quality, punctuality, conduct, cleanliness, extraChargeDemanded, remark, submittedAt) or null. 404 for a booking that is not yours.'
   })
   async describe(@Param('bookingId', ParseUUIDPipe) bookingId: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return this.self.describe(bookingId, principal.userId);

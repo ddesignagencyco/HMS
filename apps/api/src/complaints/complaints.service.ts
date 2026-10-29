@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { CUSTOMER_COMPLAINT_CATEGORIES, PROVIDER_COMPLAINT_CATEGORIES, canMoveComplaint, paisaToNumber, severityFor, type ComplaintCategory, type ComplaintStatus } from '@smart-home/domain';
 import { DomainError, badRequest, notFound } from '../common/domain-error.js';
 import { signEvidenceUrl } from '../common/evidence-url.js';
+import { countOf, limitClause, paged, pageWindow, type PageQuery } from '../common/paging.js';
 import { readReceiptToken } from '../common/receipt-link.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { ConductService } from '../conduct/conduct.service.js';
@@ -179,11 +180,13 @@ export class ComplaintsService implements OnModuleInit {
     return { ...this.withSla(head), youAre: head.raisedBy === userId ? 'COMPLAINANT' : 'RESPONDENT', timeline: await this.timeline(complaintId) };
   }
 
-  async listMine(userId: string) {
-    const rows = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM complaints WHERE raised_by_user_id = ${userId}::uuid OR against_user_id = ${userId}::uuid ORDER BY created_at DESC LIMIT 100`);
+  async listMine(userId: string, query: PageQuery = {}) {
+    const where = Prisma.sql`WHERE raised_by_user_id = ${userId}::uuid OR against_user_id = ${userId}::uuid`;
+    const window = pageWindow(query, 100);
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM complaints ${where} ORDER BY created_at DESC, id ${limitClause(window)}`);
     const items = [];
     for (const { id } of rows) items.push(this.withSla(await this.head(id)));
-    return items;
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM complaints ${where}`), window);
   }
 
   async reply(userId: string, complaintId: string, body: string) {
@@ -204,15 +207,18 @@ export class ComplaintsService implements OnModuleInit {
 
   // ------------------------------------------------------------------ admin
 
-  async queue(filter: { status?: string | undefined; severity?: string | undefined; assignedTo?: string | undefined; open?: string | undefined }) {
+  async queue(filter: { status?: string | undefined; severity?: string | undefined; assignedTo?: string | undefined; open?: string | undefined } & PageQuery) {
+    const where = Prisma.sql`WHERE (${filter.status ?? null}::text IS NULL OR status::text = ${filter.status ?? null}) AND (${filter.severity ?? null}::text IS NULL OR severity::text = ${filter.severity ?? null})
+          AND (${filter.assignedTo ?? null}::uuid IS NULL OR assigned_to = ${filter.assignedTo ?? null}::uuid) AND (${filter.open ?? null}::text IS NULL OR (${filter.open ?? null}::text = 'true') = (status NOT IN ('RESOLVED','REJECTED')))`;
+    // BE-007: the severity ordering is part of the contract, so paging walks that same ordering; `id` breaks ties so pages never overlap.
+    const window = pageWindow(filter, 200);
     const rows = await this.prisma.$queryRaw<{ id: string }[]>(
-      Prisma.sql`SELECT id FROM complaints WHERE (${filter.status ?? null}::text IS NULL OR status::text = ${filter.status ?? null}) AND (${filter.severity ?? null}::text IS NULL OR severity::text = ${filter.severity ?? null})
-          AND (${filter.assignedTo ?? null}::uuid IS NULL OR assigned_to = ${filter.assignedTo ?? null}::uuid) AND (${filter.open ?? null}::text IS NULL OR (${filter.open ?? null}::text = 'true') = (status NOT IN ('RESOLVED','REJECTED')))
-        ORDER BY (status IN ('RESOLVED','REJECTED')), CASE severity WHEN 'SAFETY' THEN 0 WHEN 'HIGH' THEN 1 ELSE 2 END, sla_due_at LIMIT 200`
+      Prisma.sql`SELECT id FROM complaints ${where}
+        ORDER BY (status IN ('RESOLVED','REJECTED')), CASE severity WHEN 'SAFETY' THEN 0 WHEN 'HIGH' THEN 1 ELSE 2 END, sla_due_at, id ${limitClause(window)}`
     );
     const items = [];
     for (const { id } of rows) items.push(this.withSla(await this.head(id)));
-    return items;
+    return paged(items, await countOf(this.prisma, Prisma.sql`SELECT count(*)::bigint as n FROM complaints ${where}`), window);
   }
 
   async adminView(complaintId: string) {

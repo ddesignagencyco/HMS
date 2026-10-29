@@ -1,6 +1,7 @@
 import { Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiPageQuery } from '../common/paging.js';
 import { ApiQueryField } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { AdminService } from './admin.service.js';
@@ -16,8 +17,9 @@ export class AdminCustomersController {
   @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
   @ApiOperation({ summary: 'List customer accounts', description: 'Admin only. The customer side of the management surface (FR-AD-05), searchable by name, email or phone.' })
   @ApiQueryField('q', { description: 'Name, email or phone substring.' })
+  @ApiPageQuery(200)
   async list(@Query() query: unknown) {
-    return { items: await this.admin.listCustomers(parseWith(listCustomersQuerySchema, query)) };
+    return this.admin.listCustomers(parseWith(listCustomersQuerySchema, query));
   }
 
   @Post(':customerId/deactivate')

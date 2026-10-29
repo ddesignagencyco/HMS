@@ -48,10 +48,10 @@ export class AddressesService {
         Prisma.sql`UPDATE addresses SET
             label = COALESCE(${input.label ?? null}, label),
             line1 = COALESCE(${input.line1 ?? null}, line1),
-            line2 = COALESCE(${input.line2 ?? null}, line2),
+            line2 = CASE WHEN ${input.line2 === undefined} THEN line2 ELSE ${input.line2 ?? null}::text END,
             area_id = COALESCE(${input.areaId ?? null}, area_id),
             location = ${hasPoint ? Prisma.sql`ST_SetSRID(ST_MakePoint(${input.lng}, ${input.lat}), 4326)::geography` : Prisma.sql`location`},
-            notes = COALESCE(${input.notes ?? null}, notes),
+            notes = CASE WHEN ${input.notes === undefined} THEN notes ELSE ${input.notes ?? null}::text END,
             is_default = COALESCE(${input.isDefault ?? null}, is_default)
           WHERE id = ${id}::uuid AND customer_id = ${customerId}::uuid AND archived_at IS NULL
           RETURNING ${ADDRESS_COLUMNS}`
