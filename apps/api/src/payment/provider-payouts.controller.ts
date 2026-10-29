@@ -3,6 +3,7 @@ import { Body, Controller, Get, HttpCode, Inject, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { AcceptedLocale, type Locale } from '../common/locale.js';
 import { ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { PayoutsService } from './payouts.service.js';
@@ -66,8 +67,8 @@ export class ProviderPayoutsController {
     description: "Asks for part or all of your releasable wallet balance to be paid into one of your accounts. At least the minimum payout (`payout.min_amount_paisa`); 409 for more than you can currently request."
   })
   @ApiZodBody(payoutSchema, { default: { summary: 'Request a payout', value: { amountPaisa: 200000, payoutAccountId: '00000000-0000-4000-8000-000000000000' } } })
-  async request(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+  async request(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal, @AcceptedLocale() locale: Locale) {
     const { amountPaisa, payoutAccountId } = parseWith(payoutSchema, body);
-    return this.payouts.request(principal.userId, amountPaisa, payoutAccountId);
+    return this.payouts.request(principal.userId, amountPaisa, payoutAccountId, locale);
   }
 }

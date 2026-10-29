@@ -6,7 +6,7 @@ import { DomainError, notFound } from '../common/domain-error.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { PaymentsService } from '../payment/payments.service.js';
 import { SettingsService } from '../platform/settings.service.js';
-import { appendOutboxEvent } from '../platform/audit.service.js';
+import { AuditService, appendOutboxEvent } from '../platform/audit.service.js';
 import { applySystemEvent } from './booking-state.js';
 import { BookingStateService } from './booking-state.service.js';
 import { toBookingRow, BOOKING_COLUMNS, type BookingRow, type BookingRowRaw } from './booking.row.js';
@@ -56,7 +56,8 @@ export class OfferService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(SettingsService) private readonly settings: SettingsService,
     @Inject(PaymentsService) private readonly payments: PaymentsService,
-    @Inject(BookingStateService) private readonly state: BookingStateService
+    @Inject(BookingStateService) private readonly state: BookingStateService,
+    @Inject(AuditService) private readonly audit: AuditService
   ) {}
 
   /** Starts the offer cascade for a booking that has just become REQUESTED. Runs inside the transaction that made it so. */
@@ -136,7 +137,7 @@ export class OfferService {
   }
 
   /** The provider says no. An auto-assign booking moves on to the next candidate; a direct request has nobody else to ask and is UNFULFILLED. */
-  async decline(offerId: string, providerId: string): Promise<BookingRow> {
+  async decline(offerId: string, providerId: string, reason?: string): Promise<BookingRow> {
     const context: OfferContext = { refundIds: [] };
     const booking = await this.prisma.$transaction(async tx => {
       const offer = await this.lockPendingOffer(tx, offerId, providerId);
@@ -153,6 +154,11 @@ export class OfferService {
       return result.booking;
     });
     await this.state.settleRefunds(context.refundIds);
+    // BE-026: the optional reason the provider gave. Kept in the audit log (there is no column for it on the offer), so an admin looking at why a
+    // job went unfulfilled can read it; it is never shown to the customer.
+    if (reason !== undefined) {
+      await this.audit.append({ actorUserId: providerId, actorRole: 'PROVIDER', action: 'offer.decline', entityType: 'booking_offer', entityId: offerId, after: { bookingId: booking.id, reason } });
+    }
     return booking;
   }
 

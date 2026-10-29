@@ -716,3 +716,28 @@ describe('BE-005: a plan is not active until it is paid', () => {
     expect(await statusOf(subscriptionId)).toBe('EXPIRED');
   });
 });
+
+describe('BE-026: GET /admin/plans/:id returns the admin view', () => {
+  it('serves an inactive plan with createdAt and activeSubscriptionsCount, and 404s only for a plan that does not exist', async () => {
+    const created = await callApi<{ id: string }>(
+      app,
+      '/admin/plans',
+      asAdmin(postJson({ nameEn: `Admin view ${randomUUID().slice(0, 6)}`, nameUr: 'ایڈمن ویو', description: 'Plan used to check the admin read.', pricePaisa: 300_000, durationMonths: 3, services: [{ serviceId: 1, visitsIncluded: 1, intervalDays: 30 }] }))
+    );
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+
+    const active = await callApi<{ id: string; isActive: boolean; createdAt: string; activeSubscriptionsCount: number; services: { serviceNameUr: string }[] }>(app, `/admin/plans/${id}`, asAdmin());
+    expect(active.status).toBe(200);
+    expect(active.body).toMatchObject({ id, isActive: true, activeSubscriptionsCount: 0 });
+    expect(Number.isNaN(Date.parse(active.body.createdAt))).toBe(false);
+    expect(active.body.services[0]?.serviceNameUr).toBeTruthy();
+
+    expect((await callApi(app, `/admin/plans/${id}`, asAdmin(deleteWith()))).status).toBe(200);
+    const inactive = await callApi<{ isActive: boolean; activeSubscriptionsCount: number }>(app, `/admin/plans/${id}`, asAdmin());
+    expect(inactive.status).toBe(200);
+    expect(inactive.body).toMatchObject({ isActive: false, activeSubscriptionsCount: 0 });
+
+    expect((await callApi(app, `/admin/plans/${randomUUID()}`, asAdmin())).status).toBe(404);
+  });
+});

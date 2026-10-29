@@ -21,6 +21,20 @@ export const environmentSchema = z
      * port for a Prometheus exporter that is not the application's own.
      */
     WORKER_METRICS_PORT: z.coerce.number().int().min(1).max(65_535).default(9464),
+    /**
+     * BE-017: the Prisma pool. The API connects through DIRECT_URL, which historically carried no `connection_limit`, so the pool was Prisma's
+     * default (cpus*2+1, often 5-9 on a small box) with a 10 s wait - a handful of requests that each hold a transaction open (login,
+     * booking) starved the rest, which then failed with P2024 and surfaced as a 500. These are applied to the URL only when the URL itself
+     * does not already say, so an explicit `?connection_limit=` still wins.
+     */
+    DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
+    DB_POOL_TIMEOUT_S: z.coerce.number().int().min(1).max(300).default(30),
+    /**
+     * BE-017: how many reverse proxies sit in front of the API. Unset keeps the historical `trust proxy = true` (leftmost X-Forwarded-For).
+     * Set it to the real hop count (for example 1 behind a single load balancer) and Express takes the client IP from that many hops from the
+     * right, which a caller cannot forge by sending their own X-Forwarded-For header - the rate limiter keys on it.
+     */
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).optional(),
     SHUTDOWN_GRACE_MS: z.coerce.number().int().min(0).max(120_000).default(10_000),
 
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -31,6 +45,12 @@ export const environmentSchema = z
     JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
     JWT_ISSUER: z.string().min(1).default('smart-home-api'),
     JWT_AUDIENCE: z.string().min(1).default('smart-home-clients'),
+    /**
+     * BE-027: seconds after a refresh token is rotated during which presenting it again is treated as a second tab racing the first rather than
+     * as theft. 0 turns the grace off (every reuse revokes the family). The replay still has to be of a token that was rotated away, and only
+     * inside the window; after it, reuse revokes the whole family as before.
+     */
+    REFRESH_REUSE_GRACE_SECONDS: z.coerce.number().int().min(0).max(120).default(10),
     ACCESS_TOKEN_TTL_MIN: z.coerce.number().int().min(1).max(1_440).default(15),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
     CSRF_SECRET: z.string().min(32, 'CSRF_SECRET must be at least 32 characters'),

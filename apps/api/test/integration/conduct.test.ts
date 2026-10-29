@@ -672,3 +672,30 @@ describe('FR-PN-02: the daily decay and expiry of the record', () => {
     expect(await atAge(181)).toBe(0);
   });
 });
+describe('BE-026: the provider can read the decision on their own appeal', () => {
+  type PenaltyDetail = { id: string; status: string; appeal: { id: string; grounds: string; status: string; decisionNote: string | null; decidedAt: string | null } | null };
+
+  it('GET /provider/penalties/:id carries the appeal and, once decided, the admin note', async () => {
+    const provider = await newProvider(app);
+    const { penaltyId } = await sieve(provider, { breachCode: 'LATE_CANCEL' });
+    const read = () => callApi<PenaltyDetail>(app, `/provider/penalties/${penaltyId}`, bearer(provider.accessToken));
+
+    expect((await read()).body.appeal).toBeNull();
+
+    const grounds = 'I cancelled hours before the slot and the customer accepted on the chat.';
+    const filed = await appeal(provider, penaltyId, grounds);
+    expect(filed.status).toBe(201);
+    const open = (await read()).body.appeal!;
+    expect(open).toMatchObject({ id: filed.body.id, grounds, status: 'OPEN', decisionNote: null, decidedAt: null });
+
+    const note = 'The chat shows the customer agreed to the cancellation.';
+    expect((await decide(filed.body.id, { decision: 'REVERSED', note })).status).toBe(200);
+    const decided = (await read()).body.appeal!;
+    expect(decided).toMatchObject({ status: 'REVERSED', decisionNote: note });
+    expect(decided.decidedAt).not.toBeNull();
+
+    // Another provider cannot read it.
+    const stranger = await newProvider(app);
+    expect((await callApi(app, `/provider/penalties/${penaltyId}`, bearer(stranger.accessToken))).status).toBe(404);
+  });
+});

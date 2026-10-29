@@ -1,6 +1,7 @@
 // apps/api/src/verification/verification-self.controller.ts
 import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AcceptedLocale, type Locale } from '../common/locale.js';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
 import { ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
@@ -27,10 +28,10 @@ export class VerificationSelfController {
   @ApiOperation({
     summary: 'Open the "confirm the work" form (customer)',
     description:
-      'Everything the form needs to render, plus `canSubmit` and, when it is false, a `blockedReason` written for the customer to read. Always 200 for your own booking â€” the form being unavailable is an answer, not an error, and a client handed only a status code has nothing to show. `submission` is what was already submitted (outcome, workCompleted, quality, punctuality, conduct, cleanliness, extraChargeDemanded, remark, submittedAt) or null. 404 for a booking that is not yours.'
+      'Everything the form needs to render, plus `canSubmit` and, when it is false, a `blockedReason` written for the customer to read. `message`, `blockedReason`, question labels and `serviceName` honour `Accept-Language: ur`. Always 200 for your own booking â€” the form being unavailable is an answer, not an error, and a client handed only a status code has nothing to show. `submission` is what was already submitted (outcome, workCompleted, quality, punctuality, conduct, cleanliness, extraChargeDemanded, remark, submittedAt) or null. 404 for a booking that is not yours.'
   })
-  async describe(@Param('bookingId', ParseUUIDPipe) bookingId: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    return this.self.describe(bookingId, principal.userId);
+  async describe(@Param('bookingId', ParseUUIDPipe) bookingId: string, @CurrentPrincipal() principal: AuthenticatedPrincipal, @AcceptedLocale() locale: Locale) {
+    return this.self.describe(bookingId, principal.userId, locale);
   }
 
   @Post('confirmation')
@@ -47,7 +48,7 @@ export class VerificationSelfController {
       value: { workCompleted: 'FULL', quality: 5, punctuality: 5, conduct: 5, cleanliness: 4, extraChargeDemanded: false, consentToRelease: true, outcome: 'SATISFIED', remark: 'Fixed it first time, very tidy.' }
     }
   })
-  async confirm(@Param('bookingId', ParseUUIDPipe) bookingId: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    return this.self.submit(bookingId, principal.userId, parseWith(selfVerifySchema, body));
+  async confirm(@Param('bookingId', ParseUUIDPipe) bookingId: string, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal, @AcceptedLocale() locale: Locale) {
+    return this.self.submit(bookingId, principal.userId, parseWith(selfVerifySchema, body), locale);
   }
 }

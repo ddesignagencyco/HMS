@@ -4069,7 +4069,7 @@
         ]
       },
       "post": {
-        "description": "Blocks off a date range so no job can be scheduled against it. Overlapping an existing leave period is rejected.",
+        "description": "Blocks off a date range so no job can be scheduled against it. Overlapping an existing leave period is rejected. start and end are ISO datetimes; an offset is accepted (2026-12-25T00:00:00+05:00) and stored as the instant it names.",
         "operationId": "ProviderController_createTimeOff",
         "parameters": [],
         "requestBody": {
@@ -4430,7 +4430,7 @@
         ]
       },
       "post": {
-        "description": "Records a CNIC front/back, trade certificate or optional character certificate. Send either the bytes inline (contentBase64) or a storageKey from POST /uploads/presign. A cnicNumber is encrypted at rest and never returned by any endpoint — only whether one is on file and whether it has been verified. The same CNIC cannot be registered twice.",
+        "description": "Records a CNIC front/back, trade certificate or optional character certificate. Send either the bytes inline (contentBase64) or a storageKey from POST /uploads/presign. A cnicNumber is encrypted at rest and never returned by any endpoint — only whether one is on file and whether it has been verified. The same CNIC cannot be registered twice. Inline bodies may be up to 8 MB (about a 5 MiB file once base64-encoded); anything larger answers 413 problem+json, and video documents (up to 50 MiB) must go through POST /uploads/presign. A storageKey is checked on confirm: the stored object must be an allowed type and within its size limit (5 MiB, or 50 MiB for video), otherwise 422 UPLOAD_REJECTED and the object is removed.",
         "operationId": "ProviderDocumentsController_submit",
         "parameters": [],
         "requestBody": {
@@ -4790,10 +4790,46 @@
             }
           },
           {
-            "name": "serviceSlug",
-            "required": true,
+            "name": "page",
+            "required": false,
             "in": "query",
-            "description": "Which service to find providers for, e.g. \"leak-repair\" (see GET /catalogue/services/{slug}).",
+            "description": "Page number, from 1. Sending page or limit opts in to the paged window (default 20 per page); omitting both keeps the endpoint’s original window and `pagination.total` / `truncated` say whether rows were left out.",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Rows per page, 1–100, default 20 once paging is used.",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "minRating",
+            "required": false,
+            "in": "query",
+            "description": "Only providers whose published rating (0-5) is at least this. Unrated providers are excluded when it is set.",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "distance | rating | price_asc | price_desc | experience. Omitted = the weighted ranking. Ties fall back to the weighted ranking.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "serviceSlug",
+            "required": false,
+            "in": "query",
+            "description": "Which service to find providers for, e.g. \"leak-repair\" (see GET /catalogue/services/{slug}). Optional: without it every provider in range is listed once, at their lowest approved price, ranked across services.",
             "schema": {
               "type": "string"
             }
@@ -4940,9 +4976,35 @@
     },
     "/api/v1/provider/offers/{id}/decline": {
       "post": {
-        "description": "Turns the job down. An auto-assigned job moves on to the next provider; a job requested from you specifically ends UNFULFILLED and the customer is refunded if they had paid.",
+        "description": "Turns the job down. An auto-assigned job moves on to the next provider; a job requested from you specifically ends UNFULFILLED and the customer is refunded if they had paid. An optional `reason` (up to 500 characters) is recorded for the admin team and never shown to the customer.",
         "operationId": "ProviderOffersController_decline",
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "additionalProperties": false
+              },
+              "examples": {
+                "default": {
+                  "summary": "Decline with a reason",
+                  "value": {
+                    "reason": "I am too far away at that hour."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": ""
@@ -5153,6 +5215,42 @@
                     "minLength": 1,
                     "maxLength": 40
                   },
+                  "photos": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "clientUuid": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "contentType": {
+                          "type": "string",
+                          "enum": [
+                            "image/jpeg",
+                            "image/png",
+                            "image/webp",
+                            "image/gif"
+                          ]
+                        },
+                        "contentBase64": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "capturedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "clientUuid",
+                        "contentType",
+                        "contentBase64"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 5
+                  },
                   "onBehalfOf": {
                     "type": "object",
                     "properties": {
@@ -5343,6 +5441,42 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 40
+                  },
+                  "photos": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "clientUuid": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "contentType": {
+                          "type": "string",
+                          "enum": [
+                            "image/jpeg",
+                            "image/png",
+                            "image/webp",
+                            "image/gif"
+                          ]
+                        },
+                        "contentBase64": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "capturedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "clientUuid",
+                        "contentType",
+                        "contentBase64"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 5
                   },
                   "onBehalfOf": {
                     "type": "object",
@@ -6732,7 +6866,7 @@
     },
     "/api/v1/bookings/{bookingId}/verification/confirmation": {
       "get": {
-        "description": "Everything the form needs to render, plus `canSubmit` and, when it is false, a `blockedReason` written for the customer to read. Always 200 for your own booking â€” the form being unavailable is an answer, not an error, and a client handed only a status code has nothing to show. `submission` is what was already submitted (outcome, workCompleted, quality, punctuality, conduct, cleanliness, extraChargeDemanded, remark, submittedAt) or null. 404 for a booking that is not yours.",
+        "description": "Everything the form needs to render, plus `canSubmit` and, when it is false, a `blockedReason` written for the customer to read. `message`, `blockedReason`, question labels and `serviceName` honour `Accept-Language: ur`. Always 200 for your own booking â€” the form being unavailable is an answer, not an error, and a client handed only a status code has nothing to show. `submission` is what was already submitted (outcome, workCompleted, quality, punctuality, conduct, cleanliness, extraChargeDemanded, remark, submittedAt) or null. 404 for a booking that is not yours.",
         "operationId": "VerificationSelfController_describe",
         "parameters": [],
         "responses": {
@@ -9640,7 +9774,7 @@
     },
     "/api/v1/admin/plans/{id}": {
       "get": {
-        "description": "Returns complete plan definition.",
+        "description": "The plan as an admin sees it: inactive plans are returned too (404 only for a plan that does not exist), with createdAt and activeSubscriptionsCount alongside the public fields.",
         "operationId": "PlansAdminController_get",
         "parameters": [],
         "responses": {

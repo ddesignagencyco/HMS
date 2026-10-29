@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Prisma } from '@prisma/client';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { NotificationService } from '../../src/notification/notification.service.js';
-import { callApi, createTestApp } from './harness.js';
+import { callApi, createTestApp, registerAndVerify } from './harness.js';
 import { agentVerify, completedJob, freezeInsideCallingHours, newProvider, prisma, unfreeze } from './flow.js';
 import { agentSession } from './flow.js';
 
@@ -120,5 +120,46 @@ describe('the provider finishes: the customer is told', () => {
       Prisma.sql`SELECT count(*)::bigint as n FROM notifications WHERE user_id = ${job.customer.id}::uuid AND event_key = 'payment.released'`
     );
     expect(Number(released[0]?.n)).toBeGreaterThanOrEqual(0);
+  });
+});
+describe('BE-012: the "confirm your job" notification links to the confirm-work form', () => {
+  beforeAll(() => {
+    freezeInsideCallingHours(app);
+  });
+
+  afterAll(() => {
+    unfreeze(app);
+  });
+
+  const bodiesFor = async (bookingId: string): Promise<{ channel: string; body: string }[]> =>
+    (await notificationsFor(bookingId)).map(row => ({ channel: row.channel, body: row.renderedBody ?? '' }));
+
+  it('texts and notifies the customer with /en/account/bookings/:id#confirm-work, only once the booking can be self-verified', async () => {
+    const provider = await newProvider(app);
+    const job = await completedJob(app, provider, { mode: 'ONLINE' });
+    const booking = await callApi<{ status: string; canSelfVerify: boolean }>(app, `/bookings/${job.id}`, { headers: { authorization: `Bearer ${job.customer.accessToken}` } });
+    expect(booking.body).toMatchObject({ status: 'AWAITING_VERIFICATION', canSelfVerify: true });
+    await dispatchFor(job.id);
+
+    const bodies = await bodiesFor(job.id);
+    expect(bodies.map(row => row.channel).sort()).toEqual(['IN_APP', 'SMS']);
+    for (const row of bodies) expect(row.body).toContain(`/en/account/bookings/${job.id}#confirm-work`);
+    // The old "report a problem" link is not what a customer is asked to open here.
+    expect(bodies.find(row => row.channel === 'SMS')?.body).not.toContain('/problem/');
+  });
+
+  it('writes the Urdu link, in Urdu, for an Urdu customer', async () => {
+    const provider = await newProvider(app);
+    const customer = await registerAndVerify(app, 'CUSTOMER');
+    await prisma.$executeRaw(Prisma.sql`UPDATE users SET locale = 'ur' WHERE id = ${customer.id}::uuid`);
+    const job = await completedJob(app, provider, { mode: 'ONLINE', customer });
+    await dispatchFor(job.id);
+
+    const bodies = await bodiesFor(job.id);
+    expect(bodies).toHaveLength(2);
+    for (const row of bodies) {
+      expect(row.body).toContain(`/ur/account/bookings/${job.id}#confirm-work`);
+      expect(row.body).toMatch(/[؀-ۿ]/);
+    }
   });
 });

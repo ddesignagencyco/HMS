@@ -8,6 +8,7 @@ import { PrismaService } from '../database/prisma.service.js';
 import { SMS_SENDER } from '../integrations/integrations.module.js';
 import type { SmsSenderPort } from '../integrations/ports.js';
 import { AppClock } from '../platform/app-clock.js';
+import { SettingsService } from '../platform/settings.service.js';
 import { QueueRegistry } from '../queues/queue.registry.js';
 
 export type OutboxJob = { outboxId?: string; eventType: string; payload: Record<string, unknown> };
@@ -160,7 +161,7 @@ export const NO_RULE_EVENTS: Readonly<Record<string, string>> = {
 
 /** Every placeholder a template may use. A template that names anything else is refused when it is saved, so a typo cannot ship as a blank. */
 export const TEMPLATE_VARIABLES = [
-  'bookingRef', 'serviceName', 'providerName', 'slotLabel', 'total', 'amount', 'problemLink', 'code', 'otp', 'link',
+  'bookingRef', 'serviceName', 'providerName', 'slotLabel', 'total', 'amount', 'problemLink', 'confirmLink', 'code', 'otp', 'link',
   'complaintRef', 'category', 'to', 'resolution', 'consequence', 'until', 'points', 'decision', 'breachCode', 'releasePaisa', 'refundPaisa', 'replyDueAt', 'pointsAfter', 'penaltyId', 'amountPaisa', 'providerId', 'reason',
   'visitsCount', 'refundedVisitsCount',
   // SHM-090 reports. A template naming anything outside this list is refused when it is saved, so a
@@ -170,7 +171,7 @@ export const TEMPLATE_VARIABLES = [
 
 export const renderTemplate = (template: string, values: Record<string, string>): string => template.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => values[name] ?? '');
 
-type BookingContext = { code: string; customerId: string; providerId: string | null; serviceName: string; providerName: string; slotLabel: string; approvedTotalPaisa: bigint; finalAmountPaisa: bigint | null };
+type BookingContext = { code: string; customerId: string; providerId: string | null; serviceName: string; providerName: string; slotLabel: string; approvedTotalPaisa: bigint; finalAmountPaisa: bigint | null; released: boolean };
 type UserContact = { id: string; phone: string | null; locale: string };
 
 /** After this many failed sends a notification stops being retried and stays FAILED with the reason. */
@@ -190,7 +191,8 @@ export class NotificationService implements OnModuleInit {
     @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
     @Inject(QueueRegistry) private readonly queues: QueueRegistry,
     @Inject(EnvironmentService) private readonly environment: EnvironmentService,
-    @Inject(AppClock) private readonly clock: AppClock
+    @Inject(AppClock) private readonly clock: AppClock,
+    @Inject(SettingsService) private readonly settings: SettingsService
   ) {}
 
   onModuleInit(): void {
@@ -215,7 +217,8 @@ export class NotificationService implements OnModuleInit {
       for (const userId of userIds) {
         const user = await this.user(userId);
         if (user === null) continue;
-        const values = this.values(job, context, bookingId ?? '');
+        const values: Record<string, string> = { ...this.values(job, context, bookingId ?? ''), confirmLink: await this.confirmLink(bookingId, context, user.locale) };
+        if (bookingId !== undefined) values.problemLink = this.problemLink(bookingId, user.locale);
         for (const channel of rule.channels) created += await this.deliver(job, user, rule.eventKey, channel, values);
       }
     }
@@ -241,9 +244,21 @@ export class NotificationService implements OnModuleInit {
     };
   }
 
+  /**
+   * BE-012: where "confirm your job" points: the customer's own booking page, anchored on the confirm-work form, in their language.
+   * The anchor is only offered while the form can actually be filled in (the job has not been paid out yet and self-confirmation is switched
+   * on) - otherwise the plain booking page, so the message never promises a form that would answer "blocked".
+   */
+  private async confirmLink(bookingId: string | undefined, context: BookingContext | null, locale: string): Promise<string> {
+    if (bookingId === undefined || context === null) return '';
+    const enabled = (await this.settings.get<boolean>('verification.self_verify_enabled')) ?? true;
+    const open = enabled && !context.released;
+    return new URL(`/${locale === 'ur' ? 'ur' : 'en'}/account/bookings/${bookingId}${open ? '#confirm-work' : ''}`, this.environment.values.PUBLIC_BASE_URL).toString();
+  }
+
   /** A link the customer can follow from their receipt to report a problem, tied to this booking and unguessable. */
-  private problemLink(bookingId: string): string {
-    return `${this.environment.values.PUBLIC_BASE_URL}/problem/${signReceiptToken(this.environment.values.OTP_PEPPER, bookingId)}`;
+  private problemLink(bookingId: string, locale: string = 'en'): string {
+    return `${this.environment.values.PUBLIC_BASE_URL}/${locale === 'ur' ? 'ur' : 'en'}/problem/${signReceiptToken(this.environment.values.OTP_PEPPER, bookingId)}`;
   }
 
   private async resolve(recipient: Recipient, context: BookingContext | null, payload: Record<string, unknown>, actor: string | undefined): Promise<string[]> {
@@ -341,7 +356,7 @@ export class NotificationService implements OnModuleInit {
   private async context(bookingId: string): Promise<BookingContext | null> {
     const rows = await this.prisma.$queryRaw<BookingContext[]>(
       Prisma.sql`SELECT b.code, b.customer_id as "customerId", b.provider_id as "providerId", s.name_en as "serviceName", coalesce(trim(pu.first_name || ' ' || pu.last_name), '') as "providerName",
-          to_char(b.scheduled_start AT TIME ZONE 'Asia/Karachi', 'DD Mon HH24:MI') as "slotLabel", b.approved_total_paisa as "approvedTotalPaisa", b.final_amount_paisa as "finalAmountPaisa"
+          to_char(b.scheduled_start AT TIME ZONE 'Asia/Karachi', 'DD Mon HH24:MI') as "slotLabel", b.approved_total_paisa as "approvedTotalPaisa", b.final_amount_paisa as "finalAmountPaisa", b.released_at IS NOT NULL as released
         FROM bookings b JOIN services s ON s.id = b.service_id LEFT JOIN users pu ON pu.id = b.provider_id WHERE b.id = ${bookingId}::uuid`
     );
     return rows[0] ?? null;

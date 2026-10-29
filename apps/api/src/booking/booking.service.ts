@@ -157,6 +157,9 @@ export class BookingService {
     if (online && quote.totalPaisa <= 0) throw badRequest('There is nothing to pay online for this booking; choose cash');
     const commissionRateBp = await this.resolveCommissionRateBp(input.providerId ?? null, priced.categoryId);
     const total = BigInt(quote.totalPaisa);
+    // BE-022: photos are validated up front and written inside the booking's transaction, so the booking and its photos exist together or not at all.
+    const photos = await this.execution.prepareCreatePhotos(input.photos ?? []);
+    const storedKeys: string[] = [];
 
     try {
       const created = await this.prisma.$transaction(
@@ -183,6 +186,7 @@ export class BookingService {
               VALUES (${row.id}::uuid, ${line.kind}::item_kind, ${line.description}, 1, ${amount}, ${amount})`
             );
           }
+          storedKeys.push(...(await this.execution.attachCreatePhotos(tx, row.id, customerId, photos)));
           await tx.$executeRaw(
             Prisma.sql`INSERT INTO booking_status_history(booking_id, from_status, to_status, event, actor_user_id, actor_role, metadata)
             VALUES (${row.id}::uuid, NULL, ${row.status}::booking_status, 'create', ${customerId}::uuid, 'CUSTOMER'::actor_role,
@@ -206,6 +210,8 @@ export class BookingService {
       const payment = await this.payments.startCheckout(created.paymentId, { userId: customerId }, await this.checkoutReturnUrl(booking.id, customerId));
       return { ...booking, payment: { ...payment, returnUrl: payment.returnUrl } };
     } catch (error) {
+      // The transaction rolled back, so objects written for it are orphans.
+      await this.execution.removeStored(storedKeys);
       const meta = error instanceof Prisma.PrismaClientKnownRequestError ? (error.meta as { code?: unknown } | undefined) : undefined;
       if (meta?.code === EXCLUSION_VIOLATION) throw new DomainError('SLOT_TAKEN', 'That provider is no longer free at this time');
       // 40001 serialization_failure, 40P01 deadlock_detected. Fifty simultaneous checkouts for one slot

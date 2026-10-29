@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { Prisma } from '@prisma/client';
 import { totpCode } from '../../src/identity/otp.js';
+import { hashRefreshToken } from '../../src/identity/tokens.js';
+import { prisma } from './flow.js';
 import { callApi, createTestApp, loginAs, postJson, readOtpFromInbox, refreshCookieOf, registerAndVerify, uniquePhone, type ApiResponse } from './harness.js';
 
 const PASSWORD = 'CorrectHorse9Battery';
@@ -21,6 +24,16 @@ afterAll(async () => {
 });
 
 const withCookie = (cookie: string): RequestInit => ({ method: 'POST', headers: { cookie } });
+
+/**
+ * BE-027: a token rotated away less than REFRESH_REUSE_GRACE_SECONDS ago is a second tab racing the first, not a thief, so replaying it right away
+ * is answered with a fresh token. These tests are about replay AFTER that window (a real leak), so they age the rotation past it first. The grace
+ * itself is covered in phase3-backend.test.ts.
+ */
+const ageRotation = async (cookie: string): Promise<void> => {
+  const token = cookie.split('=')[1] as string;
+  await prisma.$executeRaw(Prisma.sql`UPDATE sessions SET revoked_at = now() - interval '5 minutes' WHERE refresh_token_hash = ${hashRefreshToken(token)} AND replaced_by IS NOT NULL`);
+};
 
 describe('SHM-009 registration and phone verification', () => {
   it('FR-CU-01/03: registers a customer, sends an OTP and only issues a session once the code is redeemed', async () => {
@@ -209,6 +222,7 @@ describe('FR-CU-04: refresh rotation, reuse detection and logout', () => {
     const tokenA = refreshCookieOf(login) as string;
     const tokenB = refreshCookieOf(await callApi(app, '/auth/refresh', withCookie(tokenA))) as string;
     const tokenC = refreshCookieOf(await callApi(app, '/auth/refresh', withCookie(tokenB))) as string;
+    await ageRotation(tokenB);
 
     const replayed = await callApi<{ code: string }>(app, '/auth/refresh', withCookie(tokenB));
     expect(replayed.status).toBe(401);
@@ -224,6 +238,7 @@ describe('FR-CU-04: refresh rotation, reuse detection and logout', () => {
     const login = await loginAs(app, user.phoneE164, PASSWORD);
     const first = refreshCookieOf(login) as string;
     const second = refreshCookieOf(await callApi(app, '/auth/refresh', withCookie(first))) as string;
+    await ageRotation(first);
 
     // Replaying the token the login itself issued. It carries no replacement of
     // its own, so this only works if rotation records the replacement on the row

@@ -4,6 +4,27 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { EnvironmentService } from '../config/environment.service.js';
 import type { ObjectStoragePort } from './ports.js';
 
+/** What the client is told when the signed URL's own expiry cannot be read: five minutes, which is shorter than anything Supabase issues, so it is never an overstatement. */
+const FALLBACK_UPLOAD_TTL_MS = 300_000;
+
+/**
+ * BE-034 (5.4): the signed upload URL carries a JWT in `?token=`, and its `exp` claim is the real expiry. Reading it means the client's
+ * `expiresAt` matches what Supabase will enforce instead of a locally invented +300 s. Any parse failure falls back to the old value.
+ */
+export const signedUploadExpiry = (signedUrl: string, now: number = Date.now()): string => {
+  try {
+    const token = new URL(signedUrl).searchParams.get('token');
+    const payload = token?.split('.')[1];
+    if (payload !== undefined) {
+      const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { exp?: unknown };
+      if (typeof claims.exp === 'number' && Number.isFinite(claims.exp) && claims.exp * 1000 > now) return new Date(claims.exp * 1000).toISOString();
+    }
+  } catch {
+    // Not a JWT token (or not a URL): use the fallback below.
+  }
+  return new Date(now + FALLBACK_UPLOAD_TTL_MS).toISOString();
+};
+
 @Injectable()
 export class SupabaseObjectStorage implements ObjectStoragePort {
   private readonly logger = new Logger(SupabaseObjectStorage.name);
@@ -95,7 +116,7 @@ export class SupabaseObjectStorage implements ObjectStoragePort {
     return {
       url: data.signedUrl,
       method: 'PUT',
-      expiresAt: new Date(Date.now() + 300_000).toISOString()
+      expiresAt: signedUploadExpiry(data.signedUrl)
     };
   }
 
@@ -122,6 +143,13 @@ export class SupabaseObjectStorage implements ObjectStoragePort {
 
   async head(input: { key: string; bucket: string }): Promise<{ size: number; contentType: string } | null> {
     const targetBucket = this.resolveBucket(input.bucket);
+    // BE-034 (5.4): `info()` is an exact lookup. The prefix-search `list()` below is capped at 100 rows, so it stays only as the fallback
+    // for a client or a failure where info() is unavailable.
+    const files = this.getClient().storage.from(targetBucket) as unknown as { info?: (path: string) => Promise<{ data: { size?: number; contentType?: string } | null; error: unknown }> };
+    if (typeof files.info === 'function') {
+      const exact = await files.info(input.key).catch(() => null);
+      if (exact?.data) return { size: exact.data.size ?? 0, contentType: exact.data.contentType ?? 'application/octet-stream' };
+    }
     const parts = input.key.split('/');
     const fileName = parts.pop();
     const folder = parts.join('/');

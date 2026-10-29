@@ -517,3 +517,13 @@ describe('a cash dispute: nothing held, so the provider is the source of the mon
     expect(paisaToNumber((await disputeOf(disputeId)).releasePaisa ?? 0n)).toBe(part);
   });
 });
+describe('BE-026 (decision): the provider sees the customer masked, the admin sees the full name', () => {
+  it('shows "first name + last initial" to the provider and the full name to an admin', async () => {
+    const { job, disputeId } = await openOnlineDispute();
+    const provider = await callApi<{ booking: { customerName: string; providerName: string } }>(app, `/provider/disputes/${disputeId}`, bearer(job.provider.accessToken));
+    expect(provider.status).toBe(200);
+    expect(provider.body.booking.customerName).toBe('Test U.');
+    const asAdmin = await callApi<{ booking: { customerName: string } }>(app, `/admin/disputes/${disputeId}`, bearer(admin.accessToken));
+    expect(asAdmin.body.booking.customerName).toBe('Test User');
+  });
+});

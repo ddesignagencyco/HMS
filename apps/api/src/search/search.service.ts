@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { daySpan, earliestStart, generateSlots, instantFromWallTime, localDateOf, localMidnightOf, paisaToNumber } from '@smart-home/domain';
 import { badRequest, notFound } from '../common/domain-error.js';
+import { paged, pageWindow, type Paged } from '../common/paging.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AppClock } from '../platform/app-clock.js';
 import { ReputationService, type Reputation } from '../reputation/reputation.service.js';
@@ -115,7 +116,7 @@ private async endOfLocalDay(): Promise<Date> {
    * service and are approved keeps the set small, which is what makes doing the interval maths in
    * TypeScript (seconds, integers) reasonable — no float paisa, no clock arithmetic in SQL.
    */
-  private async providersFreeToday(serviceId: number, durationMin: number): Promise<string[]> {
+  private async providersFreeToday(serviceId: number | null, durationMin: number): Promise<string[]> {
     const notice = await this.earliestBookableStart();
     const dayEnd = await this.endOfLocalDay();
     if (notice >= dayEnd) return [];
@@ -124,7 +125,7 @@ private async endOfLocalDay(): Promise<Date> {
 
     const candidates = await this.prisma.$queryRaw<{ providerId: string }[]>(
       Prisma.sql`SELECT DISTINCT p.user_id as "providerId" FROM providers p
-        JOIN provider_services ps ON ps.provider_id = p.user_id AND ps.service_id = ${serviceId} AND ps.status = 'APPROVED'
+        JOIN provider_services ps ON ps.provider_id = p.user_id AND ps.status = 'APPROVED' ${serviceId === null ? Prisma.empty : Prisma.sql`AND ps.service_id = ${serviceId}`}
         WHERE p.status = 'APPROVED' AND p.offer_blocked_reason IS NULL AND p.base_location IS NOT NULL`
     );
     if (candidates.length === 0) return [];
@@ -306,10 +307,15 @@ private async endOfLocalDay(): Promise<Date> {
  * response speed and recency have no input data yet, so their weights are left out and the rest
  * renormalised rather than counting zeros as a signal.
  */
-async searchProviders(query: ProviderSearchQuery, customerId?: string): Promise<ProviderSearchResultRow[]> {
-    const services = await this.prisma.$queryRaw<{ id: number; durationMin: number }[]>(Prisma.sql`SELECT id, expected_duration_min as "durationMin" FROM services WHERE slug = ${query.serviceSlug} AND is_active = true`);
-    const service = services[0];
-    if (service === undefined) throw notFound('Service');
+async searchProviders(query: ProviderSearchQuery, customerId?: string): Promise<Paged<ProviderSearchResultRow>> {
+    // BE-010: no serviceSlug = "professionals near me": every approved offer counts, a provider appears once at their lowest price.
+    let service: { id: number; durationMin: number } | null = null;
+    if (query.serviceSlug !== undefined) {
+      const services = await this.prisma.$queryRaw<{ id: number; durationMin: number }[]>(Prisma.sql`SELECT id, expected_duration_min as "durationMin" FROM services WHERE slug = ${query.serviceSlug} AND is_active = true`);
+      service = services[0] ?? null;
+      if (service === null) throw notFound('Service');
+    }
+    const serviceId = service?.id ?? null;
 
     // `addressId` resolves here rather than in the web app: the customer has already given us this
     // address, and a search centred on the wrong point is worse than no search at all.
@@ -332,7 +338,20 @@ async searchProviders(query: ProviderSearchQuery, customerId?: string): Promise<
 
     // FR-SR-05: "today" is the customer's local day, and "free later today" is answered by the helper
     // above, which shares the same availability, leave and booking inputs `listNextSlots` uses.
-    const freeToday = query.availableToday === true ? await this.providersFreeToday(service.id, service.durationMin) : null;
+    let freeToday: string[] | null = null;
+    if (query.availableToday === true) {
+      let durationMin = service?.durationMin ?? 0;
+      if (service === null) {
+        const shortest = await this.prisma.$queryRaw<{ d: number | null }[]>(Prisma.sql`SELECT min(expected_duration_min)::int as d FROM services WHERE is_active = true`);
+        durationMin = shortest[0]?.d ?? 60;
+      }
+      freeToday = await this.providersFreeToday(serviceId, durationMin);
+    }
+    // One price per provider: the offer for the chosen service, or the lowest approved offer across services.
+    const offers =
+      serviceId === null
+        ? Prisma.sql`(SELECT psx.provider_id, min(psx.price_paisa) as price_paisa FROM provider_services psx JOIN services sx ON sx.id = psx.service_id AND sx.is_active = true WHERE psx.status = 'APPROVED' GROUP BY psx.provider_id)`
+        : Prisma.sql`(SELECT psx.provider_id, psx.price_paisa FROM provider_services psx WHERE psx.service_id = ${serviceId} AND psx.status = 'APPROVED')`;
 
     const raw = await this.prisma.$queryRaw<ProviderSearchResultRowRaw[]>(
       Prisma.sql`SELECT p.user_id as "providerId", p.bio, p.experience_years as "experienceYears", p.qualification, ps.price_paisa as "pricePaisa",
@@ -341,7 +360,7 @@ async searchProviders(query: ProviderSearchQuery, customerId?: string): Promise<
           round((${Math.round(prior * 100) * priorWeight} + rs.num) / (${priorWeight} + rs.den))::int as "ratingScoreHundredths",
           cs.completed as "completedJobs", cs.no_shows as "noShows", cs.median_response as "medianResponseMinutes", cs.last_completed as "lastCompletedAt"
         FROM providers p
-        JOIN provider_services ps ON ps.provider_id = p.user_id AND ps.service_id = ${service.id} AND ps.status = 'APPROVED'
+        JOIN ${offers} ps ON ps.provider_id = p.user_id
         -- The same weighted score the reputation endpoint publishes (CL-17): the last 20 ratings count ${recentWeight}x, then a pull toward the prior.
         LEFT JOIN LATERAL (
           SELECT count(*)::int as n,
@@ -414,9 +433,24 @@ async searchProviders(query: ProviderSearchQuery, customerId?: string): Promise<
       }
       return weight === 0 ? 0 : total / weight;
     };
-    const scored = raw.map(row => ({ row, signals: signalsFor(row) }));
-    scored.sort((left, right) => score(right.signals) - score(left.signals) || left.row.distanceM - right.row.distanceM);
-    return scored.map(({ row, signals }) => {
+    const minRatingHundredths = query.minRating === undefined || query.minRating <= 0 ? null : Math.round(query.minRating * 100);
+    const scored = raw
+      .filter(row => minRatingHundredths === null || (row.ratingCount > 0 && row.ratingScoreHundredths >= minRatingHundredths))
+      .map(row => ({ row, signals: signalsFor(row) }));
+    const byWeighted = (left: (typeof scored)[number], right: (typeof scored)[number]): number => score(right.signals) - score(left.signals) || left.row.distanceM - right.row.distanceM;
+    // BE-010: an explicit sort leads; the weighted ranking (then distance) breaks ties, so the order is always deterministic.
+    const rated = (item: (typeof scored)[number]): number => (item.row.ratingCount === 0 ? -1 : item.row.ratingScoreHundredths);
+    const primary: ((left: (typeof scored)[number], right: (typeof scored)[number]) => number) | null =
+      query.sort === 'distance' ? (l, r) => l.row.distanceM - r.row.distanceM
+      : query.sort === 'rating' ? (l, r) => rated(r) - rated(l)
+      : query.sort === 'price_asc' ? (l, r) => Number(l.row.pricePaisa - r.row.pricePaisa)
+      : query.sort === 'price_desc' ? (l, r) => Number(r.row.pricePaisa - l.row.pricePaisa)
+      : query.sort === 'experience' ? (l, r) => (r.row.experienceYears ?? -1) - (l.row.experienceYears ?? -1)
+      : null;
+    scored.sort((left, right) => (primary === null ? 0 : primary(left, right)) || byWeighted(left, right));
+    const window = pageWindow(query, null);
+    const slice = window.limit === null ? scored : scored.slice(window.offset, window.offset + window.limit);
+    const items = slice.map(({ row, signals }) => {
       const { ratingScoreHundredths, radiusM, completedJobs, noShows, medianResponseMinutes, lastCompletedAt, ...rest } = row;
       void radiusM;
       void completedJobs;
@@ -429,6 +463,7 @@ async searchProviders(query: ProviderSearchQuery, customerId?: string): Promise<
       // from the prior is not something anybody has said about them.
       return { ...rest, pricePaisa: paisaToNumber(row.pricePaisa), ratingScore: row.ratingCount === 0 ? null : ratingScoreHundredths / 100, ratingCount: row.ratingCount, signals, missingSignals };
     });
+    return paged(items, scored.length, window);
   }
 
   async getProviderDetail(providerId: string): Promise<ProviderDetail> {

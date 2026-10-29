@@ -108,7 +108,7 @@ export class PlansService {
   }
 
   /** Admin: list all plans including inactive ones and subscription counts. */
-  async adminListPlans() {
+  async adminListPlans(onlyId?: string) {
     const plans = await this.prisma.$queryRaw<
       {
         id: string;
@@ -127,6 +127,7 @@ export class PlansService {
           COUNT(s.id) FILTER (WHERE s.status = 'ACTIVE')::bigint as "activeSubscriptionsCount"
         FROM plans p
         LEFT JOIN subscriptions s ON s.plan_id = p.id
+        ${onlyId === undefined ? Prisma.empty : Prisma.sql`WHERE p.id = ${onlyId}::uuid`}
         GROUP BY p.id
         ORDER BY p.created_at DESC`
     );
@@ -137,11 +138,12 @@ export class PlansService {
           {
             serviceId: number;
             serviceNameEn: string;
+            serviceNameUr: string;
             visitsIncluded: number;
             intervalDays: number;
           }[]
         >(
-          Prisma.sql`SELECT ps.service_id as "serviceId", s.name_en as "serviceNameEn",
+          Prisma.sql`SELECT ps.service_id as "serviceId", s.name_en as "serviceNameEn", s.name_ur as "serviceNameUr",
               ps.visits_included as "visitsIncluded", ps.interval_days as "intervalDays"
             FROM plan_services ps
             JOIN services s ON s.id = ps.service_id
@@ -156,6 +158,13 @@ export class PlansService {
         };
       })
     );
+  }
+
+  /** BE-026: one plan as the admin sees it - inactive plans included, with `createdAt` and `activeSubscriptionsCount`. 404 only when the plan does not exist. */
+  async adminGetPlan(id: string) {
+    const plan = (await this.adminListPlans(id))[0];
+    if (plan === undefined) throw notFound('Plan');
+    return plan;
   }
 
   /** Admin: create a new maintenance plan. */

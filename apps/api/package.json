@@ -42,6 +42,7 @@
     "api:openapi": "dotenv -e ../../.env -- tsx scripts/api-openapi.ts",
     "api:handoff": "dotenv -e ../../.env -- tsx scripts/api-handoff-index.ts",
     "check:ci-env": "tsx scripts/check-ci-env.ts",
+    "storage:buckets": "dotenv -e ../../.env -- node scripts/supabase-buckets.mjs",
     "test:supabase": "dotenv -e ../../.env -- tsx scripts/test-supabase.ts",
     "dev:at": "dotenv -e ../../.env -- tsx scripts/dev-at.ts"
   },

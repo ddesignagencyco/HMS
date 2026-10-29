@@ -95,7 +95,8 @@ export class VerificationLinkService implements OnModuleInit {
       const templates = await this.prisma.$queryRaw<{ body: string }[]>(
         Prisma.sql`SELECT body FROM notification_templates WHERE event_key = 'verification.link' AND channel = 'SMS' AND locale = ${fact.locale} AND is_active`
       );
-      const link = `${this.environment.values.PUBLIC_BASE_URL}/v/${token}`;
+      // BE-026: opens in the customer's own language (users.locale), as checkoutReturnUrl already does.
+      const link = `${this.environment.values.PUBLIC_BASE_URL}/${fact.locale === 'ur' ? 'ur' : 'en'}/v/${token}`;
       const body = (templates[0]?.body ?? 'Confirm your booking {{bookingRef}} at {{link}} using code {{otp}}.').replace('{{bookingRef}}', fact.code).replace('{{link}}', link).replace('{{otp}}', otp);
       const meta = { event: 'verification.link', reason };
       await this.sms.send(fact.phone, body, meta);

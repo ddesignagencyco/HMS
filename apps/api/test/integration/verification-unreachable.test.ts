@@ -357,3 +357,22 @@ describe('SHM-054 / SHM-059: Tier B', () => {
     }
   });
 });
+
+describe('BE-026: the texted short link opens in the customer\'s own language', () => {
+  const linkPath = async (locale: 'en' | 'ur'): Promise<string> => {
+    const job = await completedJob(app, provider, { mode: 'ONLINE' });
+    await prisma.$executeRaw(Prisma.sql`UPDATE users SET locale = ${locale} WHERE id = ${job.customer.id}::uuid`);
+    expect((await app.get(VerificationLinkService).issue(job.id, job.verificationId, 'UNREACHABLE')).issued).toBe(true);
+    const message = (await inboxFor(job.customer.phoneE164)).find(entry => entry.channel === 'SMS' && /\/v\//.test(entry.body));
+    return /https?:\/\/\S*\/v\/[A-Za-z0-9_-]+/.exec(message?.body ?? '')?.[0] ?? '';
+  };
+
+  it('an Urdu customer gets /ur/v/:token and an English one gets /en/v/:token, and the token still resolves', async () => {
+    const urdu = await linkPath('ur');
+    expect(urdu).toMatch(/\/ur\/v\/[A-Za-z0-9_-]+$/);
+    const english = await linkPath('en');
+    expect(english).toMatch(/\/en\/v\/[A-Za-z0-9_-]+$/);
+    const token = /\/v\/([A-Za-z0-9_-]+)$/.exec(urdu)![1];
+    expect((await callApi(app, `/v/${token}`)).status).toBe(200);
+  });
+});

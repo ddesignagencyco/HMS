@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseIntPipe, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { AcceptedLocale, type Locale } from '../common/locale.js';
 import { ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { providerServiceUpsertSchema } from './catalogue.schemas.js';
@@ -26,9 +27,9 @@ export class ProviderServicesController {
     description: "Adds this service to the list you offer, at the price you set (must fall within the service's configured band). Offering a new service starts out pending admin approval; changing the price on one you already offer does not reset an existing approval. A service you stopped offering and then add back at the same price keeps the approval it had; at a different price it needs approval again."
   })
   @ApiZodBody(providerServiceUpsertSchema, { default: { summary: 'Set a price', value: { pricePaisa: 250_000 } } })
-  async upsertMine(@Param('serviceId', ParseIntPipe) serviceId: number, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
+  async upsertMine(@Param('serviceId', ParseIntPipe) serviceId: number, @Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal, @AcceptedLocale() locale: Locale) {
     const { pricePaisa } = parseWith(providerServiceUpsertSchema, body);
-    return this.providerServices.upsertMine(principal.userId, serviceId, pricePaisa);
+    return this.providerServices.upsertMine(principal.userId, serviceId, pricePaisa, locale);
   }
 
   @Delete(':serviceId')

@@ -9,7 +9,7 @@ import { OBJECT_STORAGE } from '../integrations/integrations.module.js';
 import type { ObjectStoragePort } from '../integrations/ports.js';
 import { AuditService } from '../platform/audit.service.js';
 import { cnicBlindIndex, decryptCnic, encryptCnic, normalizeCnic } from './cnic-vault.js';
-import type { DocumentPresignInput, DocumentReviewInput, DocumentSubmitInput } from './provider-documents.schemas.js';
+import { documentContentTypes, type DocumentPresignInput, type DocumentReviewInput, type DocumentSubmitInput } from './provider-documents.schemas.js';
 
 const BUCKET = 'documents';
 /** SHM-022: "viewing via 5-min signed URLs". The storage mock rejects a TTL outside 1..900. */
@@ -19,6 +19,17 @@ const MAX_VIDEO_BYTES = 52_428_800;
 const PRISMA_UNIQUE_VIOLATION = 'P2002';
 
 const maxBytesFor = (contentType: string): number => (contentType.startsWith('video/') ? MAX_VIDEO_BYTES : MAX_DOCUMENT_BYTES);
+
+/** Why an uploaded object cannot be a provider document, or null when it can. Exported for the unit test. */
+export const uploadProblem = (stored: { size: number; contentType: string }): string | null => {
+  // A parameterised type (`image/jpeg; charset=...`) is still that type.
+  const type = stored.contentType.split(';')[0]?.trim().toLowerCase() ?? '';
+  if (!(documentContentTypes as readonly string[]).includes(type)) return `A document must be one of ${documentContentTypes.join(', ')}; the uploaded file is ${type === '' ? 'of an unknown type' : type}`;
+  if (stored.size <= 0) return 'The uploaded document is empty';
+  const maxBytes = maxBytesFor(type);
+  if (stored.size > maxBytes) return `The uploaded document is larger than the ${maxBytes} byte limit`;
+  return null;
+};
 
 export type ProviderDocumentRow = {
   id: string;
@@ -227,7 +238,16 @@ export class ProviderDocumentsService {
   private async resolveStorage(providerId: string, input: DocumentSubmitInput): Promise<string> {
     if (input.storageKey !== undefined) {
       if (!input.storageKey.startsWith(`${providerId}/`)) throw new DomainError('FORBIDDEN', 'That upload key belongs to another provider');
-      if ((await this.storage.head({ key: input.storageKey, bucket: BUCKET })) === null) throw notFound('Uploaded file');
+      const stored = await this.storage.head({ key: input.storageKey, bucket: BUCKET });
+      if (stored === null) throw notFound('Uploaded file');
+      // BE-006 (3.1 / 4.9): a signed upload URL carries no size or type limit of its own (Supabase's createSignedUploadUrl takes none), so
+      // the bytes that actually landed are checked here, before a row vouches for them. A rejected object is removed so it cannot be
+      // confirmed later or sit in the bucket unreferenced.
+      const problem = uploadProblem(stored);
+      if (problem !== null) {
+        await this.storage.remove({ key: input.storageKey, bucket: BUCKET }).catch(() => undefined);
+        throw new DomainError('UPLOAD_REJECTED', problem);
+      }
       return input.storageKey;
     }
     const contentType = input.contentType;

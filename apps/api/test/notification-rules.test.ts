@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOOKING_TRANSITIONS } from '@smart-home/domain';
-import { NO_RULE_EVENTS, RULES } from '../src/notification/notification.service.js';
+import { NO_RULE_EVENTS, RULES, TEMPLATE_VARIABLES } from '../src/notification/notification.service.js';
 
 /**
  * Every event type the API emits, **derived from the source**, not maintained by hand.
@@ -125,5 +125,19 @@ describe('notification planner completeness (FR-NT-01)', () => {
       }
     }
     expect(unroutable).toEqual([]);
+  });
+
+  /**
+   * BE-012 (backend_requirement 3.7): the "confirm your job" nudge. A booking enters AWAITING_VERIFICATION through `booking.handToVerification`; the
+   * customer must be told by SMS as well as in-app (an in-app row is invisible to someone who never opens the app), and the text must carry
+   * `{{confirmLink}}` - the deep link to /account/bookings/:id#confirm-work - in both languages and on both channels.
+   */
+  it('BE-012: handToVerification tells the customer on both channels and the templates carry the confirm-work link', () => {
+    expect(RULES['booking.handToVerification']).toEqual([{ recipient: 'customer', eventKey: 'booking.awaiting_verification', channels: ['IN_APP', 'SMS'] }]);
+    expect(TEMPLATE_VARIABLES as readonly string[]).toContain('confirmLink');
+    const seed = readFileSync(new URL('../../../packages/db/seed/notificationTemplates.ts', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), 'utf8');
+    const awaiting = seed.split(/\r?\n/).filter(line => line.includes("t('booking.awaiting_verification'"));
+    expect(awaiting.map(line => /'(IN_APP|SMS)'/.exec(line)?.[1]).sort()).toEqual(['IN_APP', 'SMS']);
+    for (const line of awaiting) expect(line.match(/\{\{confirmLink\}\}/g)?.length).toBe(2); // English and Urdu body
   });
 });

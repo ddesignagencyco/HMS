@@ -3,6 +3,7 @@ import { Body, Controller, Get, HttpCode, Inject, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { AcceptedLocale, type Locale } from '../common/locale.js';
 import { ApiZodBody } from '../common/swagger.js';
 import { parseWith } from '../common/validation.js';
 import { ProviderMoneyService } from './provider-money.service.js';
@@ -33,7 +34,7 @@ export class ProviderMoneyController {
     description: 'Starts an online payment towards your commission debt (all of it unless you give an amount) and returns where to pay. The moment the payment is confirmed your wallet is credited and, if that brings you under the ceiling, you receive offers again.'
   })
   @ApiZodBody(payDebtSchema, { default: { summary: 'Pay the whole debt', value: {} } })
-  async payDebt(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    return this.money.payDebt(principal.userId, parseWith(payDebtSchema, body ?? {}).amountPaisa);
+  async payDebt(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal, @AcceptedLocale() locale: Locale) {
+    return this.money.payDebt(principal.userId, parseWith(payDebtSchema, body ?? {}).amountPaisa, locale);
   }
 }

@@ -34,8 +34,8 @@ export const availabilityReplaceSchema = z
 
 export const timeOffCreateSchema = z
   .object({
-    start: z.string().datetime(),
-    end: z.string().datetime(),
+    start: z.string().datetime({ offset: true }),
+    end: z.string().datetime({ offset: true }),
     reason: z.string().trim().max(300).optional()
   })
   .strict()

@@ -1,3 +1,4 @@
+import { pick, rupees, type Locale } from '../common/locale.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { paisaToNumber } from '@smart-home/domain';
@@ -28,14 +29,14 @@ export class ProviderServicesService {
     return raw.map(toRow);
   }
 
-  async upsertMine(providerId: string, serviceId: number, pricePaisa: number): Promise<ProviderServiceRow> {
+  async upsertMine(providerId: string, serviceId: number, pricePaisa: number, locale: Locale = 'en'): Promise<ProviderServiceRow> {
     const services = await this.prisma.$queryRaw<{ minPricePaisa: bigint; maxPricePaisa: bigint }[]>(
       Prisma.sql`SELECT min_price_paisa as "minPricePaisa", max_price_paisa as "maxPricePaisa" FROM services WHERE id = ${serviceId} AND is_active = true`
     );
     const service = services[0];
     if (service === undefined) throw notFound('Service');
     if (pricePaisa < paisaToNumber(service.minPricePaisa) || pricePaisa > paisaToNumber(service.maxPricePaisa)) {
-      throw validationFailed([{ path: 'pricePaisa', code: 'out_of_band', message: `pricePaisa must be between ${service.minPricePaisa} and ${service.maxPricePaisa} for this service` }]);
+      throw validationFailed([{ path: 'pricePaisa', code: 'out_of_band', message: pick(locale, { en: `The price must be between ${rupees(service.minPricePaisa)} and ${rupees(service.maxPricePaisa)} for this service`, ur: `اس سروس کی قیمت ${rupees(service.minPricePaisa, 'ur')} اور ${rupees(service.maxPricePaisa, 'ur')} کے درمیان ہونی چاہیے` }) }]);
     }
     // BE-031 (decision): a service the provider removed and then re-adds at the SAME price keeps the approval it had when it was
     // removed. Nothing the admin reviewed has changed (same service, same price), so making them approve it again would be busywork

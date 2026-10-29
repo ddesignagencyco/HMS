@@ -67,7 +67,7 @@ export class ProviderController {
   @Post('time-off')
   @HttpCode(201)
   @PolicyDecorator({ roles: ['PROVIDER'] })
-  @ApiOperation({ summary: 'Record a leave period', description: 'Blocks off a date range so no job can be scheduled against it. Overlapping an existing leave period is rejected.' })
+  @ApiOperation({ summary: 'Record a leave period', description: 'Blocks off a date range so no job can be scheduled against it. Overlapping an existing leave period is rejected. start and end are ISO datetimes; an offset is accepted (2026-12-25T00:00:00+05:00) and stored as the instant it names.' })
   @ApiZodBody(timeOffCreateSchema, { default: { summary: 'A few days off', value: { start: '2027-01-10T00:00:00.000Z', end: '2027-01-12T00:00:00.000Z', reason: 'Eid holidays' } } })
   async createTimeOff(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return this.timeOff.createMine(principal.userId, parseWith(timeOffCreateSchema, body));

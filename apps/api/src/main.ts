@@ -36,6 +36,12 @@ export const bootstrap = async (): Promise<HttpApplication> => {
 const isEntrypoint = process.argv[1] !== undefined && import.meta.url === new URL(`file://${process.argv[1].replaceAll('\\', '/')}`).href;
 
 if (isEntrypoint) {
+  // BE-017: Node's default for an unhandled promise rejection is to kill the process, and every in-flight request with it - which the web's
+  // proxy then reports as a 500 for whatever the user was doing. A rejection nobody awaited is a bug to be logged and fixed, not a reason to
+  // take everyone's session down, so it is recorded loudly and the process carries on. (uncaughtException keeps its default: that state is unsafe.)
+  process.on('unhandledRejection', (reason: unknown) => {
+    process.stderr.write(`${JSON.stringify({ level: 'error', msg: 'unhandledRejection', err: reason instanceof Error ? (reason.stack ?? reason.message) : String(reason) })}\n`);
+  });
   void bootstrap().catch((error: unknown) => {
     process.stderr.write(`${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
     process.exit(1);

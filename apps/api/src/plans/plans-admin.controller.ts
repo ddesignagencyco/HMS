@@ -54,10 +54,10 @@ export class PlansAdminController {
   @PolicyDecorator({ roles: ['ADMIN'], totpRequired: true })
   @ApiOperation({
     summary: 'Get plan details (admin)',
-    description: 'Returns complete plan definition.'
+    description: 'The plan as an admin sees it: inactive plans are returned too (404 only for a plan that does not exist), with createdAt and activeSubscriptionsCount alongside the public fields.'
   })
   async get(@Param('id', ParseUUIDPipe) id: string) {
-    return this.plans.getPublicPlan(id);
+    return this.plans.adminGetPlan(id);
   }
 
   @Patch(':id')

@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { addBusinessMinutes, paisaToNumber, selfVerifyDecision, selfVerifyProblems } from '@smart-home/domain';
 import { DomainError, notFound } from '../common/domain-error.js';
+import { pick, type Locale } from '../common/locale.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AppClock } from '../platform/app-clock.js';
 import { SettingsService } from '../platform/settings.service.js';
@@ -22,7 +23,8 @@ export type SelfVerifyResult = {
   booking: BookingRow;
 };
 
-const ESCALATED_REASON = "You've already told us about a problem with this job. One of our team will call you.";
+const escalatedReason = (locale: Locale): string =>
+  pick(locale, { en: "You've already told us about a problem with this job. One of our team will call you.", ur: 'آپ ہمیں اس کام کے بارے میں مسئلہ بتا چکے ہیں۔ ہماری ٹیم کا ایک فرد آپ کو کال کرے گا۔' });
 
 /** Everything `availability()` needs to answer, gathered in one place so the GET and the POST cannot disagree about it. */
 type Verifiability = { status: string; callInProgress: boolean; escalated: boolean; alreadyReleased: boolean; enabled: boolean };
@@ -73,11 +75,11 @@ export class VerificationSelfService {
    * are both things a customer deserves to read, and a client handed only a status code has nothing to
    * show them.
    */
-  async describe(bookingId: string, customerId: string) {
+  async describe(bookingId: string, customerId: string, locale: Locale = 'en') {
     const rows = await this.prisma.$queryRaw<
       { code: string; status: string; paymentMode: string; customerId: string; serviceName: string; providerFirstName: string | null; amountPaisa: bigint | null; alreadyReleased: boolean }[]
     >(
-      Prisma.sql`SELECT b.code, b.status::text as status, b.payment_mode::text as "paymentMode", b.customer_id as "customerId", s.name_en as "serviceName",
+      Prisma.sql`SELECT b.code, b.status::text as status, b.payment_mode::text as "paymentMode", b.customer_id as "customerId", CASE WHEN ${locale} = 'ur' THEN coalesce(nullif(s.name_ur, ''), s.name_en) ELSE s.name_en END as "serviceName",
           pu.first_name as "providerFirstName", b.final_amount_paisa as "amountPaisa", b.released_at IS NOT NULL as "alreadyReleased"
         FROM bookings b JOIN services s ON s.id = b.service_id LEFT JOIN users pu ON pu.id = b.provider_id WHERE b.id = ${bookingId}::uuid`
     );
@@ -87,13 +89,16 @@ export class VerificationSelfService {
     if (row === undefined || row.customerId !== customerId) throw notFound('Booking');
 
     const call = await this.openCall(this.prisma, bookingId);
-    const { canSubmit, blockedReason } = this.availability({
-      status: row.status,
-      callInProgress: call.inProgress,
-      escalated: call.escalated,
-      alreadyReleased: row.alreadyReleased,
-      enabled: await this.enabled()
-    });
+    const { canSubmit, blockedReason } = this.availability(
+      {
+        status: row.status,
+        callInProgress: call.inProgress,
+        escalated: call.escalated,
+        alreadyReleased: row.alreadyReleased,
+        enabled: await this.enabled()
+      },
+      locale
+    );
 
     return {
       submission: await this.submissionOf(bookingId),
@@ -105,12 +110,12 @@ export class VerificationSelfService {
       canSubmit,
       blockedReason,
       questions: [
-        { key: 'workCompleted', label: 'Was the work completed?', answers: ['FULL', 'PARTIAL', 'NONE'] },
-        { key: 'ratings', label: 'Rate the quality, punctuality, conduct and cleanliness, 1 to 5 each' },
-        { key: 'extraChargeDemanded', label: 'Did the provider ask for any money beyond the agreed price?', answers: [true, false] },
+        { key: 'workCompleted', label: pick(locale, { en: 'Was the work completed?', ur: 'کیا کام مکمل ہوا؟' }), answers: ['FULL', 'PARTIAL', 'NONE'] },
+        { key: 'ratings', label: pick(locale, { en: 'Rate the quality, punctuality, conduct and cleanliness, 1 to 5 each', ur: 'کام کے معیار، وقت کی پابندی، رویّے اور صفائی کو 1 سے 5 تک درجہ دیں' }) },
+        { key: 'extraChargeDemanded', label: pick(locale, { en: 'Did the provider ask for any money beyond the agreed price?', ur: 'کیا سروس فراہم کرنے والے نے طے شدہ قیمت سے زیادہ رقم مانگی؟' }), answers: [true, false] },
         {
           key: 'choice',
-          label: 'How would you like to leave this?',
+          label: pick(locale, { en: 'How would you like to leave this?', ur: 'آپ اس کام کو کس طرح ختم کرنا چاہیں گے؟' }),
           answers: ['SATISFIED', 'WITH_ISSUE', 'NOT_ACCEPTABLE']
         }
       ]
@@ -131,7 +136,7 @@ export class VerificationSelfService {
     return rows[0] ?? null;
   }
 
-  async submit(bookingId: string, customerId: string, input: SelfVerifyInput): Promise<SelfVerifyResult> {
+  async submit(bookingId: string, customerId: string, input: SelfVerifyInput, locale: Locale = 'en'): Promise<SelfVerifyResult> {
     const problems = selfVerifyProblems(input, input.outcome);
     if (problems.length > 0) {
       throw new DomainError('VALIDATION_FAILED', 'This cannot be submitted as it stands', problems.map(problem => ({ path: problem.field, code: 'invalid', message: problem.message })));
@@ -147,17 +152,20 @@ export class VerificationSelfService {
       // Re-checked here, not trusted from the row read a moment ago: a flag is not a lock, and between
       // the customer opening the form and pressing submit an agent may have claimed the call.
       const openCall = await this.openCall(tx, bookingId);
-      const available = this.availability({
-        status: bookingRow.status,
-        callInProgress: openCall.inProgress,
-        escalated: openCall.escalated,
-        alreadyReleased: bookingRow.alreadyReleased,
-        enabled: await this.enabled()
-      });
+      const available = this.availability(
+        {
+          status: bookingRow.status,
+          callInProgress: openCall.inProgress,
+          escalated: openCall.escalated,
+          alreadyReleased: bookingRow.alreadyReleased,
+          enabled: await this.enabled()
+        },
+        locale
+      );
       if (!available.canSubmit) {
         // 409 rather than 404: the job plainly exists and belongs to this customer, so there is nothing
         // to hide â€” and the detail *is* the reason, which is the one thing the client must show.
-        throw new DomainError('CONFLICT', available.blockedReason ?? 'This job cannot be confirmed right now');
+        throw new DomainError('CONFLICT', available.blockedReason ?? pick(locale, { en: 'This job cannot be confirmed right now', ur: 'اس کام کی تصدیق ابھی نہیں ہو سکتی' }));
       }
 
       // The open verification for this visit, locked. `FOR UPDATE` rather than `SKIP LOCKED` on
@@ -247,25 +255,25 @@ export class VerificationSelfService {
       outcome: decided.outcome,
       bookingId,
       bookingStatus: decided.after,
-      message: this.messageFor(decided.outcome, booking),
+      message: this.messageFor(decided.outcome, booking, locale),
       booking
     };
   }
 
   /** What the customer is told, which is not the same thing for all three answers. */
-  private messageFor(outcome: SelfVerifyOutcomeName, booking: BookingRow): string {
+  private messageFor(outcome: SelfVerifyOutcomeName, booking: BookingRow, locale: Locale): string {
     if (outcome === 'ESCALATED') {
-      return 'Nothing has been released. One of our team will call you about this â€” your money stays with us until the job is settled.';
+      return pick(locale, { en: 'Nothing has been released. One of our team will call you about this. Your money stays with us until the job is settled.', ur: 'کچھ بھی جاری نہیں کیا گیا۔ ہماری ٹیم کا ایک فرد اس بارے میں آپ کو کال کرے گا۔ کام کے تصفیے تک آپ کی رقم ہمارے پاس محفوظ رہے گی۔' });
     }
     // Cash never reaches PAYMENT_RELEASED from here: the form authorises the handover and the provider
     // confirms they were paid, exactly as it works after an agent's call.
     if (booking.paymentMode === 'CASH' && booking.status !== 'PAYMENT_RELEASED') {
-      return 'Thank you. The provider can now collect the payment from you, and they have been notified.';
+      return pick(locale, { en: 'Thank you. The provider can now collect the payment from you, and they have been notified.', ur: 'شکریہ۔ اب سروس فراہم کرنے والا آپ سے ادائیگی وصول کر سکتا ہے، اور اسے اطلاع دے دی گئی ہے۔' });
     }
     if (outcome === 'CONFIRMED_WITH_ISSUE') {
-      return 'Thank you. The payment has been released and your provider has been told about the problem you reported.';
+      return pick(locale, { en: 'Thank you. The payment has been released and your provider has been told about the problem you reported.', ur: 'شکریہ۔ ادائیگی جاری کر دی گئی ہے اور آپ کے بتائے ہوئے مسئلے کی اطلاع سروس فراہم کرنے والے کو دے دی گئی ہے۔' });
     }
-    return 'Thank you. The payment has been released to the provider and your rating has been published.';
+    return pick(locale, { en: 'Thank you. The payment has been released to the provider and your rating has been published.', ur: 'شکریہ۔ ادائیگی سروس فراہم کرنے والے کو جاری کر دی گئی ہے اور آپ کی ریٹنگ شائع ہو گئی ہے۔' });
   }
 
   /**
@@ -276,17 +284,18 @@ export class VerificationSelfService {
    * a return visit, but the customer has already paid and already been asked to rate. Offering them a
    * "release payment" form there would promise money that moved weeks ago.
    */
-  private availability(state: Verifiability): { canSubmit: boolean; blockedReason: string | null } {
-    if (!state.enabled) return { canSubmit: false, blockedReason: 'Self-confirmation is switched off. Our team will call you to confirm this job.' };
-    if (state.alreadyReleased) return { canSubmit: false, blockedReason: 'This job has already been paid for.' };
-    if (state.status !== 'AWAITING_VERIFICATION') return { canSubmit: false, blockedReason: 'This job has already been confirmed.' };
-    if (state.callInProgress) return { canSubmit: false, blockedReason: 'One of our team is calling you about this job right now.' };
+  private availability(state: Verifiability, locale: Locale): { canSubmit: boolean; blockedReason: string | null } {
+    const blocked = (en: string, ur: string) => ({ canSubmit: false, blockedReason: pick(locale, { en, ur }) });
+    if (!state.enabled) return blocked('Self-confirmation is switched off. Our team will call you to confirm this job.', 'خود تصدیق بند ہے۔ ہماری ٹیم اس کام کی تصدیق کے لیے آپ کو کال کرے گی۔');
+    if (state.alreadyReleased) return blocked('This job has already been paid for.', 'اس کام کی ادائیگی ہو چکی ہے۔');
+    if (state.status !== 'AWAITING_VERIFICATION') return blocked('This job has already been confirmed.', 'اس کام کی تصدیق ہو چکی ہے۔');
+    if (state.callInProgress) return blocked('One of our team is calling you about this job right now.', 'ہماری ٹیم کا ایک فرد اس وقت اس کام کے بارے میں آپ کو کال کر رہا ہے۔');
     // Single-use per job: once the customer has escalated (not acceptable, no work done, extra charge) the case belongs to a person, and a second answer
     // from the form could release the money and publish a rating on a case at the front of the agent queue.
-    if (state.escalated) return { canSubmit: false, blockedReason: ESCALATED_REASON };
+    if (state.escalated) return { canSubmit: false, blockedReason: escalatedReason(locale) };
     // The form is single-use per job: once the customer has said "not acceptable" (or reported no work / an extra charge) the case belongs to a person, and a
     // second answer from the form could release the money and publish a rating on a case sitting at the front of the agent queue.
-    if (state.escalated) return { canSubmit: false, blockedReason: ESCALATED_REASON };
+    if (state.escalated) return { canSubmit: false, blockedReason: escalatedReason(locale) };
     return { canSubmit: true, blockedReason: null };
   }
 

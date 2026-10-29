@@ -1,6 +1,7 @@
 import { Controller, Get, Inject, Param, ParseUUIDPipe, Query, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ACCESS_TOKEN_VERIFIER, type AccessTokenVerifier } from '../common/access-token.port.js';
+import { ApiPageQuery } from '../common/paging.js';
 import { notFound } from '../common/domain-error.js';
 import { Public, type AuthenticatedRequest } from '../common/policy.js';
 import { ApiQueryField } from '../common/swagger.js';
@@ -38,7 +39,10 @@ export class SearchController {
     description:
       "Starts from a service (not a person): pass the service's slug and either the customer's coordinates or `addressId`. Returns only approved providers with an approved offer for that service, whose configured radius covers the given point, ranked by a weighted blend of rating and distance (`ranking.weights`, rating 0.35 and distance 0.25 by default), then by distance. `ratingScore` is the provider's weighted score, or null when nobody has rated them yet — rank on it, do not render it as a rating. The optional filters are applied *before* ranking, so a narrowed search really is narrowed: `minExperienceYears`, `minCompletedJobs`, `minPricePaisa`/`maxPricePaisa`, `availableToday` (a real free slot later today, local time) and `verifiedDocsOnly` (at least one document verified)."
   })
-  @ApiQueryField('serviceSlug', { required: true, description: 'Which service to find providers for, e.g. "leak-repair" (see GET /catalogue/services/{slug}).' })
+  @ApiQueryField('serviceSlug', { required: false, description: 'Which service to find providers for, e.g. "leak-repair" (see GET /catalogue/services/{slug}). Optional: without it every provider in range is listed once, at their lowest approved price, ranked across services.' })
+  @ApiQueryField('sort', { required: false, description: 'distance | rating | price_asc | price_desc | experience. Omitted = the weighted ranking. Ties fall back to the weighted ranking.' })
+  @ApiQueryField('minRating', { required: false, type: 'number', description: 'Only providers whose published rating (0-5) is at least this. Unrated providers are excluded when it is set.' })
+  @ApiPageQuery()
   @ApiQueryField('lat', {
     required: false,
     type: 'number',
@@ -57,7 +61,7 @@ export class SearchController {
   @ApiQueryField('availableToday', { required: false, type: 'boolean', description: 'Only providers with a free slot later today in their own local time (FR-SR-05).' })
   @ApiQueryField('verifiedDocsOnly', { required: false, type: 'boolean', description: 'Only providers with at least one verified document (FR-SR-07).' })
   async searchProviders(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
-    return { items: await this.search.searchProviders(parseWith(providerSearchQuerySchema, query), await this.customerOf(request)) };
+    return this.search.searchProviders(parseWith(providerSearchQuerySchema, query), await this.customerOf(request));
   }
 
   @Get('providers/:providerId/slots')

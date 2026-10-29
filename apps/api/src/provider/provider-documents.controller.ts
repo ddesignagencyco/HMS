@@ -42,7 +42,7 @@ export class ProviderDocumentsController {
   @ApiOperation({
     summary: 'Submit an identity document',
     description:
-      'Records a CNIC front/back, trade certificate or optional character certificate. Send either the bytes inline (contentBase64) or a storageKey from POST /uploads/presign. A cnicNumber is encrypted at rest and never returned by any endpoint — only whether one is on file and whether it has been verified. The same CNIC cannot be registered twice.'
+      'Records a CNIC front/back, trade certificate or optional character certificate. Send either the bytes inline (contentBase64) or a storageKey from POST /uploads/presign. A cnicNumber is encrypted at rest and never returned by any endpoint — only whether one is on file and whether it has been verified. The same CNIC cannot be registered twice. Inline bodies may be up to 8 MB (about a 5 MiB file once base64-encoded); anything larger answers 413 problem+json, and video documents (up to 50 MiB) must go through POST /uploads/presign. A storageKey is checked on confirm: the stored object must be an allowed type and within its size limit (5 MiB, or 50 MiB for video), otherwise 422 UPLOAD_REJECTED and the object is removed.'
   })
   @ApiZodBody(documentSubmitSchema, { default: { summary: 'CNIC front, uploaded inline', value: { docType: 'CNIC_FRONT', contentType: 'image/jpeg', contentBase64: 'iVBORw0KGgoAAAANSUhEUg==', cnicNumber: '35202-1234567-1' } } })
   async submit(@Body() body: unknown, @CurrentPrincipal() principal: AuthenticatedPrincipal) {

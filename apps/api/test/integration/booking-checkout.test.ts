@@ -445,6 +445,21 @@ describe('SHM-038 / SHM-039: offers, silence, refunds and cancel fees', () => {
     expect(read.body.status).toBe('UNFULFILLED');
   });
 
+  it('BE-026: a decline accepts an optional reason, recorded for admins; a decline with no body still works', async () => {
+    const { booking } = await placed('CASH');
+    const offer = (await offerFor(booking.id))[0]!;
+    const tooLong = await callApi(app, `/provider/offers/${offer.id}/decline`, bearer(setup.providerAccessToken, postJson({ reason: 'x'.repeat(501) })));
+    expect(tooLong.status).toBe(422);
+    const unknown = await callApi(app, `/provider/offers/${offer.id}/decline`, bearer(setup.providerAccessToken, postJson({ why: 'nope' })));
+    expect(unknown.status).toBe(422);
+    const declined = await callApi(app, `/provider/offers/${offer.id}/decline`, bearer(setup.providerAccessToken, postJson({ reason: 'Too far at that hour.' })));
+    expect(declined.status).toBe(200);
+    const audit = await prisma.$queryRaw<{ reason: string | null }[]>(
+      Prisma.sql`SELECT after->>'reason' as reason FROM audit_log WHERE action = 'offer.decline' AND entity_id = ${offer.id}`
+    );
+    expect(audit.map(row => row.reason)).toEqual(['Too far at that hour.']);
+  });
+
   it('cascades to the next-nearest provider when the first one declines', async () => {
     const second = await onboardedProvider({ lat: here.lat + 0.0005, lng: here.lng + 0.0005 });
     const { customer, booking } = await placed('CASH');

@@ -3,6 +3,19 @@ import { BOOKING_STATUS_VALUES } from '@smart-home/domain';
 import { z } from 'zod';
 import { pageFields } from '../common/paging.js';
 
+/** BE-022: a photo of the problem sent with the booking itself. Images only; the evidence route stays the way to add more later. */
+export const createPhotoContentTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
+export const MAX_CREATE_PHOTOS = 5;
+
+export const bookingCreatePhotoSchema = z
+  .object({
+    clientUuid: z.string().uuid(),
+    contentType: z.enum(createPhotoContentTypes),
+    contentBase64: z.string().min(1),
+    capturedAt: z.string().datetime().optional()
+  })
+  .strict();
+
 export const bookingCreateSchema = z
   .object({
     /** Leave out to let the platform offer the job to ranked providers in turn (auto-assign, FR-SR-07). */
@@ -17,6 +30,8 @@ export const bookingCreateSchema = z
     paymentMode: z.enum(['CASH', 'ONLINE']).default('CASH'),
     isEmergency: z.boolean().default(false),
     couponCode: z.string().trim().min(1).max(40).optional(),
+    /** BE-022: up to 5 photos of the problem, stored atomically with the booking (all or nothing). Optional; omit it and nothing changes. */
+    photos: z.array(bookingCreatePhotoSchema).max(MAX_CREATE_PHOTOS).optional(),
     /** Booking for someone who is not the customer. Requires the contact below. */
     onBehalfOf: z
       .object({

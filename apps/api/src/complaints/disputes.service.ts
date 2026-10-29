@@ -42,6 +42,19 @@ export type ResolveInput = {
  * what is held in escrow between provider and customer; the split always adds up to exactly what was held, and the postings, the refund, the booking's new
  * state, the dispute's record and both parties' notices all commit together or not at all.
  */
+/**
+ * BE-026 (decision): the provider's view of a dispute shows the customer as "first name + last initial" (`Ayesha K.`), never the full name. The rest of
+ * the provider surface already masks customer identity (contact details are only released inside the booking window), and a provider needs to recognise
+ * the customer in a dispute, not to be able to look them up. Admins see the full name.
+ */
+export const maskedCustomerName = (fullName: string): string => {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0];
+  if (first === undefined) return '';
+  const last = parts.length > 1 ? parts[parts.length - 1] : undefined;
+  return last === undefined ? first : `${first} ${[...last][0]}.`;
+};
+
 @Injectable()
 export class DisputesService implements OnModuleInit {
   constructor(
@@ -131,7 +144,7 @@ export class DisputesService implements OnModuleInit {
 
     return {
       dispute: { id: dispute.id, origin: dispute.origin, status: dispute.status, replyDueAt: dispute.replyDueAt, providerReply: dispute.providerReply, providerRepliedAt: dispute.providerRepliedAt, resolution: dispute.resolution, releasePaisa: money(dispute.releasePaisa), refundPaisa: money(dispute.refundPaisa), note: dispute.note, resolvedAt: dispute.resolvedAt, createdAt: dispute.createdAt, complaintId: dispute.complaintId },
-      booking: { id: bookingId, code: booking.code, status: booking.status, paymentMode: booking.paymentMode, serviceName: booking.serviceName, customerName: booking.customerName, providerName: booking.providerName, scheduledStart: booking.scheduledStart, problemText: booking.problemText, approvedTotalPaisa: paisaToNumber(booking.approved), finalAmountPaisa: money(booking.final), discountPaisa: paisaToNumber(booking.discount), visitNo: booking.visitNo },
+      booking: { id: bookingId, code: booking.code, status: booking.status, paymentMode: booking.paymentMode, serviceName: booking.serviceName, customerName: forAdmin ? booking.customerName : maskedCustomerName(booking.customerName), providerName: booking.providerName, scheduledStart: booking.scheduledStart, problemText: booking.problemText, approvedTotalPaisa: paisaToNumber(booking.approved), finalAmountPaisa: money(booking.final), discountPaisa: paisaToNumber(booking.discount), visitNo: booking.visitNo },
       money: { escrowHeldPaisa: paisaToNumber(held), finalAmountPaisa: paisaToNumber(finalPaisa), excessPaisa: paisaToNumber(held > finalPaisa ? held - finalPaisa : 0n) },
       evidenceFloor: {
         startCodeVerifiedAt: booking.startedAt,

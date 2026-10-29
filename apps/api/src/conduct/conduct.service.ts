@@ -386,7 +386,11 @@ export class ConductService {
   async getForProvider(providerId: string, penaltyId: string) {
     const penalty = await this.present(this.prisma, penaltyId);
     if (penalty.providerId !== providerId) throw notFound('Penalty');
-    return penalty;
+    // BE-026: the provider's own appeal and what was decided, including the admin's decision note (previously only visible through admin routes).
+    const appeals = await this.prisma.$queryRaw<{ id: string; grounds: string; status: string; decisionNote: string | null; createdAt: Date; decidedAt: Date | null }[]>(
+      Prisma.sql`SELECT id, grounds, status::text as status, decision_note as "decisionNote", created_at as "createdAt", decided_at as "decidedAt" FROM appeals WHERE penalty_id = ${penaltyId}::uuid AND provider_id = ${providerId}::uuid ORDER BY created_at DESC LIMIT 1`
+    );
+    return { ...penalty, appeal: appeals[0] ?? null };
   }
 
   async list(status: string | undefined, providerId: string | undefined, query: PageQuery = {}) {

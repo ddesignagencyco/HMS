@@ -1,9 +1,15 @@
 // apps/api/src/booking/provider-offers.controller.ts
-import { Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { z } from 'zod';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, PolicyDecorator, type AuthenticatedPrincipal } from '../common/policy.js';
+import { ApiZodBody } from '../common/swagger.js';
+import { parseWith } from '../common/validation.js';
 import { BookingService } from './booking.service.js';
 import { OfferService } from './offer.service.js';
+
+/** BE-026: the reason is optional; a decline with no body at all keeps working exactly as before. */
+const declineSchema = z.object({ reason: z.string().trim().min(1).max(500).optional() }).strict();
 
 @ApiTags('booking')
 @ApiBearerAuth('access-token')
@@ -40,8 +46,10 @@ export class ProviderOffersController {
   @Post(':id/decline')
   @HttpCode(200)
   @PolicyDecorator({ roles: ['PROVIDER'] })
-  @ApiOperation({ summary: 'Decline an offered job', description: 'Turns the job down. An auto-assigned job moves on to the next provider; a job requested from you specifically ends UNFULFILLED and the customer is refunded if they had paid.' })
-  async decline(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal) {
-    return this.offers.decline(id, principal.userId);
+  @ApiOperation({ summary: 'Decline an offered job', description: 'Turns the job down. An auto-assigned job moves on to the next provider; a job requested from you specifically ends UNFULFILLED and the customer is refunded if they had paid. An optional `reason` (up to 500 characters) is recorded for the admin team and never shown to the customer.' })
+  @ApiZodBody(declineSchema, { default: { summary: 'Decline with a reason', value: { reason: 'I am too far away at that hour.' } } })
+  async decline(@Param('id', ParseUUIDPipe) id: string, @CurrentPrincipal() principal: AuthenticatedPrincipal, @Body() body?: unknown) {
+    const { reason } = parseWith(declineSchema, body ?? {});
+    return this.offers.decline(id, principal.userId, reason);
   }
 }

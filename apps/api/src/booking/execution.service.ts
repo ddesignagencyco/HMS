@@ -7,7 +7,7 @@ import { PrismaService } from '../database/prisma.service.js';
 import { OBJECT_STORAGE } from '../integrations/integrations.module.js';
 import type { ObjectStoragePort } from '../integrations/ports.js';
 import { SettingsService } from '../platform/settings.service.js';
-import type { BookingEvidenceInput } from './booking.schemas.js';
+import type { BookingCreateInput, BookingEvidenceInput } from './booking.schemas.js';
 
 export type EvidenceRow = {
   id: string;
@@ -118,6 +118,41 @@ export class ExecutionService {
     const stored = await this.findByClientUuid(bookingId, input.clientUuid);
     if (stored === null) throw new Error('Evidence row vanished after insert');
     return { evidence: stored, duplicate: false };
+  }
+
+  /**
+   * BE-022: the photos sent with `POST /bookings`, checked before anything is written (a refused photo must not leave a booking behind).
+   * Same size rule as the evidence route; a repeated `clientUuid` inside one request is a mistake, not a retry, so it is refused.
+   */
+  async prepareCreatePhotos(photos: NonNullable<BookingCreateInput['photos']>): Promise<{ clientUuid: string; contentType: string; content: Buffer; capturedAt: string | null }[]> {
+    if (photos.length === 0) return [];
+    const maxBytes = await this.settings.getNumber('evidence.photo_max_bytes');
+    if (new Set(photos.map(photo => photo.clientUuid)).size !== photos.length) throw new DomainError('VALIDATION_FAILED', 'Each photo needs its own clientUuid', [{ path: 'photos', code: 'duplicate', message: 'clientUuid must be unique per photo' }]);
+    return photos.map(photo => {
+      const content = Buffer.from(photo.contentBase64, 'base64');
+      if (content.byteLength === 0) throw new DomainError('UPLOAD_REJECTED', 'The photo is empty');
+      if (content.byteLength > maxBytes) throw new DomainError('UPLOAD_REJECTED', `The photo is larger than the ${maxBytes} byte limit`);
+      return { clientUuid: photo.clientUuid, contentType: photo.contentType, content, capturedAt: photo.capturedAt ?? null };
+    });
+  }
+
+  /** BE-022: stores and records the prepared photos inside the booking's own transaction. Returns the storage keys so a rolled-back booking can have its objects removed. */
+  async attachCreatePhotos(tx: Prisma.TransactionClient, bookingId: string, customerId: string, photos: Awaited<ReturnType<ExecutionService['prepareCreatePhotos']>>): Promise<string[]> {
+    const keys: string[] = [];
+    for (const photo of photos) {
+      const storageKey = `${bookingId}/${photo.clientUuid}`;
+      await this.storage.put({ key: storageKey, bucket: 'evidence', content: photo.content, contentType: photo.contentType });
+      keys.push(storageKey);
+      await tx.$executeRaw(
+        Prisma.sql`INSERT INTO job_evidence(booking_id, kind, visit_no, storage_key, content_type, size_bytes, client_uuid, client_captured_at, uploaded_by)
+          VALUES (${bookingId}::uuid, 'CUSTOMER_PROBLEM'::evidence_kind, 1, ${storageKey}, ${photo.contentType}, ${photo.content.byteLength}, ${photo.clientUuid}::uuid, ${photo.capturedAt}::timestamptz, ${customerId}::uuid)`
+      );
+    }
+    return keys;
+  }
+
+  async removeStored(keys: readonly string[]): Promise<void> {
+    for (const key of keys) await this.storage.remove({ key, bucket: 'evidence' }).catch(() => undefined);
   }
 
   async listEvidence(bookingId: string, actorUserId: string): Promise<EvidenceRow[]> {

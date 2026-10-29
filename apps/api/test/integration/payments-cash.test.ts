@@ -219,6 +219,26 @@ describe('SHM-060: the commission-debt ceiling', () => {
     });
   });
 
+  it('BE-026: POST /provider/debt/pay is covered by the idempotency interceptor - the same Idempotency-Key replays one payment instead of opening a second', async () => {
+    await withCeiling(10_000, async () => {
+      const provider = await newProvider(app, { lat: 24.1 + Math.random(), lng: 64.1 + Math.random() });
+      await settledCashJob(provider);
+      const key = `debt-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+      const pay = (idempotencyKey: string) => callApi<{ paymentId: string }>(app, '/provider/debt/pay', bearer(provider.accessToken, { ...postJson({ amountPaisa: 1_000 }), headers: { authorization: `Bearer ${provider.accessToken}`, 'idempotency-key': idempotencyKey } }));
+      const first = await pay(key);
+      const second = await pay(key);
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(second.headers['idempotency-replayed']).toBe('true');
+      expect(second.body.paymentId).toBe(first.body.paymentId);
+      // A different key is a different click, and opens its own payment.
+      const third = await pay(`${key}-again`);
+      expect(third.body.paymentId).not.toBe(first.body.paymentId);
+      const payments = await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`SELECT count(*)::bigint as n FROM payments WHERE payer_user_id = ${provider.id}::uuid AND purpose = 'DEBT'`);
+      expect(payments[0]?.n).toBe(2n);
+    });
+  });
+
   it('an online job released to the provider pays down the debt and unblocks them without any payment', async () => {
     await withCeiling(10_000, async () => {
       const provider = await newProvider(app, { lat: 23.1 + Math.random(), lng: 63.1 + Math.random() });

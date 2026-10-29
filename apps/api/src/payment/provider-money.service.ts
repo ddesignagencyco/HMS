@@ -1,4 +1,5 @@
 // apps/api/src/payment/provider-money.service.ts
+import { pick, rupees, type Locale } from '../common/locale.js';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { paisaToNumber } from '@smart-home/domain';
@@ -35,11 +36,11 @@ export class ProviderMoneyService {
    * FR-PY-13: clear commission debt online. Defaults to the whole debt; a smaller amount is fine (it may be enough to get under the ceiling), a
    * larger one is refused — there is nothing to overpay into. The wallet and the offer block change only when the gateway confirms the payment.
    */
-  async payDebt(providerId: string, amountPaisa: number | undefined): Promise<{ paymentId: string; redirectUrl: string; amountPaisa: number }> {
+  async payDebt(providerId: string, amountPaisa: number | undefined, locale: Locale = 'en'): Promise<{ paymentId: string; redirectUrl: string; amountPaisa: number }> {
     const wallet = await this.debt.wallet(this.prisma, providerId);
-    if (wallet.debtPaisa <= 0n) throw badRequest('You have no commission debt to pay');
+    if (wallet.debtPaisa <= 0n) throw badRequest(pick(locale, { en: 'You have no commission debt to pay', ur: 'آپ کے ذمے کمیشن کا کوئی بقایا نہیں ہے' }));
     const amount = amountPaisa === undefined ? wallet.debtPaisa : BigInt(amountPaisa);
-    if (amount <= 0n || amount > wallet.debtPaisa) throw badRequest(`Pay between 1 paisa and your debt of ${paisaToNumber(wallet.debtPaisa)}`);
+    if (amount <= 0n || amount > wallet.debtPaisa) throw badRequest(pick(locale, { en: `Pay between ${rupees(1)} and your debt of ${rupees(wallet.debtPaisa)}`, ur: `${rupees(1, 'ur')} سے لے کر اپنے بقایا ${rupees(wallet.debtPaisa, 'ur')} تک ادا کریں` }));
     const paymentId = await this.prisma.$transaction(tx => this.payments.createPayment(tx, { bookingId: null, payerUserId: providerId, amountPaisa: amount, purpose: 'DEBT', keySuffix: randomUUID() }));
     const checkout = await this.payments.startCheckout(paymentId, { userId: providerId }, '/provider/wallet');
     return { ...checkout, amountPaisa: paisaToNumber(amount) };

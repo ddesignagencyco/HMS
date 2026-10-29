@@ -1,8 +1,15 @@
+import { pageFields } from '../common/paging.js';
 import { z } from 'zod';
 
 export const providerSearchQuerySchema = z
   .object({
-    serviceSlug: z.string().trim().min(1).max(100),
+    /** BE-010: optional. Without it the search ranks every provider in range across all their approved services. */
+    serviceSlug: z.string().trim().min(1).max(100).optional(),
+    /** BE-010: `distance` | `rating` | `price_asc` | `price_desc` | `experience`. Omitted = the weighted ranking. */
+    sort: z.enum(['distance', 'rating', 'price_asc', 'price_desc', 'experience']).optional(),
+    /** BE-010: only providers whose published rating is at least this (unrated providers are excluded). */
+    minRating: z.coerce.number().min(0).max(5).optional(),
+    ...pageFields(),
     lat: z.coerce.number().min(-90).max(90).optional(),
     lng: z.coerce.number().min(-180).max(180).optional(),
     /**
@@ -63,4 +70,4 @@ export const nextSlotsQuerySchema = z
   })
   .strict();
 
-export type NextSlotsQuery = z.infer<typeof nextSlotsQuerySchema>;
+export type NextSlotsQuery = z.infer<typeof nextSlotsQuerySchema>;

@@ -7,6 +7,8 @@ import { isUniqueViolation } from './unique-violation.js';
 
 type ProblemBody = { code: ErrorCode; detail: string; errors: FieldError[] };
 
+const isPoolTimeout = (exception: unknown): boolean => exception instanceof Prisma.PrismaClientKnownRequestError && (exception.code === 'P2024' || exception.code === 'P2028');
+
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
   private readonly logger = new Logger(ProblemDetailsFilter.name);
@@ -28,6 +30,8 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       this.logger.error({ err: exception, requestId, url: request.originalUrl, code: normalized.code });
     }
     if (response.headersSent) return;
+    // BE-017: a busy pool is load, not a bug; tell the client when to try again.
+    if (isPoolTimeout(exception)) response.setHeader('Retry-After', '2');
     response.status(body.status).type(PROBLEM_CONTENT_TYPE).json(body);
   }
 
@@ -71,6 +75,9 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
   private fromPrisma(exception: Prisma.PrismaClientKnownRequestError): ProblemBody {
     if (isUniqueViolation(exception)) return { code: 'CONFLICT', detail: 'The resource already exists', errors: [] };
+    // BE-017: "timed out fetching a connection from the pool" (P2024) and an interactive transaction that expired waiting (P2028) mean the
+    // service is busy. That is an overload answer (429 + Retry-After), never a 500: a 500 reads as "the platform is broken".
+    if (exception.code === 'P2024' || exception.code === 'P2028') return { code: 'RATE_LIMITED', detail: 'The service is busy right now. Please try again in a moment.', errors: [] };
     if (exception.code === 'P2025') return { code: 'NOT_FOUND', detail: 'The resource was not found', errors: [] };
     if (exception.code === 'P2003') return { code: 'CONFLICT', detail: 'A related resource is missing', errors: [] };
     return { code: 'INTERNAL_ERROR', detail: 'A database error occurred', errors: [] };

@@ -10,7 +10,7 @@ import { renderTemplate, TEMPLATE_VARIABLES } from './notification.service.js';
 export type TemplateInput = { subject?: string | null | undefined; body: string; isActive?: boolean | undefined };
 
 const SAMPLE: Record<string, string> = {
-  bookingRef: 'SHM-0001234', serviceName: 'Leak Repair', providerName: 'Bilal A.', slotLabel: '05 Oct 10:30', total: 'PKR 2,500.00', amount: 'PKR 2,500.00', problemLink: 'https://example.test/problem/abc', code: '123456', otp: '123456',
+  bookingRef: 'SHM-0001234', serviceName: 'Leak Repair', providerName: 'Bilal A.', slotLabel: '05 Oct 10:30', total: 'PKR 2,500.00', amount: 'PKR 2,500.00', problemLink: 'https://example.test/problem/abc', confirmLink: 'https://example.test/en/account/bookings/abc#confirm-work', code: '123456', otp: '123456',
   link: 'https://example.test/v/abc', complaintRef: 'A1B2C3D4', category: 'QUALITY', to: 'RESOLVED', resolution: 'PARTIAL_REFUND', consequence: 'WARNING', until: '2026-10-12', points: '12', decision: 'REVERSED', breachCode: 'OVERCHARGE', releasePaisa: '60000', refundPaisa: '40000', replyDueAt: '2026-10-07T10:00:00Z'
 };
 

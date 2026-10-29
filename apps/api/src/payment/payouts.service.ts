@@ -1,4 +1,5 @@
 // apps/api/src/payment/payouts.service.ts
+import { pick, rupees, type Locale } from '../common/locale.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { formatPaisa, paisaToNumber } from '@smart-home/domain';
@@ -81,10 +82,10 @@ export class PayoutsService {
     return available > 0n ? available : 0n;
   }
 
-  async request(providerId: string, amountPaisa: number, accountId: string) {
+  async request(providerId: string, amountPaisa: number, accountId: string, locale: Locale = 'en') {
     const amount = BigInt(amountPaisa);
     const minimum = BigInt(await this.settings.getNumber('payout.min_amount_paisa'));
-    if (amount < minimum) throw badRequest(`The smallest payout is ${paisaToNumber(minimum)} paisa`);
+    if (amount < minimum) throw badRequest(pick(locale, { en: `The smallest payout is ${rupees(minimum)}`, ur: `کم از کم رقم جو نکلوائی جا سکتی ہے ${rupees(minimum, 'ur')} ہے` }));
     const accounts = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM provider_payout_accounts WHERE id = ${accountId}::uuid AND provider_id = ${providerId}::uuid`);
     if (accounts[0] === undefined) throw notFound('Payout account');
     return this.prisma.$transaction(async tx => {
@@ -93,7 +94,10 @@ export class PayoutsService {
       const balance = await this.debt.walletBalance(tx, providerId);
       const pending = await tx.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT coalesce(sum(amount_paisa), 0)::bigint as total FROM payouts WHERE provider_id = ${providerId}::uuid AND status = 'REQUESTED'`);
       const available = balance - (pending[0]?.total ?? 0n);
-      if (amount > available) throw new DomainError('CONFLICT', `You can request at most ${paisaToNumber(available > 0n ? available : 0n)} paisa right now`);
+      if (amount > available) {
+        const most = available > 0n ? available : 0n;
+        throw new DomainError('CONFLICT', pick(locale, { en: `You can request at most ${rupees(most)} right now`, ur: `آپ اس وقت زیادہ سے زیادہ ${rupees(most, 'ur')} کی درخواست کر سکتے ہیں` }));
+      }
       const rows = await tx.$queryRaw<{ id: string }[]>(
         Prisma.sql`INSERT INTO payouts(provider_id, payout_account_id, amount_paisa) VALUES (${providerId}::uuid, ${accountId}::uuid, ${amount}) RETURNING id`
       );

@@ -20,7 +20,15 @@ export const BODY_LIMIT = '1mb';
  * every other route keeps the tight limit.
  */
 export const EVIDENCE_BODY_LIMIT = '8mb';
-const EVIDENCE_PATH = /^\/api\/v1\/(bookings\/[0-9a-fA-F-]{36}\/evidence|complaints(\/[0-9a-fA-F-]{36}\/evidence|\/from-receipt)?)\/?$/;
+/**
+ * BE-013: `POST /provider/documents` with an inline `contentBase64`. A 5 MiB identity photo is about 7 MB once base64-encoded, so the global
+ * 1 MB limit answered 413 to a perfectly ordinary phone photo of a CNIC. This route gets the same 8 MB ceiling as evidence photos, which
+ * covers every image/PDF document the service accepts (`MAX_DOCUMENT_BYTES`, 5 MiB). Video documents (up to 50 MiB) cannot travel inline and
+ * must use `POST /uploads/presign` then confirm by `storageKey`; an inline body past the ceiling is a clear 413 problem+json.
+ */
+export const DOCUMENT_BODY_LIMIT = '8mb';
+const DOCUMENT_PATH = /^\/api\/v1\/provider\/documents\/?$/;
+const EVIDENCE_PATH = /^\/api\/v1\/(bookings(\/[0-9a-fA-F-]{36}\/evidence)?|complaints(\/[0-9a-fA-F-]{36}\/evidence|\/from-receipt)?)\/?$/;
 const DEV_STORAGE_PATH = /^\/api\/v1\/dev\/storage\/[^/]+\/.+$/;
 /**
  * Abuse guard: requests per IP per window.
@@ -55,10 +63,31 @@ export const requestIdMiddleware = (): RequestHandler => (request: Request, resp
  * single process is the deployment target, so an in-memory counter is enough;
  * it is exported separately so the limit can be exercised in a test.
  */
+/**
+ * BE-017: the rate-limit bucket for a client address. IPv4-mapped IPv6 (`::ffff:203.0.113.7`) is the same machine as `203.0.113.7`, and a single IPv6 host
+ * owns a whole /64, so it would otherwise get an unlimited number of buckets by rotating the low bits; those collapse to their /64 prefix.
+ */
+export const clientKey = (ip: string | undefined): string => {
+  if (ip === undefined || ip === '') return 'unknown';
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (mapped?.[1] !== undefined) return mapped[1];
+  if (ip.includes(':') && !ip.includes('.')) {
+    const [head = '', tail] = ip.split('::');
+    const headGroups = head === '' ? [] : head.split(':');
+    const tailGroups = tail === undefined || tail === '' ? [] : tail.split(':');
+    const missing = 8 - headGroups.length - tailGroups.length;
+    if (tail === undefined ? headGroups.length === 8 : missing >= 0) {
+      const groups = [...headGroups, ...Array.from({ length: tail === undefined ? 0 : missing }, () => '0'), ...tailGroups];
+      return `${groups.slice(0, 4).map(group => group.replace(/^0+(?=.)/, '').toLowerCase()).join(':')}::/64`;
+    }
+  }
+  return ip;
+};
+
 export const createRateLimitMiddleware = (max: number, windowMs: number): RequestHandler => {
   const hits = new Map<string, { count: number; resetAt: number }>();
   return (request: Request, response: Response, next: NextFunction) => {
-    const key = request.ip ?? 'unknown';
+    const key = clientKey(request.ip);
     const now = Date.now();
     const entry = hits.get(key);
     const current = entry === undefined || entry.resetAt <= now ? { count: 0, resetAt: now + windowMs } : entry;
@@ -157,7 +186,9 @@ export const createCspMiddleware = (isProduction: boolean): RequestHandler => (r
  */
 export const registerHttpPlugins = async (app: HttpApplication, environment: EnvironmentService): Promise<void> => {
   const server = app.getHttpAdapter().getInstance();
-  server.set('trust proxy', true);
+  // BE-017: with TRUST_PROXY_HOPS set, the client IP is the entry that many hops from the right of X-Forwarded-For, which a caller cannot forge.
+  // Unset keeps the historical `true` (leftmost entry): correct behind proxies that overwrite the header, spoofable behind ones that append to it.
+  server.set('trust proxy', environment.values.TRUST_PROXY_HOPS ?? true);
   server.use(requestIdMiddleware());
   server.use(createCspMiddleware(environment.isProduction));
   // Helmet's own CSP is off because this file sets a stricter, nonce-based one: helmet's default is a
@@ -170,7 +201,11 @@ export const registerHttpPlugins = async (app: HttpApplication, environment: Env
   };
   const standardJson = express.json({ limit: BODY_LIMIT, verify: keepRawBody });
   const photoJson = express.json({ limit: EVIDENCE_BODY_LIMIT, verify: keepRawBody });
-  server.use((request: Request, response: Response, next: NextFunction) => (request.method === 'POST' && EVIDENCE_PATH.test(request.path) ? photoJson : standardJson)(request, response, next));
+  const documentJson = express.json({ limit: DOCUMENT_BODY_LIMIT, verify: keepRawBody });
+  server.use((request: Request, response: Response, next: NextFunction) => {
+    if (request.method !== 'POST') return standardJson(request, response, next);
+    return (EVIDENCE_PATH.test(request.path) ? photoJson : DOCUMENT_PATH.test(request.path) ? documentJson : standardJson)(request, response, next);
+  });
   // The mock storage adapter hands the browser a presigned PUT URL, so the
   // matching verb has to exist and has to receive the bytes as they were sent —
   // not JSON-encoded. Raw, and only for that one route.
