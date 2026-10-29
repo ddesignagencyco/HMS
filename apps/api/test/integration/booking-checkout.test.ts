@@ -267,8 +267,11 @@ describe('SHM-037: online checkout, capture and abandonment', () => {
     expect(page.body.actions.pay.url).toContain(`/dev/payments/${first.paymentId}/complete?outcome=captured`);
 
     // Follow the Pay link exactly as a browser would: a plain GET, no body, no auth.
+    // With a returnUrl the completion redirects the browser back to the app; the payment is
+    // still captured on the way through.
     const paid = await callApi(app, page.body.actions.pay.url, { method: 'GET' });
-    expect(paid.status).toBe(200);
+    expect(paid.status).toBe(302);
+    expect(paid.headers.location).toBe('http://localhost:3001/return');
     expect((await callApi<{ status: string }>(app, `/bookings/${first.booking.id}`, bearer(first.customer.accessToken))).body.status).toBe('REQUESTED');
 
     // And the fail link, on a fresh payment, drives the other branch: a failed payment abandons the

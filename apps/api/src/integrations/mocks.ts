@@ -109,7 +109,7 @@ export class MockObjectStorage implements ObjectStoragePort {
 
   private ensureMockSample(key: string, bucket: string): void {
     const idx = this.index(key, bucket);
-    if (!this.objects.has(idx) && (bucket === 'documents' || key.includes('provider/') || key.includes('cnic') || bucket === 'evidence')) {
+    if (!this.objects.has(idx) && key.startsWith('load/')) {
       const isCnic = key.includes('cnic');
       const docLabel = isCnic ? 'NATIONAL IDENTITY CARD (CNIC)' : 'PROFESSIONAL CREDENTIAL / LICENSE';
       const sampleSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
