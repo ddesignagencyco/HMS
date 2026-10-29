@@ -116,10 +116,7 @@ function useOpsBoardStream(locale: Locale, enabled: boolean): { board: OpsBoard 
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
 
   useEffect(() => {
-    if (!enabled) {
-      setState("off");
-      return;
-    }
+    if (!enabled) return;
 
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -215,7 +212,7 @@ function useOpsBoardStream(locale: Locale, enabled: boolean): { board: OpsBoard 
     };
   }, [locale, enabled, attempt]);
 
-  return { board, state, reconnect };
+  return { board, state: enabled ? state : "off", reconnect };
 }
 
 /* ---- tiles ------------------------------------------------------------ */

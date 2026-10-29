@@ -42,7 +42,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import toast from "react-hot-toast";
 import { Button, Card, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import { SelectField } from "@/components/select-field";
@@ -59,6 +59,8 @@ import {
   type ReportFormat,
   type ReportType,
 } from "./finance-api";
+
+const noopSubscribe = () => () => {};
 
 /* ---- money ------------------------------------------------------------ */
 
@@ -407,13 +409,15 @@ function ReportRow({ run, locale, dict }: { run: FinanceReportRun; locale: Local
  */
 export function AdminReports({ locale, dict, eyebrow }: { locale: Locale; dict: Dictionary; /** The area it is shown in; FINANCE reaches it under `/finance`. */ eyebrow?: string }) {
   const runs = useReportRuns(locale);
-  const [downloadBlocked, setDownloadBlocked] = useState(false);
-
-  /* Checked once, not per render: this screen must never offer a button that
-     cannot work, and it must find out on the client where `URL` exists. */
-  useEffect(() => {
-    setDownloadBlocked(typeof URL === "undefined" || typeof URL.createObjectURL !== "function");
-  }, []);
+  /* Checked on the client only, where `URL` exists -- `useSyncExternalStore`'s
+     server snapshot is always the safe default (`true`: button hidden), so this
+     screen never offers a download button that cannot work, without an
+     effect+setState pair to find that out. */
+  const downloadBlocked = useSyncExternalStore(
+    noopSubscribe,
+    () => typeof URL === "undefined" || typeof URL.createObjectURL !== "function",
+    () => true
+  );
 
   const items = runs.data?.items ?? [];
   const building = items.filter((run) => run.status === "QUEUED" || run.status === "RUNNING");

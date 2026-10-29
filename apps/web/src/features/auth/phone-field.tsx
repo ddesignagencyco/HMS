@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useId, useState } from "react";
-import PhoneInput from "react-phone-input-2";
+import PhoneInput, { type CountryData, type PhoneInputProps } from "react-phone-input-2";
 import "react-phone-input-2/lib/style.css";
 import { Label } from "@/components/ui";
 import { cn, type Locale } from "@/lib/utils";
@@ -9,8 +9,8 @@ import { AlertCircle } from "lucide-react";
 
 // Normalize between ESM and CJS bundle exports across Next.js and testing tools
 const PhoneInputComponent = (
-  (PhoneInput as unknown as { default?: React.ComponentType<any> }).default || PhoneInput
-) as React.ComponentType<any>;
+  (PhoneInput as unknown as { default?: React.ComponentType<PhoneInputProps> }).default || PhoneInput
+) as React.ComponentType<PhoneInputProps>;
 
 export interface PhoneFieldProps {
   id?: string;
@@ -20,7 +20,7 @@ export interface PhoneFieldProps {
   error?: string;
   className?: string;
   value?: string;
-  onChange: (value: string, countryData?: any) => void;
+  onChange: (value: string, countryData?: CountryData | Record<string, never>) => void;
   onBlur?: () => void;
   locale?: Locale;
   disabled?: boolean;
@@ -57,13 +57,13 @@ export function PhoneField({
     setDisplay(value);
   }
 
-  const emit = (shown: string, normalised: string, countryData: unknown) => {
+  const emit = (shown: string, normalised: string, countryData: CountryData | Record<string, never>) => {
     setDisplay(shown);
     setLastEmitted(normalised);
     onChange(normalised, countryData);
   };
 
-  const handleChange = (val: string, countryData: any) => {
+  const handleChange = (val: string, countryData: CountryData | Record<string, never>) => {
     const dialCode =
       countryData && typeof countryData === "object" && "dialCode" in countryData
         ? String((countryData as { dialCode?: string }).dialCode ?? "")

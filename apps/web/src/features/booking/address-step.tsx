@@ -320,7 +320,7 @@ async function reverseGeocode(point: LatLng, locale: Locale): Promise<{
     if (res.ok) {
       const data = await res.json();
       const sub = data.localityInfo?.administrative?.slice(-3) || [];
-      const localityNames = sub.map((s: any) => s.name).filter(Boolean);
+      const localityNames = sub.map((s: { name?: string }) => s.name).filter(Boolean);
       return {
         road: data.locality || '',
         houseNumber: '',
@@ -478,6 +478,11 @@ export function AddressForm({ locale, dict, onCreated, onCancel, fallbackCityId,
     if (point && (!areaId || areaId === null) && areas.data?.items && areas.data.items.length > 0) {
       const closestArea = findClosestArea(point, areas.data.items);
       if (closestArea) {
+        /* A one-time default computed from the areas list (an async fetch, not a prop/state change
+           this render could derive from), and it must become ordinary, user-editable state: the
+           condition above only fires once per point/area-list pairing, and a later manual pick is
+           not overwritten by this effect running again. */
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
         setAreaId(closestArea.id);
       }
     }

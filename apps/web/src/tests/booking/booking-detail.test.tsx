@@ -156,10 +156,19 @@ const renderDetail = (over: Partial<BookingDetailRow> = {}, overrides?: Paramete
   return api;
 };
 
-beforeEach(() => vi.clearAllMocks());
+/* Every fixture's dates (`createdAt`, `scheduledStart`, the mocked `/slots` response) are written as
+   absolute 2026 timestamps, and `canReschedule` compares `scheduledStart` against the real wall clock
+   by default. Left unmocked, this file's assertions about which actions are offered quietly go stale
+   the moment real time catches up to those fixtures -- fixed here to a point safely before all of them,
+   so "is this booking still reschedulable" means the same thing whenever the suite actually runs. */
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.setSystemTime(new Date('2026-10-15T00:00:00.000Z'));
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('the booking itself', () => {

@@ -173,6 +173,10 @@ const eligibleProviders = useMemo(() => {
     if (detailsLoading || providers.isFetching || activeAreaId === null) return;
     const isEligible = eligibleProviders.some((p) => p.providerId === choice.providerId);
     if (!isEligible) {
+      /* Correcting a stale choice against freshly loaded eligibility data (an async fetch, not a
+         prop/state change this render could derive from), and the correction must become ordinary
+         basket state the user can go on to edit themselves. */
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
       update({ choice: null, slot: null, request: null });
     }
   }, [detailsLoading, providers.isFetching, activeAreaId, basket.choice, eligibleProviders]);

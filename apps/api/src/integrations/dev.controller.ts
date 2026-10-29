@@ -61,7 +61,7 @@ export class DevController {
     const object = this.storage.read(parsedBucket, decodeURIComponent(key));
     if (object === null) throw new DomainError('NOT_FOUND', 'The object does not exist in the mock storage adapter');
 
-    const accept = (req.headers['accept'] ?? '') as string;
+    const accept = req.headers['accept'] ?? '';
     const wantsRaw = req.query['raw'] === '1' || req.query['raw'] === 'true' || accept.includes('image/');
     if (wantsRaw && !accept.includes('application/json')) {
       res.type(object.contentType);

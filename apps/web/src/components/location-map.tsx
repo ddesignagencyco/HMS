@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Crosshair, Loader2, LocateFixed, MapPin, ZoomIn, ZoomOut } from "lucide-react";
+import type { DragEndEvent, LeafletMouseEvent, Map as LeafletMap, Marker as LeafletMarker } from "leaflet";
 import { cn } from "@/lib/utils";
 import { requestDeviceLocation } from "@/features/search/location";
+
+/** Leaflet stamps this onto the container element it has already initialized, to refuse a second `L.map(...)` call on the same node. Not in `@types/leaflet`. */
+type LeafletContainerElement = HTMLDivElement & { _leaflet_id?: number };
 
 export type MapMarker = {
   id: string;
@@ -29,6 +33,10 @@ export type LocationMapProps = {
 
 const DEFAULT_CENTER = { lat: 31.5204, lng: 74.3587 }; // Lahore fallback
 
+const noopSubscribe = () => () => {};
+/** True only once hydrated on the client -- `useSyncExternalStore`'s server snapshot is always `false`, so this never mismatches between SSR and the first client render, without an effect+setState pair to do it. */
+const useMounted = () => useSyncExternalStore(noopSubscribe, () => true, () => false);
+
 export function LocationMap({
   center,
   zoom = 13,
@@ -42,16 +50,12 @@ export function LocationMap({
   hint,
 }: LocationMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const userMarkerRef = useRef<any>(null);
-  const providerMarkersRef = useRef<any[]>([]);
-  const [mounted, setMounted] = useState(false);
+  const mapInstanceRef = useRef<LeafletMap | null>(null);
+  const userMarkerRef = useRef<LeafletMarker | null>(null);
+  const providerMarkersRef = useRef<LeafletMarker[]>([]);
+  const mounted = useMounted();
 
   const effectiveCenter = selectedLocation ?? center ?? DEFAULT_CENTER;
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!mounted || !containerRef.current) return;
@@ -65,7 +69,7 @@ export function LocationMap({
       if (isDisposed || !containerRef.current) return;
 
       // Prevent duplicate initialization on the same container
-      if ((containerRef.current as any)._leaflet_id) {
+      if ((containerRef.current as LeafletContainerElement)._leaflet_id) {
         return;
       }
 
@@ -110,7 +114,7 @@ export function LocationMap({
 
       // Pin on map click
       if (!readOnly && onSelectLocation) {
-        map.on("click", (e: any) => {
+        map.on("click", (e: LeafletMouseEvent) => {
           const lat = Number(e.latlng.lat.toFixed(5));
           const lng = Number(e.latlng.lng.toFixed(5));
           onSelectLocation({ lat, lng });
@@ -125,8 +129,8 @@ export function LocationMap({
         }).addTo(map);
 
         if (!readOnly && draggable && onSelectLocation) {
-          marker.on("dragend", (e: any) => {
-            const pos = e.target.getLatLng();
+          marker.on("dragend", (e: DragEndEvent) => {
+            const pos = (e.target as LeafletMarker).getLatLng();
             onSelectLocation({
               lat: Number(pos.lat.toFixed(5)),
               lng: Number(pos.lng.toFixed(5)),
@@ -148,7 +152,7 @@ export function LocationMap({
       }, 250);
     }
 
-    function renderProviderMarkers(L: any, map: any) {
+    function renderProviderMarkers(L: typeof import("leaflet"), map: LeafletMap) {
       providerMarkersRef.current.forEach((m) => m.remove());
       providerMarkersRef.current = [];
 
@@ -228,8 +232,8 @@ export function LocationMap({
           }).addTo(map);
 
           if (!readOnly && draggable && onSelectLocation) {
-            marker.on("dragend", (e: any) => {
-              const pos = e.target.getLatLng();
+            marker.on("dragend", (e: DragEndEvent) => {
+              const pos = (e.target as LeafletMarker).getLatLng();
               onSelectLocation({
                 lat: Number(pos.lat.toFixed(5)),
                 lng: Number(pos.lng.toFixed(5)),
