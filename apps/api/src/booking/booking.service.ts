@@ -1,7 +1,16 @@
 // apps/api/src/booking/booking.service.ts
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { canTransition, paisaToNumber, resolveCommissionRateBp as selectCommissionRateBp, splitAtLocalMidnight, windowRefusal, type BookingEvent, type BookingStatus, type CommissionScope } from '@smart-home/domain';
+import {
+  canTransition,
+  paisaToNumber,
+  resolveCommissionRateBp as selectCommissionRateBp,
+  splitAtLocalMidnight,
+  windowRefusal,
+  type BookingEvent,
+  type BookingStatus,
+  type CommissionScope
+} from '@smart-home/domain';
 import { DomainError, badRequest, conflict, notFound } from '../common/domain-error.js';
 import { EnvironmentService } from '../config/environment.service.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -146,9 +155,10 @@ export class BookingService {
     const total = BigInt(quote.totalPaisa);
 
     try {
-      const created = await this.prisma.$transaction(async (tx) => {
-        const rows = await tx.$queryRaw<BookingRowRaw[]>(
-          Prisma.sql`INSERT INTO bookings(customer_id, provider_id, service_id, address_id, status, payment_mode, payment_status, is_emergency, is_auto_assign, slot, scheduled_start, scheduled_end,
+      const created = await this.prisma.$transaction(
+        async (tx) => {
+          const rows = await tx.$queryRaw<BookingRowRaw[]>(
+            Prisma.sql`INSERT INTO bookings(customer_id, provider_id, service_id, address_id, status, payment_mode, payment_status, is_emergency, is_auto_assign, slot, scheduled_start, scheduled_end,
               problem_text, issue_option_id, is_on_behalf, on_behalf_name, on_behalf_phone_e164, quoted_amount_paisa, approved_total_paisa, discount_paisa, coupon_id, commission_rate_bp)
             VALUES (${customerId}::uuid, ${input.providerId ?? null}::uuid, ${input.serviceId}, ${input.addressId}::uuid,
               ${online ? 'PENDING_PAYMENT' : 'REQUESTED'}::booking_status, ${online ? 'ONLINE' : 'CASH'}::payment_mode, ${online ? 'PENDING' : 'NONE'}::booking_payment_status,
@@ -158,32 +168,34 @@ export class BookingService {
               ${total}, ${total},
               ${BigInt(quote.discountPaisa)}, ${priced.couponId}::uuid, ${commissionRateBp})
             RETURNING ${BOOKING_COLUMNS}`
-        );
-        const row = rows[0];
-        if (row === undefined) throw new Error('Booking insert did not return a row');
-
-        for (const line of quote.lines) {
-          const amount = BigInt(line.amountPaisa);
-          await tx.$executeRaw(
-            Prisma.sql`INSERT INTO booking_items(booking_id, kind, description, quantity, unit_price_paisa, amount_paisa)
-              VALUES (${row.id}::uuid, ${line.kind}::item_kind, ${line.description}, 1, ${amount}, ${amount})`
           );
-        }
-        await tx.$executeRaw(
-          Prisma.sql`INSERT INTO booking_status_history(booking_id, from_status, to_status, event, actor_user_id, actor_role, metadata)
+          const row = rows[0];
+          if (row === undefined) throw new Error('Booking insert did not return a row');
+
+          for (const line of quote.lines) {
+            const amount = BigInt(line.amountPaisa);
+            await tx.$executeRaw(
+              Prisma.sql`INSERT INTO booking_items(booking_id, kind, description, quantity, unit_price_paisa, amount_paisa)
+              VALUES (${row.id}::uuid, ${line.kind}::item_kind, ${line.description}, 1, ${amount}, ${amount})`
+            );
+          }
+          await tx.$executeRaw(
+            Prisma.sql`INSERT INTO booking_status_history(booking_id, from_status, to_status, event, actor_user_id, actor_role, metadata)
             VALUES (${row.id}::uuid, NULL, ${row.status}::booking_status, 'create', ${customerId}::uuid, 'CUSTOMER'::actor_role,
               ${JSON.stringify({ paymentMode: input.paymentMode, isEmergency: input.isEmergency, isOnBehalf: input.onBehalfOf !== undefined, issueOptionId: issueOptionId ?? null })}::jsonb)`
-        );
+          );
 
-        let paymentId: string | null = null;
-        if (online) {
-          paymentId = await this.payments.createPayment(tx, { bookingId: row.id, payerUserId: customerId, amountPaisa: total, purpose: 'BOOKING', keySuffix: 'checkout' });
-        } else {
-          await this.redeemCoupon(tx, row.id, customerId);
-          await this.offers.open(tx, row.id);
-        }
-        return { row, paymentId };
-      });
+          let paymentId: string | null = null;
+          if (online) {
+            paymentId = await this.payments.createPayment(tx, { bookingId: row.id, payerUserId: customerId, amountPaisa: total, purpose: 'BOOKING', keySuffix: 'checkout' });
+          } else {
+            await this.redeemCoupon(tx, row.id, customerId);
+            await this.offers.open(tx, row.id);
+          }
+          return { row, paymentId };
+        },
+        { maxWait: 15_000, timeout: 15_000 }
+      );
 
       const booking = toBookingRow(created.row);
       if (created.paymentId === null) return booking;
@@ -198,15 +210,13 @@ export class BookingService {
       // the slot went to someone else, so try another — but an untranslated deadlock escaped as a 500,
       // which reads as "the platform is broken" rather than "that time is gone".
       if (meta?.code === '40001' || meta?.code === '40P01') throw new DomainError('SLOT_TAKEN', 'That provider is no longer free at this time');
-      // P2024: Prisma's own "timed out fetching a new connection from the pool" -- a different field
-      // entirely from the Postgres-level codes above (error.code, not error.meta.code). Under this same
-      // fifty-at-once-for-one-slot contention, a request that never got a connection in time failed for
-      // the same reason as one that got a connection and then lost the row lock: there are more
-      // simultaneous claimants than the slot (or, here, the pool) can serve at once. Confirmed by
-      // reproducing it directly against Prisma 6.12 with a starved pool before writing this check --
-      // it is reliably a PrismaClientKnownRequestError with exactly this code, not a different error
-      // class the instanceof above would miss.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2024') {
+      // Prisma-level contention errors, read off error.code rather than error.meta.code:
+      // P2024 is "timed out fetching a new connection from the pool", P2028 is an interactive
+      // transaction that expired while waiting (Postgres holds the conflicting insert until the
+      // winner commits), and P2034 is Prisma's own write-conflict/deadlock code. Under fifty
+      // simultaneous checkouts for one slot they all mean the same thing as the codes above:
+      // there are more claimants than the slot (or the pool) can serve at once.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === 'P2024' || error.code === 'P2028' || error.code === 'P2034')) {
         throw new DomainError('SLOT_TAKEN', 'That provider is no longer free at this time');
       }
       throw error;
