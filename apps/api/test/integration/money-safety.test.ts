@@ -86,9 +86,12 @@ describe('SHM-045: money and state invariants across the whole database', () => 
     expect(mismatched).toEqual([]);
   });
 
-  it('every completed job was handed to verification exactly once', async () => {
+  it('every job awaiting verification has exactly one outstanding verification call', async () => {
+    // A rework or warranty visit legitimately leaves an earlier, already-submitted call on the
+    // same booking, so "exactly once" means exactly one call still open for this visit — not one
+    // verification_calls row in total.
     const unqueued = await prisma.$queryRaw<{ id: string }[]>(
-      Prisma.sql`SELECT b.id FROM bookings b WHERE b.status = 'AWAITING_VERIFICATION' AND (SELECT count(*) FROM verification_calls v WHERE v.booking_id = b.id) <> 1`
+      Prisma.sql`SELECT b.id FROM bookings b WHERE b.status = 'AWAITING_VERIFICATION' AND (SELECT count(*) FROM verification_calls v WHERE v.booking_id = b.id AND v.status <> 'SUBMITTED') <> 1`
     );
     expect(unqueued).toEqual([]);
   });
